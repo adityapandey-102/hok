@@ -1,0 +1,84 @@
+import { describe, expect, it } from "vitest";
+import type { Router } from "express";
+import { openApiDocument } from "./openapi";
+import { ROLES } from "../domain";
+import { authRouter } from "../modules/auth/api/auth.routes";
+import { usersRouter } from "../modules/users/api/users.routes";
+import { clientsRouter } from "../modules/clients/api/clients.routes";
+import { CLIENT_STATUSES, SOCIAL_PLATFORMS } from "../modules/clients/domain/client.entity";
+import { stageTemplatesRouter } from "../modules/stage-templates/api/stage-templates.routes";
+import { eventsRouter } from "../modules/events/api/events.routes";
+import { EVENT_STATES, EVENT_TYPES } from "../modules/events/domain/event.entity";
+
+/**
+ * openapi.yaml is hand-maintained, so it can silently drift from the code.
+ * These pin (1) the enums that change with the business -- a new role (and
+ * later: event states, comment and task statuses) that isn't documented fails
+ * CI instead of shipping a wrong contract, as in needleye -- and (2) the route
+ * list: every method + path a mounted router serves must be documented.
+ * Add each new module's router to MOUNTED below, with its app.ts prefix.
+ */
+type Schemas = Record<string, { enum?: string[]; properties?: Record<string, unknown> }>;
+const doc = openApiDocument as { components: { schemas: Schemas }; paths: Record<string, Record<string, unknown>> };
+const schemas = doc.components.schemas;
+
+const MOUNTED: [string, Router][] = [
+  ["/api/v1/auth", authRouter],
+  ["/api/v1/users", usersRouter],
+  ["/api/v1/clients", clientsRouter],
+  ["/api/v1/stage-templates", stageTemplatesRouter],
+  ["/api/v1/events", eventsRouter],
+];
+
+/** Express 4 keeps each route on its router's stack as { route: { path, methods } }. */
+function routesOf(prefix: string, router: Router): string[] {
+  const stack = (router as unknown as { stack: { route?: { path: string; methods: Record<string, boolean> } }[] }).stack;
+  return stack.flatMap((layer) => {
+    if (!layer.route) return [];
+    const path = `${prefix}${layer.route.path === "/" ? "" : layer.route.path}`.replace(/:(\w+)/g, "{$1}");
+    return Object.keys(layer.route.methods).map((method) => `${method.toUpperCase()} ${path}`);
+  });
+}
+
+describe("openapi.yaml stays in sync with the domain", () => {
+  it("documents exactly the six roles, in order", () => {
+    expect(schemas.Role?.enum).toEqual([...ROLES]);
+  });
+
+  it("documents the time zone on the profile the web reads from /auth/me", () => {
+    expect(Object.keys(schemas.Profile?.properties ?? {})).toEqual(
+      expect.arrayContaining(["id", "fullName", "email", "role", "timeZone", "phone", "avatarUrl", "active", "createdAt"]),
+    );
+  });
+});
+
+describe("openapi.yaml stays in sync with the Clients module", () => {
+  it("documents exactly the client statuses, in order", () => {
+    expect(schemas.ClientStatus?.enum).toEqual([...CLIENT_STATUSES]);
+  });
+
+  it("documents exactly the social platforms", () => {
+    expect(Object.keys(schemas.SocialHandles?.properties ?? {})).toEqual([...SOCIAL_PLATFORMS]);
+  });
+});
+
+describe("openapi.yaml stays in sync with the Events module", () => {
+  it("documents exactly the event types and states, in order", () => {
+    expect(schemas.EventType?.enum).toEqual([...EVENT_TYPES]);
+    expect(schemas.EventState?.enum).toEqual([...EVENT_STATES]);
+  });
+});
+
+describe("openapi.yaml documents every mounted route", () => {
+  const documented = new Set(
+    Object.entries(doc.paths).flatMap(([path, item]) => Object.keys(item).filter((k) => k !== "parameters").map((m) => `${m.toUpperCase()} ${path}`)),
+  );
+
+  for (const [prefix, router] of MOUNTED) {
+    for (const route of routesOf(prefix, router)) {
+      it(route, () => {
+        expect(documented.has(route), `${route} is served but missing from openapi.yaml`).toBe(true);
+      });
+    }
+  }
+});
