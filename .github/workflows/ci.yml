@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build
+        env:
+          # Build-time placeholders -- Vercel (or wherever this deploys)
+          # supplies the real values as project env vars. Present here only
+          # so `next build`'s static analysis/prerendering doesn't fail.
+          # NOTE: NEXT_PUBLIC_* are INLINED AT BUILD TIME, so the real values
+          # must exist in the hosting project before its build runs -- changing
+          # one there needs a redeploy, not just a restart.
+          NEXT_PUBLIC_API_BASE_URL: https://placeholder.example.com/api/v1
+          NEXT_PUBLIC_WEB_APP_URL: https://placeholder.example.com
+        run: npm run build
+
+      - name: Bundle budget
+        # First-load JS per page (300 KB gzipped); the portfolio pages are
+        # reported as a documented exception, never failed (README "Portfolio").
+        run: npm run check:bundle
+
+      # Deploy step goes here once a hosting target is chosen (Vercel is
+      # the natural fit and has its own Git-integration deploy flow that
+      # may make this job's build step redundant -- keep whichever one
+      # actually gates merges).
