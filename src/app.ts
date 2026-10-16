@@ -16,6 +16,12 @@ import { usersRouter } from "./modules/users/api/users.routes";
 import { clientsRouter } from "./modules/clients/api/clients.routes";
 import { stageTemplatesRouter } from "./modules/stage-templates/api/stage-templates.routes";
 import { eventsRouter } from "./modules/events/api/events.routes";
+import { personalEventsRouter } from "./modules/personal-events/api/personal-events.routes";
+import { calendarRouter } from "./modules/calendar/api/calendar.routes";
+import { teamMembersRouter } from "./modules/team-members/api/team-members.routes";
+import { assetsRouter } from "./modules/assets/api/assets.routes";
+import { staffTasksRouter } from "./modules/staff-tasks/api/staff-tasks.routes";
+import { notificationsRouter } from "./modules/notifications/api/notifications.routes";
 
 /** Turns the TRUST_PROXY env string into what Express's `trust proxy` expects:
  *  a boolean, a hop count, or a preset/subnet string (e.g. "loopback"). */
@@ -101,6 +107,12 @@ export function createApp() {
   apiV1.use("/clients", clientsRouter);
   apiV1.use("/stage-templates", stageTemplatesRouter);
   apiV1.use("/events", eventsRouter);
+  apiV1.use("/personal-events", personalEventsRouter);
+  apiV1.use("/calendar", calendarRouter);
+  apiV1.use("/team-members", teamMembersRouter);
+  apiV1.use("/assets", assetsRouter);
+  apiV1.use("/staff-tasks", staffTasksRouter);
+  apiV1.use("/notifications", notificationsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

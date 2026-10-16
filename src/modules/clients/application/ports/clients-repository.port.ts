@@ -33,6 +33,20 @@ export interface ClientChanges {
   status?: ClientStatus;
   archivedAt?: "now" | null;
   ownerId?: string;
+  /**
+   * Tell the new owner (M9, FR-NTF-03 "client reassigned to me"): the
+   * repository writes their bell entry in the same transaction as the move,
+   * so the two commit together (ARCHITECTURE §8).
+   */
+  reassignedNotice?: ClientReassignedNotice;
+}
+
+/** The facts of a reassignment, for the new owner's notification. */
+export interface ClientReassignedNotice {
+  clientId: string;
+  clientName: string;
+  toOwnerId: string;
+  actorId: string;
 }
 
 /**

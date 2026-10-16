@@ -8,7 +8,16 @@ import { clientsRouter } from "../modules/clients/api/clients.routes";
 import { CLIENT_STATUSES, SOCIAL_PLATFORMS } from "../modules/clients/domain/client.entity";
 import { stageTemplatesRouter } from "../modules/stage-templates/api/stage-templates.routes";
 import { eventsRouter } from "../modules/events/api/events.routes";
+import { personalEventsRouter } from "../modules/personal-events/api/personal-events.routes";
+import { calendarRouter } from "../modules/calendar/api/calendar.routes";
+import { teamMembersRouter } from "../modules/team-members/api/team-members.routes";
 import { EVENT_STATES, EVENT_TYPES } from "../modules/events/domain/event.entity";
+import { assetsRouter } from "../modules/assets/api/assets.routes";
+import { ASSET_TYPES } from "../modules/assets/domain/asset.entity";
+import { staffTasksRouter } from "../modules/staff-tasks/api/staff-tasks.routes";
+import { STAFF_TASK_PRIORITIES, STAFF_TASK_STATUSES, STAFF_TASK_UPDATE_KINDS } from "../modules/staff-tasks/domain/staff-task.entity";
+import { notificationsRouter } from "../modules/notifications/api/notifications.routes";
+import { NOTIFICATION_TYPES } from "../modules/notifications/domain/notification.entity";
 
 /**
  * openapi.yaml is hand-maintained, so it can silently drift from the code.
@@ -28,6 +37,12 @@ const MOUNTED: [string, Router][] = [
   ["/api/v1/clients", clientsRouter],
   ["/api/v1/stage-templates", stageTemplatesRouter],
   ["/api/v1/events", eventsRouter],
+  ["/api/v1/personal-events", personalEventsRouter],
+  ["/api/v1/calendar", calendarRouter],
+  ["/api/v1/team-members", teamMembersRouter],
+  ["/api/v1/assets", assetsRouter],
+  ["/api/v1/staff-tasks", staffTasksRouter],
+  ["/api/v1/notifications", notificationsRouter],
 ];
 
 /** Express 4 keeps each route on its router's stack as { route: { path, methods } }. */
@@ -66,6 +81,26 @@ describe("openapi.yaml stays in sync with the Events module", () => {
   it("documents exactly the event types and states, in order", () => {
     expect(schemas.EventType?.enum).toEqual([...EVENT_TYPES]);
     expect(schemas.EventState?.enum).toEqual([...EVENT_STATES]);
+  });
+});
+
+describe("openapi.yaml stays in sync with the Assets module", () => {
+  it("documents exactly the asset types, in order", () => {
+    expect(schemas.AssetType?.enum).toEqual([...ASSET_TYPES]);
+  });
+});
+
+describe("openapi.yaml stays in sync with the Staff tasks module", () => {
+  it("documents exactly the task statuses, priorities and timeline kinds, in order", () => {
+    expect(schemas.StaffTaskStatus?.enum).toEqual([...STAFF_TASK_STATUSES]);
+    expect(schemas.StaffTaskPriority?.enum).toEqual([...STAFF_TASK_PRIORITIES]);
+    expect(schemas.StaffTaskUpdateKind?.enum).toEqual([...STAFF_TASK_UPDATE_KINDS]);
+  });
+});
+
+describe("openapi.yaml stays in sync with the Notifications module", () => {
+  it("documents exactly the notification types, in order", () => {
+    expect(schemas.NotificationType?.enum).toEqual([...NOTIFICATION_TYPES]);
   });
 });
 

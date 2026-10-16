@@ -6,6 +6,10 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only read: `profiles` is owned by the Users
 // module's schema (owner name, owner candidate). See docs/adr/0003.
 import { profiles } from "../../users/infrastructure/profile.schema";
+// Cross-module Infrastructure-only write: the new owner's bell entry goes in
+// the same transaction as the reassignment, through the Notifications
+// module's public surface (ARCHITECTURE §8). See docs/adr/0003.
+import { clientReassignedPayload, insertNotificationsInTransaction } from "../../notifications/notifications.module";
 import { clients } from "./clients.schema";
 import { ClientMapper, type ClientRow, type ClientSummaryRow } from "./client.mapper";
 import type { ClientEntity } from "../domain/client.entity";
@@ -181,6 +185,16 @@ export class DrizzleClientsRepository implements ClientsRepositoryPort {
             version: sql`${clients.version} + 1`,
           })
           .where(eq(clients.id, id));
+
+        const notice = changes.reassignedNotice;
+        if (notice) {
+          await insertNotificationsInTransaction(tx, {
+            type: "client_reassigned",
+            recipientIds: [notice.toOwnerId],
+            actorId: notice.actorId,
+            payload: clientReassignedPayload({ clientId: notice.clientId, clientName: notice.clientName }),
+          });
+        }
       });
       return (await selectClient(db, id))!;
     });

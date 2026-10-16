@@ -2,7 +2,9 @@ import { inArray } from "drizzle-orm";
 import { db } from "../../src/common/database/drizzle-client";
 import { clients } from "../../src/modules/clients/infrastructure/clients.schema";
 import { events } from "../../src/modules/events/infrastructure/events.schema";
+import { assets, tags } from "../../src/modules/assets/infrastructure/assets.schema";
 import { stageTemplates } from "../../src/modules/stage-templates/infrastructure/stage-templates.schema";
+import { staffTasks } from "../../src/modules/staff-tasks/infrastructure/staff-tasks.schema";
 import { supabaseClient } from "../../src/common/database/supabase-client";
 import { authProvider } from "../../src/common/auth/supabase-auth-provider";
 import type { Role } from "../../src/domain";
@@ -67,6 +69,9 @@ export async function deleteFixtureUser(userId: string): Promise<void> {
 export async function deleteClientsOwnedBy(ownerIds: string[]): Promise<void> {
   if (ownerIds.length === 0) return;
   const owned = db.select({ id: clients.id }).from(clients).where(inArray(clients.ownerId, ownerIds));
+  // Assets and tags first (assets.client_id / tags.client_id are RESTRICT too; asset_tags cascade).
+  await db.delete(assets).where(inArray(assets.clientId, owned));
+  await db.delete(tags).where(inArray(tags.clientId, owned));
   await db.delete(events).where(inArray(events.clientId, owned));
   await db.delete(clients).where(inArray(clients.ownerId, ownerIds));
 }
@@ -79,6 +84,17 @@ export async function deleteClientsOwnedBy(ownerIds: string[]): Promise<void> {
 export async function deleteStageTemplates(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   await db.delete(stageTemplates).where(inArray(stageTemplates.id, ids));
+}
+
+/**
+ * Deletes the staff tasks assigned to these fixture users (their timelines
+ * cascade). staff_tasks.assignee_id is ON DELETE RESTRICT, so a test that
+ * assigns tasks must call this before deleteFixtureUser for the assignees.
+ * Fixture data only.
+ */
+export async function deleteStaffTasksFor(assigneeIds: string[]): Promise<void> {
+  if (assigneeIds.length === 0) return;
+  await db.delete(staffTasks).where(inArray(staffTasks.assigneeId, assigneeIds));
 }
 
 /** Call once in an `afterAll` per test file so the Postgres pool doesn't keep the process alive. */

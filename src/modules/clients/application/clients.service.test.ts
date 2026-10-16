@@ -10,8 +10,10 @@ import type {
   ClientListFilters,
   ClientListPage,
   ClientsRepositoryPort,
+  ClientReassignedNotice,
   NewClientRecord,
 } from "./ports/clients-repository.port";
+import type { ClientNotifier } from "./ports/client-notifier.port";
 import type { CreateClientDto } from "../api/dto/create-client.dto";
 import type { ClientQueryDto } from "../api/dto/client-query.dto";
 
@@ -67,6 +69,8 @@ class FakeClientsRepository implements ClientsRepositoryPort {
   ]);
   lastFilters: ClientListFilters | null = null;
   writes = 0;
+  /** Bell entries the real repository would write inside the transaction. */
+  notices: ClientReassignedNotice[] = [];
 
   findMany(filters: ClientListFilters, page: ClientListPage) {
     this.lastFilters = filters;
@@ -91,6 +95,7 @@ class FakeClientsRepository implements ClientsRepositoryPort {
       Object.keys(changes.fields ?? {}).length === 0 && !changes.status && !changes.ownerId && changes.archivedAt === undefined;
     if (empty) return Promise.resolve(current); // like the real repository: nothing written, version unchanged
     this.writes += 1;
+    if (changes.reassignedNotice) this.notices.push(changes.reassignedNotice);
     const next: ClientEntity = {
       ...current,
       ...changes.fields,
@@ -123,6 +128,7 @@ describe("ClientsService", () => {
   let repo: FakeClientsRepository;
   let audit: AuditLogger & { events: AuditEvent[] };
   let service: ClientsService;
+  let pushed: ClientReassignedNotice[];
 
   beforeEach(() => {
     repo = new FakeClientsRepository();
@@ -130,7 +136,9 @@ describe("ClientsService", () => {
     repo.rows.set("c2", client({ id: "c2", ownerId: "sara", ownerName: "Sara" }));
     const events: AuditEvent[] = [];
     audit = { events, record: (e) => (events.push(e), Promise.resolve()) };
-    service = new ClientsService(repo, audit, "Asia/Kolkata");
+    pushed = [];
+    const notifier: ClientNotifier = { clientReassigned: (n) => (pushed.push(n), Promise.resolve()) };
+    service = new ClientsService(repo, audit, "Asia/Kolkata", notifier);
   });
 
   describe("list", () => {
@@ -251,6 +259,20 @@ describe("ClientsService", () => {
       expect(audit.events).toEqual([
         expect.objectContaining({ action: AUDIT_ACTIONS.CLIENT_REASSIGNED, entityId: "c1", metadata: { from: "rohan", to: "sara" } }),
       ]);
+    });
+
+    it("tells the new owner: a bell entry in the write, then a push after it (M9)", async () => {
+      await service.reassign(ADMIN, "c1", { ownerId: "sara", version: 1 });
+      const notice = { clientId: "c1", clientName: "Acme", toOwnerId: "sara", actorId: "admin" };
+      expect(repo.notices).toEqual([notice]);
+      expect(pushed).toEqual([notice]);
+    });
+
+    it("notifies nobody when nothing moved, or the Admin takes the client themselves", async () => {
+      await service.reassign(ADMIN, "c1", { ownerId: "rohan" });
+      await service.reassign(ADMIN, "c1", { ownerId: "admin" });
+      expect(repo.notices).toEqual([]);
+      expect(pushed).toEqual([]);
     });
 
     it("works on an archived client", async () => {

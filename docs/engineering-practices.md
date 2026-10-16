@@ -18,7 +18,7 @@ arrives in M11; until then the query budget below is the check.)
 
 | Practice | Why | Where / how it's enforced |
 | --- | --- | --- |
-| **Every list is paginated and the page size is capped** (users ≤ 100, clients ≤ 100; every later list states its cap here). | Without a cap, one request can fetch the whole table: slow for that user, and it takes a database connection from everyone else. | Query DTOs clamp or refuse the limit; `tests/integration/query-budget.integration.test.ts` asserts that an over-large `limit` is clamped or refused. |
+| **Every list is paginated and the page size is capped** (users ≤ 100, clients ≤ 100, stage templates ≤ 100, assets ≤ 100, staff tasks ≤ 100, tag suggestions ≤ 50, events ≤ 200 -- a month of calendar at once; calendar ranges ≤ 92 days; every later list states its cap here). | Without a cap, one request can fetch the whole table: slow for that user, and it takes a database connection from everyone else. | Query DTOs clamp or refuse the limit; `tests/integration/query-budget.integration.test.ts` asserts that an over-large `limit` is clamped or refused. |
 | **No N+1 queries.** A list page takes the same number of queries for 5 rows as for 50. | N+1 means one query per row, so a 50-row page costs 51 round trips. It looks fine in development and falls over in production. | Relational `with:` loads, `inArray(ids)` batches, one grouped query. The query-budget test counts queries at the pool for page 5 vs page 50. |
 | **Aggregate in SQL, not in Node** (`count(*) filter (where …)`, `sum`, `group by`). | Fetching rows only to count them in JavaScript moves every row over the network. | Dashboards (M10), list totals (`countMany`). |
 | **Index what we filter, join and sort on**, including *partial* indexes for "the small live part of a growing table". | An index turns "read every row" into "read the few rows that match". A partial index stays small as history grows. | See the index list below. |
@@ -38,6 +38,19 @@ arrives in M11; until then the query budget below is the check.)
 | `clients (status, created_at desc, id desc)` | The Admin's all-clients list and the status filter (default list = `status <> 'archived'`) |
 | `clients (lower(industry))` | Industry filter (case-insensitive exact match) |
 | `clients using gin (business_name gin_trgm_ops)` | Client name search (`ILIKE '%term%'`, escaped by `containsPattern`) |
+| `stage_templates (lower(name))` unique, `(active, lower(name))` | Name uniqueness; the managers' active-template picker |
+| `stage_template_stages (template_id, position)` unique | A template's ordered stages (batched for a whole page) |
+| `events (client_id, starts_at)` | A client's Events tab |
+| `assets (client_id, created_at desc, id desc) where deleted_at is null` (+ `(client_id, type, created_at desc)`, `(created_at desc, id desc)`, `(event_id)`, same predicate) | A client's Assets tab, type filter, the Admin's all-assets list, assets of an event |
+| `assets` GIN trigram on `title` and `comment`; `tags` GIN trigram on `name`; unique `tags (client_id, lower(name))`; `asset_tags (tag_id, asset_id)` | Asset search (title, comment, tag), reusable per-client tags, tag filter and suggestion counts |
+| `events (starts_at)` | Calendar ranges; bounded below by `from - 31 days` (no event lasts longer), so the scan stays the range's size |
+| `event_stages (event_id, position)` unique, `(id, event_id)` unique | An event's stages in order; target of the current-stage composite FK |
+| `event_stage_history (event_id, created_at desc)` | An event's history, newest first (detail shows the last 100) |
+| `staff_tasks (assignee_id, created_at desc, id desc)` | "My tasks" (every assignee's whole list), the Admin's assignee filter, the RESTRICT FK check |
+| `staff_tasks (assignee_id, due_at) where status <> 'done'`, `staff_tasks (due_at) where status <> 'done'` | The **live set**: an assignee's open tasks by due date, firm-wide overdue / due-soon (overdue filter, M10 dashboards). Done tasks never enter these indexes, so they stay small as history grows |
+| `staff_tasks (status, created_at desc, id desc)` | The Admin's status filter and each Kanban column (one query per status) |
+| `staff_tasks (client_id) where client_id is not null`, `(event_id) where event_id is not null` | Client filter; the `ON DELETE SET NULL` FKs. Priority (4 values) has no index on purpose: too unselective, always combined with another filter |
+| `staff_task_updates (task_id, created_at desc, id desc)` | A task's timeline, newest first (detail shows the last 100) |
 
 Every later module adds its rows here in the same change as its migration.
 
@@ -49,7 +62,7 @@ Every later module adds its rows here in the same change as its migration.
 | --- | --- |
 | **Instants are `timestamptz` (UTC); every user, client and event carries an IANA time zone** (REQUIREMENTS NFR-08). A "day" is always *someone's* day: the viewer's for calendars, the client's on the portal. Zones are validated with `isValidTimeZone` (named zones only; raw offsets like `+05:30` are refused because they carry no daylight-saving rules). | Time-zone and daylight-saving bugs shift events by hours or days. |
 | **Rules that must hold under concurrency run inside the transaction, after the row lock** (guard-callback pattern; e.g. event stage moves in M4). | A check made before the lock can be stale by the time you write. |
-| **Optimistic locking (`version` column → 409) on records two people edit**: clients (M3, `409 CLIENT_MODIFIED`, ADR 0005), events when they land. | Two people editing the same record can't silently overwrite each other. |
+| **Optimistic locking (`version` column → 409) on records two people edit**: clients (M3, `409 CLIENT_MODIFIED`, ADR 0005), stage templates and events (M4, `STAGE_TEMPLATE_MODIFIED` / `EVENT_MODIFIED`, ADR 0006). | Two people editing the same record can't silently overwrite each other. |
 | **Critical enums are also `CHECK` constraints in the database** (roles today; event/comment/task statuses as they land). | The database is the last line of defence. |
 | **Snapshot what must not change retroactively**: an event copies its stage template's stages (REQUIREMENTS: stages used as-is). | Editing a template must not rewrite live events' history. |
 
@@ -57,7 +70,7 @@ Every later module adds its rows here in the same change as its migration.
 
 | Practice | Why |
 | --- | --- |
-| **RBAC is enforced in the API** (capability matrix + row scope + RLS as defence in depth). The web only hides buttons. | Anyone can call the API directly; UI checks are not security. `npm run test:rbac` checks every endpoint × all six roles (74 checks at M2, 124 at M3). |
+| **RBAC is enforced in the API** (capability matrix + row scope + RLS as defence in depth). The web only hides buttons. | Anyone can call the API directly; UI checks are not security. `npm run test:rbac` checks every endpoint × all six roles (74 checks at M2, 124 at M3; M4 adds templates and events). |
 | **Row scope for managers**: a Social Media / Marketing Manager only ever reads or writes their own clients (and everything under them); a miss is a 404, never a 403 that confirms the record exists. | Ownership is the core privacy rule of the product. |
 | **Validate every input with zod at the edge; parse queries strictly** (400 on a bad role / non-numeric limit, never silently use a default). | A silent fallback shows the wrong data with no error. |
 | **Rate-limited auth (and, from M8, the public portal); `TRUST_PROXY` = number of proxies in production.** | Brute-force protection only works when it keys on the real client IP. |

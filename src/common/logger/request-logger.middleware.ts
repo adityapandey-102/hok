@@ -1,6 +1,7 @@
 import pinoHttp from "pino-http";
 import { randomUUID } from "node:crypto";
 import { logger } from "./logger";
+import { redactUrl } from "./redact-url";
 
 /**
  * Logs every request/response with a consistent shape -- method, path,
@@ -10,7 +11,8 @@ import { logger } from "./logger";
  * with request context for free without threading a logger everywhere.
  *
  * Sensitive material is redacted, in dev and prod alike: the bearer token
- * (`authorization`) and any cookies -- these must never reach a log line.
+ * (`authorization`) and any cookies -- these must never reach a log line --
+ * and the client-portal token in /api/v1/portal/<token> URLs (redact-url.ts).
  */
 export const requestLogger = pinoHttp({
   logger,
@@ -26,8 +28,14 @@ export const requestLogger = pinoHttp({
       "req.headers.cookie",
       "res.headers.authorization",
       'res.headers["set-cookie"]',
+      "req.params.token",
     ],
     censor: "[redacted]",
+  },
+  // The standard req serializer runs first; this only rewrites the URL so a
+  // portal token never appears in the access log.
+  serializers: {
+    req: (req: { url?: string }) => Object.assign(req, { url: redactUrl(req.url) }),
   },
   // Identity of the caller, added to every request log once requireAuth has
   // run. `req.profile` is populated before the handler, so it's present by
@@ -43,6 +51,6 @@ export const requestLogger = pinoHttp({
     if (res.statusCode >= 400) return "warn";
     return "info";
   },
-  customSuccessMessage: (req, res) => `${req.method} ${req.url} -> ${res.statusCode}`,
-  customErrorMessage: (req, res, err) => `${req.method} ${req.url} -> ${res.statusCode} (${err.message})`,
+  customSuccessMessage: (req, res) => `${req.method} ${redactUrl(req.url)} -> ${res.statusCode}`,
+  customErrorMessage: (req, res, err) => `${req.method} ${redactUrl(req.url)} -> ${res.statusCode} (${err.message})`,
 });

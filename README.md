@@ -19,9 +19,10 @@ Decisions: [`docs/adr/`](docs/adr).
 > update the relevant section here in the same change.
 
 **Status (2026-10-13):** M0 (foundation), the API side of M2 (login,
-users & roles) and of M3 (clients: ownership, row scope, archive, reassign)
-are in place. Events, calendars, assets, portal, comments, tasks,
-notifications and dashboards arrive in M4-M10
+users & roles), of M3 (clients: ownership, row scope, archive, reassign)
+and of M4 (stage templates; events with copied stages, stage moves + history,
+calendar range query) are in place. Calendars UI, assets, portal, comments,
+tasks, notifications and dashboards arrive in M5-M10
 (`../docs/DEVELOPMENT-PLAN.md`). Local machine only -- no production yet.
 
 ## Stack
@@ -123,7 +124,7 @@ and so is analytics. See ADR 0004.
 | `npm run test:unit` | Domain rules, services against in-memory fakes, the OpenAPI drift check. No database (placeholder env in `vitest.config.ts`) |
 | `npm run test:integration` | Real Postgres + GoTrue + the Express app in-process (`tests/integration/`, see its README). Includes the query budget |
 | `npm run test:rbac` | `tests/rbac-matrix.mjs`: every endpoint × six roles against the **running** API. Needs `SEED_ADMIN_PASSWORD` (local: `Hok@2026`); creates and then deactivates its own fixture accounts |
-| `npm run seed` | `src/db/seed.ts`: one staff account per role (`admin@hok.test`, `rohan.smm@hok.test`, `sara.smm@hok.test`, `vikram.mm@hok.test`, `neha.agent@hok.test`, `arjun.dev@hok.test`, `meera.editor@hok.test`; password `Hok@2026`), with mixed time zones; 8 clients across Rohan, Sara, Vikram and the Admin (one paused, one archived). Safe to re-run; never deletes. **Local only** |
+| `npm run seed` | `src/db/seed.ts`: one staff account per role (`admin@hok.test`, `rohan.smm@hok.test`, `sara.smm@hok.test`, `vikram.mm@hok.test`, `neha.agent@hok.test`, `arjun.dev@hok.test`, `meera.editor@hok.test`; password `Hok@2026`), with mixed time zones; 8 clients across Rohan, Sara, Vikram and the Admin (one paused, one archived); 3 stage templates (Photo Shoot, Reel Production, Campaign Launch); 3 events per client (3 weeks ago and finished, tomorrow mid-way, in 12 days just planned) in each client's time zone, with stage history. Safe to re-run; never deletes. **Local only** |
 | `npm run db:studio` | Drizzle Studio against `DATABASE_URL` |
 | `npm run db:generate` | drizzle-kit diff of the `*.schema.ts` files -- a drafting aid only. Migrations are hand-written SQL in `supabase/migrations/` (ADR 0004); never commit its `drizzle/` output |
 | `npm run docker:build` | Builds the production image |
@@ -172,7 +173,8 @@ regardless of size. Decisions: `docs/adr/0001` (the modular monolith),
 Infrastructure), `0004` (HOK's foundations: ports, SQL migrations, sign-up
 off, storage/realtime off, least-privileged trigger default, per-user time
 zones, account rules), `0005` (clients: single owner, 404 row scope, archive,
-optimistic lock).
+optimistic lock), `0006` (stage templates and events: copied stages, free stage
+moves, range-bounded calendars).
 
 ### Directory tree (today)
 
@@ -196,14 +198,19 @@ src/
     auth/                  login, refresh, logout, password reset/update, exchange-code, /me (+ self-edit), bootstrap
     users/                 Admin-managed staff accounts; owns the `profiles` schema
     clients/               client profiles, owner row scope, archive, reassign; owns the `clients` schema
+    stage-templates/       Admin-made templates (name + ordered stages); owns `stage_templates`, `stage_template_stages`
+    assets/                asset link library: links + tags + search; owns `assets`, `tags`, `asset_tags`
+    events/                client events: copied stages, stage moves + history, state, range query; owns `events`, `event_stages`, `event_stage_history`
+    staff-tasks/           Admin-assigned staff tasks: assignee row scope, status + timeline, editor brief, reopen; owns `staff_tasks`, `staff_task_updates`
   docs/openapi.ts          loads openapi.yaml once for /api-docs (+ drift test)
   db/seed.ts               local dev seed
 supabase/
   config.toml              project `hok`, ports 544xx, sign-up off, storage/realtime/analytics off
   migrations/              hand-written SQL: 20261013000001_profiles.sql, 20261013000002_audit_log.sql,
-                           20261013000003_clients.sql
+                           20261013000003_clients.sql, 20261013000004_stage_templates_events.sql,
+                           20261014100001_assets.sql, 20261014200001_staff_tasks.sql
 tests/
-  integration/             real-stack tests (foundation, auth, users, clients, query budget) + helpers
+  integration/             real-stack tests (foundation, auth, users, clients, events, query budget) + helpers
   rbac-matrix.mjs          per-role HTTP check against the running API
 openapi.yaml               hand-maintained API contract, served at /api-docs
 ```
@@ -284,6 +291,9 @@ message.** Codes in use today:
 | Generic | `VALIDATION_ERROR` (400, with zod `details`), `VALIDATION_NO_FIELDS` (400), `MALFORMED_REQUEST` (400), `PAYLOAD_TOO_LARGE` (413), `ROUTE_NOT_FOUND` (404), `RATE_LIMITED` (429), `FORBIDDEN` (403, role lacks the capability), `DATABASE_ERROR` / `INTERNAL` (500); the `AppError` subclasses' fallbacks `BAD_REQUEST`, `UNAUTHORIZED`, `NOT_FOUND`, `CONFLICT` when a throw site has nothing more specific (e.g. GoTrue rejecting a weak password is `400 BAD_REQUEST`) |
 | Auth | `AUTH_TOKEN_MISSING`, `AUTH_SESSION_INVALID`, `AUTH_INVALID_CREDENTIALS`, `AUTH_LINK_INVALID` (401); `AUTH_PROFILE_MISSING`, `AUTH_ACCOUNT_DEACTIVATED`, `AUTH_BOOTSTRAP_ALREADY_DONE` (403) |
 | Users | `USER_NOT_FOUND` (404), `USER_CANNOT_DEACTIVATE_SELF`, `USER_CANNOT_CHANGE_OWN_ROLE` (400), `USER_PASSWORD_SELF_MANAGED` (403), `USER_EMAIL_TAKEN` (409) |
+| Stage templates | `STAGE_TEMPLATE_NOT_FOUND` (404), `STAGE_TEMPLATE_STAGES_INVALID` (400), `STAGE_TEMPLATE_NAME_TAKEN`, `STAGE_TEMPLATE_MODIFIED` (409) |
+| Events | `EVENT_NOT_FOUND` (404, also for another manager's), `EVENT_TIMES_INVALID`, `EVENT_TEMPLATE_INVALID`, `EVENT_TEAM_INVALID`, `EVENT_STAGE_INVALID`, `EVENT_RANGE_INVALID` (400), `EVENT_MODIFIED`, `EVENT_STAGE_UNCHANGED`, `EVENT_NOT_ACTIVE` (409); `CLIENT_ARCHIVED` (409) for any write under an archived client |
+| Assets | `ASSET_NOT_FOUND` (404, also for another manager's), `ASSET_EVENT_INVALID`, `ASSET_RANGE_INVALID` (400), `ASSET_MODIFIED` (409); `CLIENT_ARCHIVED` (409) for any write under an archived client |
 | Clients | `CLIENT_NOT_FOUND` (404, also for another manager's client), `CLIENT_OWNER_INVALID`, `CLIENT_CONTRACT_DATES_INVALID` (400), `CLIENT_OWNER_FORBIDDEN` (403), `CLIENT_MODIFIED`, `CLIENT_ARCHIVED`, `CLIENT_NOT_ARCHIVED` (409) |
 
 Adding an error means adding its code to the registry first, then
@@ -322,7 +332,7 @@ already carries the id.
 - **Input validation**: every body/query is parsed by zod before a controller runs. Time zones must be named IANA zones; phones and photo URLs are validated (`src/domain/contact.ts`: http(s) only, so no `javascript:` links).
 - **Auth rate limiting**: `common/middleware/rate-limit.middleware.ts` (`express-rate-limit`, in-memory) on bootstrap, login, refresh, password-reset-request, password-update and exchange-code: `AUTH_RATE_LIMIT_MAX` (30) per `AUTH_RATE_LIMIT_WINDOW_MS` (15 min) per IP → `429 RATE_LIMITED`. In-memory is right for one process; a shared store later is a one-line `store:` change. `TRUST_PROXY` (default `loopback`, for the Next.js session proxy in dev) makes it key on the real client IP.
 - **No public sign-up** (`enable_signup = false`); the profiles trigger defaults a missing role to the least-privileged `editor` (ADR 0004).
-- **Audit log** (`audit_log`, written by `DrizzleAuditLogger`, best-effort, never breaks the action): sign-ins, sign-outs, password changes, bootstrap, account create/update/deactivate/reactivate/password-regenerate, self profile edits; client create/update (field names only, never values)/archive/unarchive/reassign (`{ from, to }`). No Data-API grant.
+- **Audit log** (`audit_log`, written by `DrizzleAuditLogger`, best-effort, never breaks the action): sign-ins, sign-outs, password changes, bootstrap, account create/update/deactivate/reactivate/password-regenerate, self profile edits; client create/update (field names only, never values)/archive/unarchive/reassign (`{ from, to }`); stage template create/update; event create/update. Stage moves are recorded in `event_stage_history`, not here. No Data-API grant.
 
 ### RBAC
 
@@ -350,9 +360,13 @@ records the scope on `req.capabilityScope`; repositories apply the row filter.
 
 In use today: `users:manage` (all of `/users`); `clients:read` (every
 `/clients` route), `clients:write` (create, edit, archive, unarchive) and
-`clients:reassign` (Admin only). Every authenticated role may read and edit its
+`clients:reassign` (Admin only); `events:read` / `events:write` (`/events`,
+and reading `/stage-templates`, active only for managers) and
+`stage_templates:manage` (template writes, Admin only); `staff_tasks:read` (every `/staff-tasks`
+route; own tasks for non-admins), `staff_tasks:update` (status, comments) and
+`staff_tasks:assign` (create, edit, reassign, reopen, delete; Admin only). Every authenticated role may read and edit its
 own profile (`/auth/me`). `npm run test:rbac` proves it over HTTP for all six
-roles (74 checks at M2, 124 at M3).
+roles (74 checks at M2, 124 at M3; M4 adds the template and event cases).
 
 **Row scope (clients).** The capability says *whether* a role may touch
 clients; the scope says *which*. `ClientsService` turns `"own"` into
@@ -415,6 +429,44 @@ owned by the Clients module.
 - **Optimistic lock.** `version` (needleye's pattern): every write bumps it; `PATCH` **requires** the version the form loaded, archive / unarchive / reassign accept it optionally; a stale one is `409 CLIENT_MODIFIED`. Every write is one transaction: `SELECT … FOR UPDATE OF clients`, then the service's guard callback (scope, version, state, contract dates against the stored values), then the update.
 - **Fields.** `social_handles` is a `jsonb` object keyed by a fixed platform list (instagram, facebook, tiktok, youtube, linkedin, x, threads, pinterest, snapchat); each value is a handle or an http(s) link. `services` is `text[]`, a flat list of labels (trimmed, case-insensitive de-duplicated, max 20 × 60 chars): no structure to model, and `= any(services)` or a GIN index work on it directly if it's ever filtered on. Websites are stored with a scheme (`acme.com` → `https://acme.com`); logo URLs must be full http(s) links; `timeZone` is a named IANA zone (default `DEFAULT_TIMEZONE`); contract dates are `YYYY-MM-DD` and the end can't precede the start (API rule + DB CHECK). `notes` are internal and will never reach the portal.
 - **Lists.** `GET /clients` returns a summary row (no notes, address, handles, services), newest first, one page query (joined to the owner's name) + one `count(*)`. Filters: `search` (business name, trigram-indexed), `status`, `industry` (case-insensitive exact), `ownerId` (Admin only). Indexes: `(owner_id, created_at desc, id desc)`, `(status, created_at desc, id desc)`, `lower(industry)`, a GIN trigram index on `business_name`.
+
+### Stage templates and events (M4, ADR 0006)
+
+REQUIREMENTS §5.3. Migration `20261013000004_stage_templates_events.sql`.
+
+- **Templates** (Admin): a name (unique, ignoring case) and 1-20 ordered stages. A PATCH replaces the whole stage list (rename / reorder / add / remove) and/or sets `active`; `version` required. Managers read active templates only (to pick one); an inactive template is a 404 for them.
+- **Events** go under one of the caller's clients (`events:write` + the client's owner; a client that isn't yours is `404 CLIENT_NOT_FOUND`), from an **active** template whose stages are **copied** onto the event (`event_stages`); the first becomes current and a first history entry is written. Later template edits never reach existing events. A composite FK keeps the current stage one of the event's own.
+- **Stage moves** (`POST /events/:id/stage`): any stage of the event, forward or back, with an optional note and `visibleToClient` (for the M8 portal); the move and its `event_stage_history` row are one transaction with the version check. Not to the current stage, not on a cancelled/postponed event.
+- **State**: active / cancelled / postponed, any change, through PATCH (with title, type, reschedule, location, description, team). `version` required on every write (`409 EVENT_MODIFIED`).
+- **Archived client** → its events are read-only (`409 CLIENT_ARCHIVED` on every write).
+- **Time**: instants with an offset in, UTC ISO out; `timeZone` is the event's IANA zone (defaults to the client's). Ends on/after start, at most 31 days.
+- **Lists**: `GET /events` serves the client's Events tab (`clientId`) and the calendars (`from` + `to`, ≤ 92 days, overlapping events, earliest first; the 31-day max length bounds the `starts_at` index scan). Rows carry the client name and current stage (name, position, stage count); page cap 200. Detail: the event + stages + last 100 history entries + team names (three parallel queries).
+
+### Asset links (M6)
+
+REQUIREMENTS §5.5. Migration `20261014100001_assets.sql` (tables `assets`, `tags`, `asset_tags`).
+
+- **Links only, never files.** `url` must be http(s) (zod `isValidHttpUrl` + a DB CHECK backstop, so a `javascript:` / `data:` URL can never be stored). Type: photo / video / document / design / audio / other. Comment up to 2000 characters.
+- **Row scope through the client**: an asset belongs to a client; the Admin sees all, a Social Media / Marketing Manager only assets of clients they own (anything else is `404 ASSET_NOT_FOUND`), task-only staff `403`. Capabilities `assets:read` / `assets:write`. Never shown on the portal.
+- **Tags** are per client and matched ignoring case (unique index on `(client_id, lower(name))`; the first spelling is kept). Up to 10 per asset, 30 characters each; a PATCH `tags` replaces the whole set. `GET /assets/tags` auto-suggests tags in use by live assets (with counts), for one client or the caller's whole scope.
+- **Event link**: optional `eventId` must be one of the asset's own client's events (`400 ASSET_EVENT_INVALID`; checked in the API because events never change client). FK `ON DELETE SET NULL`.
+- **Writes**: `version` required on PATCH (`409 ASSET_MODIFIED`); DELETE is a **soft delete** (`deleted_at`, version bumped) with an optional `?version=`. An archived client's assets are read-only (`409 CLIENT_ARCHIVED`) but still readable. Create locks the client row FOR SHARE and re-checks scope and status there.
+- **Lists**: `GET /assets` (all caller-scope assets, or one client via `clientId`), newest first, page cap 100. Filters: `search` (title, comment or tag; trigram-indexed), `type`, `tag` (exact, case-insensitive), `eventId`, `from`/`to` (instants, the web sends the viewer's day boundaries; `from` inclusive, `to` exclusive), `ownerId` (Admin). Queries: one page query (joined to client, event title and creator), one `count(*)`, one tags query for the whole page -- constant, never per row. Partial indexes (`where deleted_at is null`): `(client_id, created_at desc, id desc)`, `(client_id, type, created_at desc)`, `(created_at desc, id desc)`, `(event_id)`, trigram on `title` and `comment`; trigram on `tags.name`.
+- Audit: `asset.created`, `asset.updated` (field names), `asset.deleted` -- never the URL.
+
+### Staff tasks (M7)
+
+REQUIREMENTS §5.9 (FR-TSK-01..10; reminders FR-TSK-11 are Phase 2). Migration `20261014200001_staff_tasks.sql` (tables `staff_tasks`, `staff_task_updates`).
+
+- **Who does what.** Only the Admin creates, edits, reassigns, reopens and deletes (`staff_tasks:assign`). Exactly one assignee, any **active** staff member of any role (`400 STAFF_TASK_ASSIGNEE_INVALID`); `assignee_id` is `ON DELETE RESTRICT`. Everyone else has `staff_tasks:read/update = own`: they see only tasks assigned to them (anyone else's is **404 `STAFF_TASK_NOT_FOUND`**, also with a stale version) and work on them. A Social Media / Marketing Manager receives tasks the same way.
+- **Status.** `todo`, `in_progress`, `blocked`, `done`. The assignee (or the Admin) moves an open task to any other status, done included, with an optional comment (`POST /:id/status`). A done task is closed (`409 STAFF_TASK_DONE`) until the Admin reopens it (`POST /:id/reopen`, to todo / in_progress / blocked). `completed_at` follows the status (DB CHECK).
+- **Timeline.** Every status change, comment, reassign and reopen appends a `staff_task_updates` row **in the same transaction** as the change (append-only; kinds `created`, `status`, `comment`, `reassigned`, `reopened`). Detail returns the newest 100. Comments (`POST /:id/comments`, assignee or Admin, any time) don't bump the task's `version`, so an open edit form isn't invalidated by a discussion.
+- **Editor tasks (decision).** When the assignee is an **editor**, `rawFilesUrl` (the Drive folder) is **required** (`400 STAFF_TASK_EDITOR_FIELDS_REQUIRED`); `referenceUrl` and `script` (up to 20 000 characters) are optional, because not every edit has an example or a script. For every other role the three fields stay empty: sending one is `400 STAFF_TASK_EDITOR_FIELDS_INVALID`, and reassigning a task from an editor to someone else **clears** them (the web warns first). All links must be http(s). Any task may also carry up to 10 `referenceLinks` (`{ url, label }`).
+- **Links.** Optional `clientId` / `eventId` (`ON DELETE SET NULL`). An event must belong to the named client; an event alone links its client; changing the client without an event unlinks the old event (`400 STAFF_TASK_CLIENT_INVALID` / `STAFF_TASK_EVENT_INVALID`). The assignee sees the client's name and the event's title on the task even without client access -- that's the task's context, nothing more. **Events safety:** the migration adds the `event_id` FK only if `public.events` exists (it does whenever `migration up` runs, because 20261013000004 sorts first); the repository treats a missing events table (SQLSTATE 42P01) as "no such event", so tasks keep working and `eventId` is refused with 400 instead of a 500.
+- **Optimistic lock.** `version` required on PATCH, status and reopen (`409 STAFF_TASK_MODIFIED`); every write is `SELECT … FOR UPDATE OF staff_tasks` + the service's guard callback + the update + the timeline row. Delete is a hard delete (timeline cascades; `staff_task.deleted` stays in the audit log).
+- **Lists.** `GET /staff-tasks`: page cap 100, one page query (joined to the assignee's profile and the client) + one `count(*)`. Filters: `status`, `open=true` (not done), `priority`, `overdue=true` (due before now and not done), `dueFrom`/`dueTo` (instants; the web sends the viewer's day boundaries), `search` (title), and for the Admin `assigneeId`, `role` (the assignee's) and `clientId`. Order: open before done, soonest due first (no due date last), newest; with `status=done`, latest completed first (one Kanban column = one `status` query).
+- **Notifications (M9 hook).** `StaffTasksService` calls a `StaffTaskNotifier` (`application/ports/staff-task-notifier.port.ts`) after commit: `taskAssigned` (create, reassign), `statusChanged` (status, reopen) and `commentAdded`, each with the actor. Today it's a no-op; M9 passes the real one in `staff-tasks.routes.ts`.
+- Audit: `staff_task.created`, `staff_task.updated` (field names only), `staff_task.reassigned` (`{ from, to }`), `staff_task.deleted`. Status changes and comments live in the timeline instead.
 
 ### Dependency injection
 
@@ -633,6 +685,33 @@ sequenceDiagram
     end
 ```
 
+### Move an event's stage
+
+```mermaid
+sequenceDiagram
+    participant FE as hok-web (manager or Admin)
+    participant API as events.routes.ts
+    participant Svc as EventsService
+    participant Repo as DrizzleEventsRepository
+    participant DB as Postgres
+
+    FE->>API: POST /events/:id/stage { stageId, note?, visibleToClient?, version }
+    Note over API: requireAuth + requireCapability(events:write) + zod
+    Svc->>Repo: moveStage(id, guard, entry)
+    Repo->>DB: BEGIN; SELECT event + client FOR UPDATE OF events; SELECT its stages
+    alt not visible (another manager's client)
+        Repo-->>FE: 404 EVENT_NOT_FOUND
+    else stale version / client archived / not active / same stage
+        Repo-->>FE: 409 EVENT_MODIFIED / CLIENT_ARCHIVED / EVENT_NOT_ACTIVE / EVENT_STAGE_UNCHANGED
+    else stage of another event
+        Repo-->>FE: 400 EVENT_STAGE_INVALID
+    else ok
+        Repo->>DB: UPDATE events SET current_stage_id, version + 1
+        Repo->>DB: INSERT event_stage_history (from, to, note, visible_to_client, changed_by); COMMIT
+        API-->>FE: 200 { event } (stages, history, new version)
+    end
+```
+
 ### Password reset
 
 ```mermaid
@@ -680,6 +759,29 @@ All paths are under `/api/v1`.
 | POST `/clients/:id/archive` | bearer | `clients:write` (own; else 404) | clients.routes.ts | `archive` | `update` (locked, guarded) |
 | POST `/clients/:id/unarchive` | bearer | `clients:write` (own; else 404) | clients.routes.ts | `unarchive` | `update` (locked, guarded) |
 | POST `/clients/:id/reassign` | bearer | `clients:reassign` (Admin) | clients.routes.ts | `reassign` | `findOwnerCandidate`, `update` (locked, guarded) |
+| GET `/stage-templates` | bearer | `events:read` (managers: active only) | stage-templates.routes.ts | `list` | `findMany` (+ batched stages), `countMany` (max 100) |
+| GET `/stage-templates/:id` | bearer | `events:read` (inactive → 404 for managers) | stage-templates.routes.ts | `get` | `findById` |
+| POST `/stage-templates` | bearer | `stage_templates:manage` | stage-templates.routes.ts | `create` | `create` |
+| PATCH `/stage-templates/:id` | bearer | `stage_templates:manage` | stage-templates.routes.ts | `update` | `update` (locked, guarded; replaces stages) |
+| GET `/events` | bearer | `events:read` (own clients for SMM/MM) | events.routes.ts | `list` | `findMany`, `countMany` (clientId, ownerId, from/to, state, type, search; max 200) |
+| GET `/events/:id` | bearer | `events:read` (own; else 404) | events.routes.ts | `get` | `findDetail` |
+| POST `/events` | bearer | `events:write` (own client; else 404) | events.routes.ts | `create` | `findClient`, `findTemplate`, `findActiveProfileIds`, `create` (client locked FOR SHARE) |
+| PATCH `/events/:id` | bearer | `events:write` (own; else 404) | events.routes.ts | `update` | `findActiveProfileIds`, `update` (locked, guarded) |
+| POST `/events/:id/stage` | bearer | `events:write` (own; else 404) | events.routes.ts | `moveStage` | `moveStage` (locked, guarded, + history) |
+| GET `/assets` | bearer | `assets:read` (own clients for SMM/MM) | assets.routes.ts | `list` | `findMany` (+ page tags), `countMany` (clientId, eventId, ownerId, search, type, tag, from/to; max 100) |
+| GET `/assets/tags` | bearer | `assets:read` | assets.routes.ts | `suggestTags` | `suggestTags` |
+| GET `/assets/:id` | bearer | `assets:read` (own; else 404) | assets.routes.ts | `get` | `findById` |
+| POST `/assets` | bearer | `assets:write` (own client; else 404) | assets.routes.ts | `create` | `findClient`, `findEvent`, `create` (client locked FOR SHARE) |
+| PATCH `/assets/:id` | bearer | `assets:write` (own; else 404) | assets.routes.ts | `update` | `findEvent`, `update` (locked, guarded) |
+| DELETE `/assets/:id` | bearer | `assets:write` (own; else 404) | assets.routes.ts | `remove` | `update` (locked, guarded; soft delete) |
+| GET `/staff-tasks` | bearer | `staff_tasks:read` (own for non-admins) | staff-tasks.routes.ts | `list` | `findMany`, `countMany` (status, open, priority, overdue, dueFrom/dueTo, search; Admin: assigneeId, role, clientId; max 100) |
+| GET `/staff-tasks/:id` | bearer | `staff_tasks:read` (own; else 404) | staff-tasks.routes.ts | `get` | `findDetail` (+ timeline, event title) |
+| POST `/staff-tasks` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `create` | `findAssigneeCandidate`, `findClient`, `findEvent`, `create` (+ "created" entry) |
+| PATCH `/staff-tasks/:id` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `update` | `findAssigneeCandidate`, `findClient`, `findEvent`, `update` (locked, guarded; + "reassigned" entry) |
+| DELETE `/staff-tasks/:id` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `delete` | `delete` (locked) |
+| POST `/staff-tasks/:id/status` | bearer | `staff_tasks:update` (own; else 404) | staff-tasks.routes.ts | `changeStatus` | `update` (locked, guarded; + "status" entry) |
+| POST `/staff-tasks/:id/reopen` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `reopen` | `update` (locked, guarded; + "reopened" entry) |
+| POST `/staff-tasks/:id/comments` | bearer | `staff_tasks:update` (own; else 404) | staff-tasks.routes.ts | `comment` | `addComment` |
 
 Not in the API (outside `/api/v1`): `GET /health`, `GET /health/ready`, `GET /api-docs`.
 

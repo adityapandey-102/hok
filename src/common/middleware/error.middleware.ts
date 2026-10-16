@@ -4,6 +4,7 @@ import { AppError } from "../errors/app-error";
 import { ERROR_CODES } from "../errors/error-codes";
 import { describeDbError } from "../database/db-logging";
 import { env } from "../../config/env";
+import { redactUrl } from "../logger/redact-url";
 
 export function notFoundHandler(req: Request, res: Response) {
   res.status(404).json({
@@ -48,7 +49,8 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   // req.route is loosely typed (any); read its path defensively, falling back
   // to the concrete path. Gives the matched route pattern where available.
   const routePath = (req.route as { path?: string } | undefined)?.path;
-  const logContext = { method: req.method, route: routePath ?? req.path };
+  // redactUrl: an unmatched portal path would otherwise log its token.
+  const logContext = { method: req.method, route: routePath ?? redactUrl(req.path) };
   const isDev = env.NODE_ENV === "development";
 
   if (err instanceof ZodError) {

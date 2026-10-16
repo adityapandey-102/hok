@@ -47,6 +47,33 @@ export const AUDIT_ACTIONS = {
   EVENT_CREATED: "event.created",
   /** Details, schedule or state changed; metadata lists the fields (never their values). */
   EVENT_UPDATED: "event.updated",
+
+  // Personal events (M5): owner-only calendar entries. Field names only, never values.
+  PERSONAL_EVENT_CREATED: "personal_event.created",
+  PERSONAL_EVENT_UPDATED: "personal_event.updated",
+  PERSONAL_EVENT_DELETED: "personal_event.deleted",
+
+  // Client portal (M8). The token itself is never logged or audited.
+  PORTAL_LINK_GENERATED: "portal_link.generated",
+  PORTAL_LINK_DISABLED: "portal_link.disabled",
+  // Client comments (M8). Status changes are ALSO in client_comment_history (the typed record).
+  COMMENT_UPDATED: "comment.updated",
+
+  // Assets (link library). Metadata carries ids / field names, never the URL.
+  ASSET_CREATED: "asset.created",
+  ASSET_UPDATED: "asset.updated",
+  /** Soft delete. */
+  ASSET_DELETED: "asset.deleted",
+
+  // Staff tasks (Admin's actions). Status changes, comments and reopens are NOT
+  // audited here: staff_task_updates is their typed, append-only timeline.
+  STAFF_TASK_CREATED: "staff_task.created",
+  /** Fields edited; metadata lists the field names (never their values). */
+  STAFF_TASK_UPDATED: "staff_task.updated",
+  /** metadata { from, to } assignee ids. */
+  STAFF_TASK_REASSIGNED: "staff_task.reassigned",
+  /** Hard delete (its timeline goes with it); this entry is the trace. */
+  STAFF_TASK_DELETED: "staff_task.deleted",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -58,6 +85,11 @@ export const AUDIT_ENTITIES = {
   CLIENT: "client",
   STAGE_TEMPLATE: "stage_template",
   EVENT: "event",
+  PERSONAL_EVENT: "personal_event",
+  PORTAL_LINK: "portal_link",
+  COMMENT: "comment",
+  ASSET: "asset",
+  STAFF_TASK: "staff_task",
 } as const;
 
 export type AuditEntity = (typeof AUDIT_ENTITIES)[keyof typeof AUDIT_ENTITIES];

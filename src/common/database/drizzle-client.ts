@@ -9,6 +9,10 @@ import * as auditLogSchema from "../audit/audit-log.schema";
 import * as clientsSchema from "../../modules/clients/infrastructure/clients.schema";
 import * as stageTemplatesSchema from "../../modules/stage-templates/infrastructure/stage-templates.schema";
 import * as eventsSchema from "../../modules/events/infrastructure/events.schema";
+import * as personalEventsSchema from "../../modules/personal-events/infrastructure/personal-events.schema";
+import * as assetsSchema from "../../modules/assets/infrastructure/assets.schema";
+import * as staffTasksSchema from "../../modules/staff-tasks/infrastructure/staff-tasks.schema";
+import * as notificationsSchema from "../../modules/notifications/infrastructure/notifications.schema";
 
 /**
  * The one Postgres connection pool every repository queries through.
@@ -32,6 +36,10 @@ const schema = {
   ...clientsSchema,
   ...stageTemplatesSchema,
   ...eventsSchema,
+  ...personalEventsSchema,
+  ...assetsSchema,
+  ...staffTasksSchema,
+  ...notificationsSchema,
 };
 
 const pool = new Pool({

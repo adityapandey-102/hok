@@ -7,6 +7,8 @@ import { uuidParam } from "../../../common/http/uuid-param";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { ClientsService, type ClientsCaller } from "../application/clients.service";
 import { DrizzleClientsRepository } from "../infrastructure/drizzle-clients.repository";
+import { clientReassignedPayload, notifier } from "../../notifications/notifications.module";
+import type { ClientNotifier } from "../application/ports/client-notifier.port";
 import { createClientDtoSchema, type CreateClientDto } from "./dto/create-client.dto";
 import {
   clientVersionDtoSchema,
@@ -18,8 +20,22 @@ import {
 } from "./dto/update-client.dto";
 import { clientQueryDtoSchema, type ClientQueryDto } from "./dto/client-query.dto";
 
-/** Composition root for the Clients module -- wires the concrete (Infrastructure) adapter into the Application service. */
-const clientsService = new ClientsService(new DrizzleClientsRepository());
+/**
+ * M9: after a reassignment commits, web push to the new owner (their bell
+ * entry was written inside the transaction by the repository).
+ */
+const clientNotifier: ClientNotifier = {
+  clientReassigned: (n) =>
+    notifier.push({
+      type: "client_reassigned",
+      recipientIds: [n.toOwnerId],
+      actorId: n.actorId,
+      payload: clientReassignedPayload({ clientId: n.clientId, clientName: n.clientName }),
+    }),
+};
+
+/** Composition root for the Clients module -- wires the concrete (Infrastructure) adapters into the Application service. */
+const clientsService = new ClientsService(new DrizzleClientsRepository(), undefined, undefined, clientNotifier);
 
 export const clientsRouter = Router();
 

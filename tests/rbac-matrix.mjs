@@ -17,6 +17,12 @@
  *   M4: /stage-templates (Admin writes; managers read) and /events (create,
  *       list, get, edit, stage move + stale version) for all six roles. Needs
  *       migration 20261013000004. Its template is deactivated at the end.
+ *   M6: /assets (create incl. URL validation, list, tag suggest, get, edit + stale
+ *       version, soft delete) for all six roles. Needs migration 20261014100001.
+ *   M7: /staff-tasks (list, create incl. the editor brief rule, get, status +
+ *       stale version, comments, edit, done -> reopen, delete): Admin manages;
+ *       everyone else only the tasks assigned to them (others' are 404).
+ *       Needs migration 20261014200001. Its fixture tasks are deleted at the end.
  *
  * Creates its own fixtures (one fresh account per non-admin role) every run,
  * so it never depends on `npm run seed` beyond the admin account it signs in
@@ -274,6 +280,139 @@ async function main() {
   // Leave the fixtures inert: archive the client (its events become read-only), deactivate the template.
   if (evClient) await req(`/clients/${evClient.id}/archive`, { method: "POST", body: "{}" }, admin.token);
   if (tplId) await req(`/stage-templates/${tplId}`, { method: "PATCH", body: JSON.stringify({ active: false, version: 1 }) }, admin.token);
+
+  console.log("\n--- personal events + calendar + team members (M5; admin / SMM / MM; task-only: 403) ---");
+  const peBody = JSON.stringify({ title: `RBAC personal ${stamp}`, startsAt: "2026-12-02T09:00:00Z", endsAt: "2026-12-02T10:00:00Z" });
+  let smmEntry = null;
+  for (const [role, token] of everyone) {
+    const expected = TASK_ONLY.includes(role) ? 403 : 201;
+    const r = await req("/personal-events", { method: "POST", body: peBody }, token);
+    check(`POST /personal-events as ${role} -> ${expected}`, r.status, expected);
+    if (role === "social_media_manager") smmEntry = r.body?.personalEvent;
+    const listExpected = TASK_ONLY.includes(role) ? 403 : 200;
+    check(`GET /personal-events as ${role} -> ${listExpected}`, (await req("/personal-events", {}, token)).status, listExpected);
+  }
+  for (const [role, token] of everyone) {
+    check(`GET /personal-events/:id (SMM's) as ${role} -> ${readExpect[role]}`, (await req(`/personal-events/${smmEntry?.id}`, {}, token)).status, readExpect[role]);
+  }
+  for (const [role, token] of everyone.filter(([r]) => r !== "admin" && r !== "social_media_manager")) {
+    const expected = readExpect[role];
+    check(`PATCH /personal-events/:id (SMM's) as ${role} -> ${expected}`, (await req(`/personal-events/${smmEntry?.id}`, { method: "PATCH", body: JSON.stringify({ title: "x", version: 1 }) }, token)).status, expected);
+    check(`DELETE /personal-events/:id (SMM's) as ${role} -> ${expected}`, (await req(`/personal-events/${smmEntry?.id}`, { method: "DELETE" }, token)).status, expected);
+  }
+  check(
+    "POST /personal-events linking the SMM's client as MM -> 404",
+    (await req("/personal-events", { method: "POST", body: JSON.stringify({ title: "x", startsAt: "2026-12-02T09:00:00Z", endsAt: "2026-12-02T10:00:00Z", clientId: evClient?.id }) }, mm.token)).status,
+    404,
+  );
+  check("PATCH /personal-events/:id (own) as SMM -> 200", (await req(`/personal-events/${smmEntry?.id}`, { method: "PATCH", body: JSON.stringify({ title: "Mine", version: 1 }) }, smm.token)).status, 200);
+  check("DELETE /personal-events/:id (own) as SMM -> 204", (await req(`/personal-events/${smmEntry?.id}`, { method: "DELETE" }, smm.token)).status, 204);
+  const calRange = "from=2026-12-01T00:00:00Z&to=2026-12-31T00:00:00Z";
+  for (const [role, token] of everyone) {
+    const expected = TASK_ONLY.includes(role) ? 403 : 200;
+    check(`GET /calendar as ${role} -> ${expected}`, (await req(`/calendar?${calRange}`, {}, token)).status, expected);
+    check(`GET /team-members as ${role} -> ${expected}`, (await req("/team-members", {}, token)).status, expected);
+  }
+  const mmCal = await req(`/calendar?${calRange}&ownerId=${smm.id}`, {}, mm.token);
+  check("GET /calendar as MM never shows the SMM's items (ownerId ignored)", mmCal.body?.items?.every((i) => i.ownerId === mm.id), true);
+
+  console.log("\n--- assets (admin: all; SMM / MM: their clients' assets, others' are 404; task-only: 403) ---");
+  const astClient = (await req("/clients", { method: "POST", body: newClient("assets-client") }, smm.token)).body?.client;
+  const astBody = JSON.stringify({ clientId: astClient?.id, title: `RBAC asset ${stamp}`, url: "https://drive.google.com/drive/folders/rbac", type: "photo", tags: ["rbac"] });
+  const astCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  let asset = null;
+  for (const [role, token] of everyone) {
+    const r = await req("/assets", { method: "POST", body: astBody }, token);
+    check(`POST /assets (SMM's client) as ${role} -> ${astCreateExpect[role]}`, r.status, astCreateExpect[role]);
+    if (role === "social_media_manager" && r.status === 201) asset = r.body.asset;
+  }
+  check(
+    "POST /assets with a javascript: URL as SMM -> 400",
+    (await req("/assets", { method: "POST", body: JSON.stringify({ clientId: astClient?.id, title: "x", url: "javascript:alert(1)", type: "other" }) }, smm.token)).status,
+    400,
+  );
+  for (const [role, token] of everyone) {
+    const expected = TASK_ONLY.includes(role) ? 403 : 200;
+    check(`GET /assets as ${role} -> ${expected}`, (await req("/assets", {}, token)).status, expected);
+    check(`GET /assets/tags as ${role} -> ${expected}`, (await req("/assets/tags", {}, token)).status, expected);
+  }
+  const smmAssets = await req("/assets?limit=100", {}, smm.token);
+  check("GET /assets as SMM includes the SMM's own asset", smmAssets.body?.assets?.some((a) => a.id === asset?.id), true);
+  check("GET /assets as MM does not include the SMM's asset", (await req("/assets?limit=100", {}, mm.token)).body?.assets?.some((a) => a.id === asset?.id), false);
+  for (const [role, token] of everyone) {
+    check(`GET /assets/:id (SMM's) as ${role} -> ${readExpect[role]}`, (await req(`/assets/${asset?.id}`, {}, token)).status, readExpect[role]);
+  }
+  for (const [role, token] of everyone.filter(([r]) => r !== "admin" && r !== "social_media_manager")) {
+    const expected = readExpect[role];
+    check(`PATCH /assets/:id (SMM's) as ${role} -> ${expected}`, (await req(`/assets/${asset?.id}`, { method: "PATCH", body: JSON.stringify({ title: "nope", version: 1 }) }, token)).status, expected);
+    check(`DELETE /assets/:id (SMM's) as ${role} -> ${expected}`, (await req(`/assets/${asset?.id}`, { method: "DELETE" }, token)).status, expected);
+  }
+  check("PATCH /assets/:id (own) as SMM -> 200", (await req(`/assets/${asset?.id}`, { method: "PATCH", body: JSON.stringify({ comment: "mine", tags: ["rbac", "ok"], version: 1 }) }, smm.token)).status, 200);
+  check("PATCH /assets/:id with the stale version -> 409", (await req(`/assets/${asset?.id}`, { method: "PATCH", body: JSON.stringify({ comment: "again", version: 1 }) }, smm.token)).status, 409);
+  check("PATCH /assets/:id (SMM's) as admin -> 200", (await req(`/assets/${asset?.id}`, { method: "PATCH", body: JSON.stringify({ title: "Admin edit", version: 2 }) }, admin.token)).status, 200);
+  check("DELETE /assets/:id (own) as SMM -> 204", (await req(`/assets/${asset?.id}`, { method: "DELETE" }, smm.token)).status, 204);
+  check("... a deleted asset is 404 for the admin", (await req(`/assets/${asset?.id}`, {}, admin.token)).status, 404);
+  // Leave the fixtures inert: archive the client (its assets become read-only).
+  if (astClient) await req(`/clients/${astClient.id}/archive`, { method: "POST", body: "{}" }, admin.token);
+
+  console.log("\n--- staff tasks (admin: all + manages; everyone else: only tasks assigned to them, others' are 404) ---");
+  // Runs before the users section: that section regenerates the editor's password, revoking its token.
+  const NON_ADMIN = everyone.filter(([r]) => r !== "admin");
+  const taskBody = (extra = {}) => JSON.stringify({ title: `RBAC task ${stamp}`, assigneeId: target.id, rawFilesUrl: "https://drive.google.com/drive/folders/rbac", ...extra });
+  for (const [role, token] of everyone) {
+    check(`GET /staff-tasks as ${role} -> 200`, (await req("/staff-tasks", {}, token)).status, 200);
+  }
+  for (const [role, token] of NON_ADMIN) {
+    check(`POST /staff-tasks as ${role} -> 403`, (await req("/staff-tasks", { method: "POST", body: taskBody() }, token)).status, 403);
+  }
+  check(
+    "POST /staff-tasks (editor task without the raw files link) as admin -> 400",
+    (await req("/staff-tasks", { method: "POST", body: taskBody({ rawFilesUrl: null }) }, admin.token)).status,
+    400,
+  );
+  const taskRes = await req("/staff-tasks", { method: "POST", body: taskBody() }, admin.token);
+  check("POST /staff-tasks (to the editor) as admin -> 201", taskRes.status, 201);
+  const tid = taskRes.body?.task?.id;
+  const taskReadExpect = { admin: 200, social_media_manager: 404, marketing_manager: 404, marketing_agent: 404, developer: 404, editor: 200 };
+  for (const [role, token] of everyone) {
+    check(`GET /staff-tasks/:id (editor's) as ${role} -> ${taskReadExpect[role]}`, (await req(`/staff-tasks/${tid}`, {}, token)).status, taskReadExpect[role]);
+  }
+  const devList = await req("/staff-tasks?limit=100", {}, staff.developer.token);
+  check("GET /staff-tasks as developer never lists the editor's task", devList.body?.tasks?.some((t) => t.id === tid), false);
+  const edList = await req(`/staff-tasks?assigneeId=${staff.developer.id}&limit=100`, {}, target.token);
+  check("GET /staff-tasks as editor lists only the editor's tasks (assigneeId filter ignored)", edList.body?.tasks?.every((t) => t.assigneeId === target.id), true);
+
+  for (const [role, token] of NON_ADMIN.filter(([r]) => r !== "editor")) {
+    const body = JSON.stringify({ status: "in_progress", version: 1 });
+    check(`POST /staff-tasks/:id/status (editor's) as ${role} -> 404`, (await req(`/staff-tasks/${tid}/status`, { method: "POST", body }, token)).status, 404);
+    check(`POST /staff-tasks/:id/comments (editor's) as ${role} -> 404`, (await req(`/staff-tasks/${tid}/comments`, { method: "POST", body: JSON.stringify({ body: "hi" }) }, token)).status, 404);
+  }
+  check("POST /staff-tasks/:id/status (own) as editor -> 200", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "in_progress", comment: "Starting", version: 1 }) }, target.token)).status, 200);
+  check("POST /staff-tasks/:id/status with the stale version -> 409", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "blocked", version: 1 }) }, target.token)).status, 409);
+  check("POST /staff-tasks/:id/comments (own) as editor -> 201", (await req(`/staff-tasks/${tid}/comments`, { method: "POST", body: JSON.stringify({ body: "Cut is up" }) }, target.token)).status, 201);
+  check("POST /staff-tasks/:id/comments as admin -> 201", (await req(`/staff-tasks/${tid}/comments`, { method: "POST", body: JSON.stringify({ body: "Thanks" }) }, admin.token)).status, 201);
+  for (const [role, token] of NON_ADMIN) {
+    check(`PATCH /staff-tasks/:id as ${role} -> 403`, (await req(`/staff-tasks/${tid}`, { method: "PATCH", body: JSON.stringify({ priority: "urgent", version: 2 }) }, token)).status, 403);
+  }
+  check("PATCH /staff-tasks/:id as admin -> 200", (await req(`/staff-tasks/${tid}`, { method: "PATCH", body: JSON.stringify({ priority: "urgent", version: 2 }) }, admin.token)).status, 200);
+  check("POST /staff-tasks/:id/status done (own) as editor -> 200", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "done", version: 3 }) }, target.token)).status, 200);
+  check("POST /staff-tasks/:id/status on a done task as editor -> 409", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "todo", version: 4 }) }, target.token)).status, 409);
+  for (const [role, token] of NON_ADMIN) {
+    check(`POST /staff-tasks/:id/reopen as ${role} -> 403`, (await req(`/staff-tasks/${tid}/reopen`, { method: "POST", body: JSON.stringify({ version: 4 }) }, token)).status, 403);
+  }
+  check("POST /staff-tasks/:id/reopen as admin -> 200", (await req(`/staff-tasks/${tid}/reopen`, { method: "POST", body: JSON.stringify({ version: 4 }) }, admin.token)).status, 200);
+  // A manager receives tasks too, and sees only their own.
+  const smmTask = await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: `RBAC smm task ${stamp}`, assigneeId: smm.id }) }, admin.token);
+  check("POST /staff-tasks (to the SMM) as admin -> 201", smmTask.status, 201);
+  check("GET /staff-tasks/:id (SMM's) as SMM -> 200", (await req(`/staff-tasks/${smmTask.body?.task?.id}`, {}, smm.token)).status, 200);
+  check("GET /staff-tasks/:id (SMM's) as MM -> 404", (await req(`/staff-tasks/${smmTask.body?.task?.id}`, {}, mm.token)).status, 404);
+  for (const [role, token] of NON_ADMIN) {
+    check(`DELETE /staff-tasks/:id as ${role} -> 403`, (await req(`/staff-tasks/${tid}`, { method: "DELETE" }, token)).status, 403);
+  }
+  // Fixture tasks are deleted (the API has a task delete, Admin only).
+  check("DELETE /staff-tasks/:id as admin -> 204", (await req(`/staff-tasks/${tid}`, { method: "DELETE" }, admin.token)).status, 204);
+  check("... a deleted task is 404 for the admin", (await req(`/staff-tasks/${tid}`, {}, admin.token)).status, 404);
+  if (smmTask.body?.task?.id) await req(`/staff-tasks/${smmTask.body.task.id}`, { method: "DELETE" }, admin.token);
 
   console.log("\n--- users:manage (admin only) ---");
   for (const [role, token] of everyone) {

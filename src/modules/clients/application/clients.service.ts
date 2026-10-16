@@ -10,7 +10,8 @@ import { assertArchivable, assertEditable, assertUnarchivable, assertVersion } f
 import { assertValidOwner, assertVisible, resolveNewOwner, type ClientScope } from "../domain/client-ownership.rules";
 import { toClientResponseDto, toClientSummaryResponseDto } from "../api/client.presenter";
 import type { ClientProfileFields } from "../domain/client.entity";
-import type { ClientChanges, ClientsRepositoryPort } from "./ports/clients-repository.port";
+import type { ClientChanges, ClientReassignedNotice, ClientsRepositoryPort } from "./ports/clients-repository.port";
+import { noopClientNotifier, type ClientNotifier } from "./ports/client-notifier.port";
 import type { ClientListResponseDto, ClientResponseDto } from "../api/dto/client.response.dto";
 import type { ClientQueryDto } from "../api/dto/client-query.dto";
 import type { CreateClientDto } from "../api/dto/create-client.dto";
@@ -52,6 +53,7 @@ export class ClientsService {
     private readonly repo: ClientsRepositoryPort,
     private readonly audit: AuditLogger = defaultAuditLogger,
     private readonly defaultTimeZone: string = env.DEFAULT_TIMEZONE,
+    private readonly notifier: ClientNotifier = noopClientNotifier,
   ) {}
 
   /** clients:read and clients:write share one scope today (CLIENT_MANAGERS_OWN in src/domain/capabilities.ts). */
@@ -182,6 +184,8 @@ export class ClientsService {
    * hangs off client_id, all its data -- to another active client manager.
    * Allowed on an archived client too (ownership isn't part of the profile).
    * Reassigning to the current owner is a no-op: nothing written, no audit.
+   * The new owner is notified (M9): bell entry in the same transaction, web
+   * push after the commit -- unless the Admin gave the client to themselves.
    */
   async reassign(caller: ClientsCaller, id: string, dto: ReassignClientDto): Promise<ClientResponseDto> {
     if (getCapabilityScope(caller.role, "clients:reassign") !== true) {
@@ -190,13 +194,16 @@ export class ClientsService {
     assertValidOwner(await this.repo.findOwnerCandidate(dto.ownerId));
 
     // Filled in by the guard (from the locked row), read after the commit.
-    const moved: { from?: string } = {};
+    const moved: { from?: string; notice?: ClientReassignedNotice } = {};
     const client = await this.repo.update(id, (current) => {
       assertVisible({ kind: "all" }, current);
       assertVersion(current.version, dto.version);
       if (current.ownerId === dto.ownerId) return {};
       moved.from = current.ownerId;
-      return { ownerId: dto.ownerId };
+      if (dto.ownerId !== caller.userId) {
+        moved.notice = { clientId: current.id, clientName: current.businessName, toOwnerId: dto.ownerId, actorId: caller.userId };
+      }
+      return { ownerId: dto.ownerId, reassignedNotice: moved.notice };
     });
 
     if (moved.from !== undefined) {
@@ -207,6 +214,7 @@ export class ClientsService {
         metadata: { from: moved.from, to: dto.ownerId },
       });
     }
+    if (moved.notice) await this.notifier.clientReassigned(moved.notice);
     return toClientResponseDto(client);
   }
 }

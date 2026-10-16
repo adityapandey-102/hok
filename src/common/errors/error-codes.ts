@@ -95,6 +95,66 @@ export const ERROR_CODES = {
   EVENT_NOT_ACTIVE: "EVENT_NOT_ACTIVE",
   /** `from`/`to` missing one side, reversed, or more than 92 days apart (400). */
   EVENT_RANGE_INVALID: "EVENT_RANGE_INVALID",
+
+  // -- Personal events + calendar feed (M5) ---------------------------------------
+  /** No such personal event, or someone else's (managers see only their own) -- 404 either way. */
+  PERSONAL_EVENT_NOT_FOUND: "PERSONAL_EVENT_NOT_FOUND",
+  PERSONAL_EVENT_MODIFIED: "PERSONAL_EVENT_MODIFIED",
+  /** Ends before it starts, or lasts more than 31 days (400). */
+  PERSONAL_EVENT_TIMES_INVALID: "PERSONAL_EVENT_TIMES_INVALID",
+  /** `from`/`to` missing, reversed, or more than 92 days apart (400). */
+  CALENDAR_RANGE_INVALID: "CALENDAR_RANGE_INVALID",
+
+  // -- Client portal + comments (M8) ----------------------------------------------
+  /** Public: unknown, malformed, regenerated or disabled link, or an archived client -- always the same 404. */
+  PORTAL_LINK_INVALID: "PORTAL_LINK_INVALID",
+  /** Public: the event isn't one of this portal's client's events (404). */
+  PORTAL_EVENT_NOT_FOUND: "PORTAL_EVENT_NOT_FOUND",
+  /** No such comment, or one on another manager's client (404). */
+  COMMENT_NOT_FOUND: "COMMENT_NOT_FOUND",
+  COMMENT_MODIFIED: "COMMENT_MODIFIED",
+  /** A status change the lifecycle doesn't allow (409), e.g. back to "received". */
+  COMMENT_STATUS_TRANSITION_INVALID: "COMMENT_STATUS_TRANSITION_INVALID",
+
+  // -- Assets (link library) ----------------------------------------------------
+  /** No such asset (or soft-deleted), or it belongs to another manager's client -- the same 404 either way. */
+  ASSET_NOT_FOUND: "ASSET_NOT_FOUND",
+  /** Stale `version` on an asset write (409). */
+  ASSET_MODIFIED: "ASSET_MODIFIED",
+  /** The linked event doesn't exist or belongs to a different client (400). */
+  ASSET_EVENT_INVALID: "ASSET_EVENT_INVALID",
+  /** `from`/`to` reversed (400). */
+  ASSET_RANGE_INVALID: "ASSET_RANGE_INVALID",
+
+  // -- Staff tasks ----------------------------------------------------------------
+  /** No such task, or it's assigned to someone else -- the same 404 either way. */
+  STAFF_TASK_NOT_FOUND: "STAFF_TASK_NOT_FOUND",
+  /** Stale `version` on a task write (409). */
+  STAFF_TASK_MODIFIED: "STAFF_TASK_MODIFIED",
+  /** The assignee isn't an active staff account (400). */
+  STAFF_TASK_ASSIGNEE_INVALID: "STAFF_TASK_ASSIGNEE_INVALID",
+  /** An editor task without its raw files link (400). */
+  STAFF_TASK_EDITOR_FIELDS_REQUIRED: "STAFF_TASK_EDITOR_FIELDS_REQUIRED",
+  /** Raw files link / reference link / script sent for a non-editor assignee (400). */
+  STAFF_TASK_EDITOR_FIELDS_INVALID: "STAFF_TASK_EDITOR_FIELDS_INVALID",
+  /** The linked client doesn't exist (400). */
+  STAFF_TASK_CLIENT_INVALID: "STAFF_TASK_CLIENT_INVALID",
+  /** The linked event doesn't exist or belongs to another client (400). */
+  STAFF_TASK_EVENT_INVALID: "STAFF_TASK_EVENT_INVALID",
+  /** The task already has the requested status (409). */
+  STAFF_TASK_STATUS_UNCHANGED: "STAFF_TASK_STATUS_UNCHANGED",
+  /** A status change on a done task -- only the Admin reopens it (409). */
+  STAFF_TASK_DONE: "STAFF_TASK_DONE",
+  /** Reopening a task that isn't done (409). */
+  STAFF_TASK_NOT_DONE: "STAFF_TASK_NOT_DONE",
+
+  // -- Notifications (M9) -----------------------------------------------------------
+  /** No such notification, or someone else's (the same 404). */
+  NOTIFICATION_NOT_FOUND: "NOTIFICATION_NOT_FOUND",
+  /** No such push device, or someone else's (404). */
+  PUSH_SUBSCRIPTION_NOT_FOUND: "PUSH_SUBSCRIPTION_NOT_FOUND",
+  /** The server has no VAPID keys, so it can't send web push (503). */
+  PUSH_NOT_CONFIGURED: "PUSH_NOT_CONFIGURED",
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
