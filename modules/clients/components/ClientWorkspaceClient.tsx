@@ -21,6 +21,9 @@ import { StatusPill } from "../../../components/ui/StatusPill";
 import { useToast } from "../../../components/ui/Toast";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
 import { ClientForm } from "./ClientForm";
+import { EventsTab } from "../../events/components/EventsTab";
+import { CalendarView } from "../../calendar/components/CalendarView";
+import { AssetsPanel } from "../../assets/components/AssetsPanel";
 import { STATUS_TONES } from "./ClientsListClient";
 
 /**
@@ -28,7 +31,16 @@ import { STATUS_TONES } from "./ClientsListClient";
  * Events / Calendar / Assets / Comments / Portal tabs are added by the
  * milestones that build them (no placeholder tabs).
  */
-export function ClientWorkspaceClient({ initialClient, isAdmin }: { initialClient: Client; isAdmin: boolean }) {
+export function ClientWorkspaceClient({
+  initialClient,
+  isAdmin,
+  viewerTimeZone = "Asia/Kolkata",
+}: {
+  initialClient: Client;
+  isAdmin: boolean;
+  viewerTimeZone?: string;
+}) {
+  const [tab, setTab] = useState<"overview" | "events" | "calendar" | "assets">("overview");
   const { showToast } = useToast();
   const confirm = useConfirm();
   const [client, setClient] = useState<Client>(initialClient);
@@ -139,7 +151,26 @@ export function ClientWorkspaceClient({ initialClient, isAdmin }: { initialClien
         </div>
       )}
 
-      {editing && !archived ? (
+      <div role="tablist" aria-label="Client workspace" className="mb-4 flex gap-1 border-b border-border">
+        {(["overview", "events", "calendar", "assets"] as const).map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium capitalize ${tab === t ? "border-primary text-primary" : "border-transparent text-text-muted hover:text-text-primary"}`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === "events" && <EventsTab clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
+
+      {tab === "calendar" && <CalendarView clientId={client.id} viewerTimeZone={viewerTimeZone} isAdmin={isAdmin} readOnly={archived} />}
+      {tab === "assets" && <AssetsPanel clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
+
+      {tab !== "overview" ? null : editing && !archived ? (
         <ClientForm client={client} submitLabel="Save changes" onSubmit={handleSave} onCancel={() => setEditing(false)} />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -183,7 +214,7 @@ export function ClientWorkspaceClient({ initialClient, isAdmin }: { initialClien
         </div>
       )}
 
-      {!editing && (
+      {tab === "overview" && !editing && (
         <div className="mt-5 flex flex-wrap gap-2">
           {archived ? (
             <Button disabled={busy} onClick={handleUnarchive}>

@@ -1,0 +1,219 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ROLES,
+  ROLE_LABELS,
+  STAFF_TASK_PRIORITIES,
+  STAFF_TASK_PRIORITY_LABELS,
+  STAFF_TASK_STATUSES,
+  STAFF_TASK_STATUS_LABELS,
+  type Role,
+  type StaffTaskPriority,
+} from "../../../lib/domain";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
+import { usersApi, type UserAccount } from "../../admin-users/api/usersApi";
+import { EMPTY_FILTERS, toApiFilters, type DueFilter, type TaskFilterState } from "./taskFilters";
+import { TaskList } from "./TaskList";
+import { TaskBoard } from "./TaskBoard";
+import { TaskFormModal } from "./TaskFormModal";
+import { Button } from "../../../components/ui/Button";
+import { Icon } from "../../../components/ui/Icon";
+import { Input } from "../../../components/ui/Field";
+import { Select } from "../../../components/ui/Select";
+import { useToast } from "../../../components/ui/Toast";
+
+type View = "list" | "board";
+const VIEW_KEY = "hok.tasks.view";
+
+/** Active staff for the Admin's assignee filter and picker (one page; HOK has ~20-50 staff, the API caps at 100). */
+export async function loadAssignees(): Promise<UserAccount[]> {
+  const page = await usersApi.list({ limit: 100, offset: 0 });
+  return page.users.filter((u) => u.active).sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+/**
+ * /app/tasks. Everyone but the Admin sees "My tasks" (FR-TSK-08): their own
+ * tasks with status, priority and due filters, overdue highlighted. The Admin
+ * (FR-TSK-09) sees every task, adds assignee and role filters, switches
+ * between list and Kanban, and creates tasks.
+ */
+export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: string }) {
+  const router = useRouter();
+  const { showToast } = useToast();
+  const [filters, setFilters] = useState<TaskFilterState>(EMPTY_FILTERS);
+  const debouncedSearch = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
+  const [page, setPage] = useState(0);
+  const [view, setView] = useState<View>("list");
+  const [assignees, setAssignees] = useState<UserAccount[]>([]);
+  const [formOpen, setFormOpen] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // Remember the Admin's view per browser (a convenience; falls back to the list).
+  useEffect(() => {
+    if (!isAdmin) return;
+    // Read after mount (never during render), so the server and first client render agree.
+    const restore = () => {
+      try {
+        if (window.localStorage.getItem(VIEW_KEY) === "board") setView("board");
+      } catch {
+        // Storage blocked: keep the default.
+      }
+    };
+    restore();
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    loadAssignees()
+      .then((a) => !cancelled && setAssignees(a))
+      .catch(() => {
+        // Only the assignee filter and picker need it; the lists still work.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
+  function chooseView(next: View) {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // ignore
+    }
+  }
+
+  /** Every filter change goes back to page 1 in the same handler. */
+  function update<K extends keyof TaskFilterState>(key: K, value: TaskFilterState[K]) {
+    setFilters((f) => ({ ...f, [key]: value }));
+    setPage(0);
+  }
+
+  const effective = { ...filters, search: debouncedSearch };
+  const board = isAdmin && view === "board";
+  const apiFilters = toApiFilters(effective, zone, board);
+  const filterKey = JSON.stringify(apiFilters);
+  const filtered = JSON.stringify({ ...filters, search: filters.search.trim() }) !== JSON.stringify(EMPTY_FILTERS);
+
+  return (
+    <div className={`mx-auto ${board ? "max-w-7xl" : "max-w-5xl"}`}>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="page-title">{isAdmin ? "Tasks" : "My tasks"}</h1>
+          <p className="text-sm text-text-muted">{isAdmin ? "Every task you've assigned to the team." : "Tasks the Admin has assigned to you."}</p>
+        </div>
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
+            <div role="group" aria-label="View" className="inline-flex rounded-app border border-border bg-card p-0.5">
+              {(["list", "board"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={view === v}
+                  onClick={() => chooseView(v)}
+                  className={`inline-flex items-center gap-1.5 rounded-app-sm px-3 py-1.5 text-sm font-medium transition-colors ${
+                    view === v ? "bg-primary-bg text-primary" : "text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  <Icon name={v === "list" ? "list" : "columns"} size={15} />
+                  {v === "list" ? "List" : "Board"}
+                </button>
+              ))}
+            </div>
+            <Button onClick={() => setFormOpen(true)} className="max-sm:flex-1">
+              <Icon name="plus" size={16} /> New task
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="mb-3 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+        <Input
+          className="col-span-2 sm:max-w-xs"
+          placeholder="Search by title"
+          aria-label="Search tasks"
+          value={filters.search}
+          onChange={(e) => update("search", e.target.value)}
+        />
+        {!board && (
+          <Select className="sm:w-auto" aria-label="Filter by status" value={filters.status} onChange={(e) => update("status", e.target.value as TaskFilterState["status"])}>
+            <option value="open">Open tasks</option>
+            <option value="all">All statuses</option>
+            {STAFF_TASK_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {STAFF_TASK_STATUS_LABELS[s]}
+              </option>
+            ))}
+          </Select>
+        )}
+        <Select className="sm:w-auto" aria-label="Filter by priority" value={filters.priority} onChange={(e) => update("priority", e.target.value as StaffTaskPriority | "")}>
+          <option value="">Any priority</option>
+          {STAFF_TASK_PRIORITIES.map((p) => (
+            <option key={p} value={p}>
+              {STAFF_TASK_PRIORITY_LABELS[p]}
+            </option>
+          ))}
+        </Select>
+        <Select className="sm:w-auto" aria-label="Filter by due date" value={filters.due} onChange={(e) => update("due", e.target.value as DueFilter)}>
+          <option value="">Any due date</option>
+          <option value="overdue">Overdue</option>
+          <option value="today">Due today</option>
+          <option value="week">Due in the next 7 days</option>
+        </Select>
+        {isAdmin && (
+          <>
+            <Select className="sm:w-auto" aria-label="Filter by assignee" value={filters.assigneeId} onChange={(e) => update("assigneeId", e.target.value)}>
+              <option value="">Everyone</option>
+              {assignees.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.fullName}
+                </option>
+              ))}
+            </Select>
+            <Select className="sm:w-auto" aria-label="Filter by role" value={filters.role} onChange={(e) => update("role", e.target.value as Role | "")}>
+              <option value="">Any role</option>
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
+              ))}
+            </Select>
+          </>
+        )}
+      </div>
+
+      {board ? (
+        <TaskBoard filters={apiFilters} filterKey={filterKey} zone={zone} reloadKey={reloadKey} />
+      ) : (
+        <TaskList
+          filters={apiFilters}
+          filterKey={filterKey}
+          zone={zone}
+          showAssignee={isAdmin}
+          reloadKey={reloadKey}
+          filtered={filtered}
+          page={page}
+          onPageChange={setPage}
+        />
+      )}
+
+      {isAdmin && formOpen && (
+        <TaskFormModal
+          open
+          assignees={assignees}
+          zone={zone}
+          onClose={() => setFormOpen(false)}
+          onSaved={(task) => {
+            setFormOpen(false);
+            setReloadKey((k) => k + 1);
+            showToast("Task created.", "success");
+            router.push(`/app/tasks/${task.id}`);
+          }}
+        />
+      )}
+    </div>
+  );
+}

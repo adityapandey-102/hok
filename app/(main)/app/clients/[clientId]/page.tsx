@@ -14,5 +14,5 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
     throw err;
   });
 
-  return <ClientWorkspaceClient initialClient={result.client} isAdmin={profile.role === "admin"} />;
+  return <ClientWorkspaceClient initialClient={result.client} isAdmin={profile.role === "admin"} viewerTimeZone={profile.timeZone} />;
 }

@@ -24,12 +24,18 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Dashboard", href: "/app", icon: "home" },
       { label: "Clients", href: "/app/clients", icon: "briefcase", requires: "clients:read" },
+      { label: "Assets", href: "/app/assets", icon: "tag", requires: "assets:read" },
+      { label: "Calendar", href: "/app/calendar", icon: "calendar", requires: "events:read" },
+      { label: "Tasks", href: "/app/tasks", icon: "clipboard", requires: "staff_tasks:read" },
       { label: "My profile", href: "/app/profile", icon: "user" },
     ],
   },
   {
     label: "Administration",
-    items: [{ label: "Users", href: "/app/admin/users", icon: "users", requires: "users:manage" }],
+    items: [
+      { label: "Users", href: "/app/admin/users", icon: "users", requires: "users:manage" },
+      { label: "Stage templates", href: "/app/templates", icon: "layers", requires: "stage_templates:manage" },
+    ],
   },
 ];
 

@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { updateOwnProfileSchema, type Profile } from "../../../lib/domain";
-import { apiFetch } from "../../../lib/api/client";
 import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
 import { useToast } from "../../../components/ui/Toast";
 import { TimeZoneInput } from "../../admin-users/components/TimeZoneInput";
+import { authApi } from "../api/authApi";
 
 /** Own-profile edit: name, phone and time zone via PATCH /auth/me. */
 export function ProfileForm({ profile }: { profile: Profile }) {
@@ -27,10 +27,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
     }
     setSaving(true);
     try {
-      await apiFetch("/auth/me", {
-        method: "PATCH",
-        body: JSON.stringify({ ...parsed.data, phone: parsed.data.phone || null }),
-      });
+      await authApi.updateOwnProfile({ ...parsed.data, phone: parsed.data.phone || null });
       showToast("Profile saved.", "success");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save profile";

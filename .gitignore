@@ -13,12 +13,15 @@
 # testing
 /coverage
 /test-results
+/test-results-*/
 /playwright-report
 /blob-report
 /playwright/.cache
 
 # next.js
 /.next/
+# per-agent build folders (NEXT_DIST_DIR, see README "Parallel dev servers")
+/.next-*/
 /out/
 
 # production

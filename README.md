@@ -50,9 +50,28 @@ npm run dev
 ```
 
 Ports are offset from needleye (3000/4000) so both projects can run on one
-machine; 3100 belongs to another local app. Only **one** `next dev` can run
-per checkout (Next refuses a second one in the same folder). If the dev server
-answers 404 for a page that exists, delete `.next/dev` and restart it.
+machine; 3100 belongs to another local app. If the dev server answers 404 for
+a page that exists, delete `<build folder>/dev` and restart it.
+
+### Parallel dev servers
+
+Next allows **one dev server per build folder**. The build folder is
+`NEXT_DIST_DIR` (default `.next`, read by `next.config.ts` as `distDir`), so
+several people or agents can run the app side by side, each with a folder and
+port of its own (assignments: `../docs/AGENT-COORDINATION.md`):
+
+```bash
+NEXT_DIST_DIR=.next-web npx next dev -p 3401
+NEXT_DIST_DIR=.next-web npm run build && NEXT_DIST_DIR=.next-web npm run check:bundle
+E2E_BASE_URL=http://localhost:3401 NEXT_DIST_DIR=.next-web \
+  npx playwright test e2e/portfolio.spec.ts --output=test-results-web
+```
+
+`.next-*/` and `test-results-*/` are git-ignored and skipped by lint. The known
+folders' generated types are already listed in `tsconfig.json` so Next doesn't
+rewrite it; a new folder name should be added there too. Next rewrites the
+git-ignored `next-env.d.ts` to point at whichever folder ran last, which is
+harmless.
 
 First-time setup: open `/setup` to create the first Admin (self-disabling once
 one exists). Everyone else is created by an Admin at `/app/admin/users`.
@@ -81,6 +100,21 @@ for critical workflows.
     tasks-only role cannot see it. Needs Supabase + hok-api with the seeded `rohan.smm`,
     `sara.smm` and `neha.agent` (password `Hok@2026`, override with
     `E2E_PASSWORD`); leaves one "E2E Client <timestamp>" per run.
+  - `e2e/events.spec.ts` (M4): Admin creates a stage template; a manager
+    creates an event from it and moves its stage with a client-visible note.
+    Needs the seeded `admin@hok.test`, `rohan.smm@hok.test` and the client
+    "Chai Point Cafe" (password `Hok@2026`, override with `E2E_PASSWORD`).
+    The screens agent runs it with `--output=test-results-screens`.
+  - `e2e/assets.spec.ts` (M6): a manager adds an asset link with tags to Chai Point Cafe (a
+    `javascript:` link is refused), finds it by search and tag, edits and deletes it; the
+    Assets page lists links across clients; a tasks-only role has no Assets nav. Needs the
+    seeded `rohan.smm`, `neha.agent` and the seeded asset links (`npm run seed` after migration
+    20261014100001). The assets agent runs it with `--output=test-results-assets`.
+  - `e2e/staff-tasks.spec.ts` (M7): the Admin assigns an editor task (the raw files link is
+    required), the editor finds it in My tasks and moves it to In progress with a comment and
+    then Done, a developer gets 404 on it, the Admin reopens and deletes it. Needs the seeded
+    `admin@hok.test`, `meera.editor` and `arjun.dev` (migration 20261014200001 applied). The
+    tasks agent runs it with `--output=test-results-tasks`.
   - Not in CI (it needs a live backend); run locally before a release.
 - **`npm run check:bundle`** (after `npm run build`): first-load JS per page,
   gzipped, against a 300 KB budget (`scripts/bundle-budget.mjs`; `--write`
@@ -114,7 +148,7 @@ the main layout and the split goes away.
 | --- | --- | --- | --- |
 | **Portfolio** (public) | `/`, `/about`, `/services`, `/services/details`, `/case-studies`, `/case-studies/details`, `/team`, `/team/details`, `/blog`, `/blog/list`, `/blog/details`, `/pricing`, `/faq`, `/contact`; anything unknown → 404 | `(site)` | no |
 | Staff sign-in | `/login`, `/setup` (first Admin), `/reset-password`, `/update-password`, `/auth/callback` | `(main)` | yes (a signed-in user is sent to `/app`) |
-| **Staff app** | `/app` (dashboard), `/app/profile` (own profile), `/app/admin/users`, `/app/admin/users/[userId]` (Admin, `users:manage`); `/app/clients`, `/app/clients/new`, `/app/clients/[clientId]` (managers see their own clients, Admin all; `clients:read`) | `(main)` + sidebar shell | yes (signed-out → `/login?next=…`) |
+| **Staff app** | `/app` (dashboard), `/app/profile` (own profile), `/app/admin/users`, `/app/admin/users/[userId]` (Admin, `users:manage`); `/app/clients`, `/app/clients/new`, `/app/clients/[clientId]` (managers see their own clients, Admin all; `clients:read`; Events tab); `/app/templates` (stage templates, Admin); `/app/events/new?clientId=`, `/app/events/[eventId]`; `/app/tasks` (everyone with `staff_tasks:read`: My tasks, or the Admin's list + Kanban), `/app/tasks/[taskId]` (another person's task is a 404) | `(main)` + sidebar shell | yes (signed-out → `/login?next=…`) |
 | **Client portal** | `/p/[token]` (M8) | `(main)`, plain chrome | no |
 | Session handlers | `/api/session/{login,logout,refresh,establish,exchange-code}` | none | no |
 
@@ -147,13 +181,24 @@ modules/
                                CredentialRevealOverlay, TimeZoneInput; api/usersApi.ts
   clients/                     ClientsListClient (paged, searchable), NewClientClient + ClientForm,
                                ClientWorkspaceClient (one client); api/clientsApi.ts
+  stage-templates/             TemplatesClient (Admin); api/templatesApi.ts
+  events/                      EventsTab (client workspace), NewEventClient + EventForm, EventDetailClient,
+                               StageTracker; api/eventsApi.ts
+  staff-tasks/                 TasksPageClient (My tasks / Admin list + board toggle, filters), TaskList (paged),
+                               TaskBoard (Kanban, @dnd-kit: drag = status change after a confirm, with the version),
+                               TaskFormModal (Admin create/edit; editor brief when an editor is picked),
+                               TaskDetailClient (status actions + comment, timeline); api/staffTasksApi.ts
+  notifications/               PWA + push groundwork (M9): config.ts (NOTIFICATIONS_ENABLED), registerServiceWorker.ts,
+                               ServiceWorkerRegistrar, InstallAppHint, NotificationBell (hidden until M9)
 components/
   ui/                          needleye's primitives: Button, Card, Field, Modal, ConfirmDialog, Toast,
                                Pager, StatusPill, Select, RadioGroup, Icon, ProgressRing, CountUp, Portal
   shell/                       AppShell, Sidebar, BrandMark, nav-config (role-based menu)
 lib/
   domain/                      own copy of roles, capabilities, types, date/time-zone utils, zod validation
+                               (utils/zonedTime.ts: the shared helper for times in a time zone)
   session/                     cookies holding hok-api-issued tokens (hok_at readable, hok_rt httpOnly)
+  pwa/platform.ts              how "Install the app" works on this device (unit-tested)
   api/                         apiFetch (browser) / apiFetchServer (server components)
   hooks/                       useDebouncedValue (+ SEARCH_DEBOUNCE_MS), useMediaQuery
   logging/                     the one web-side logger
@@ -314,6 +359,40 @@ and plugins (about 132 KB gzipped) on top of the Next runtime, about 321 KB in
 all, over the 300 KB budget. `check:bundle` counts them and reports these
 pages as "portfolio exception" instead of failing, until the redesign removes
 jQuery.
+
+### Installable app (PWA) and notifications groundwork
+
+The staff app installs like a native app (FR: PWA; web push arrives in M9):
+
+- **`app/manifest.ts`** (served at `/manifest.webmanifest`): name "HOK · House of
+  Khalak", short name "HOK", `start_url` and `id` `/app` (installing opens the
+  staff app, not the portfolio), standalone, the design system's sand
+  background and burgundy theme colour. Next adds the manifest link to every
+  page, the portfolio's included.
+- **Icons** in `public/icons/` (192, 512, a maskable 512, the 180 px Apple
+  icon also copied to `app/apple-icon.png`) are generated from
+  `public/hok-logo.png` by `node scripts/generate-pwa-icons.mjs`: the
+  wordmark, its margins trimmed, centred on white. Re-run it when the logo
+  changes.
+- **`public/sw.js`**: the service worker, deliberately small. It shows a push
+  notification from a JSON payload `{ title, body, url, tag }` and opens (or
+  focuses) the app at `url` when it is clicked. Only same-origin URLs are
+  opened; anything else falls back to `/app`. There is **no fetch handler and
+  no offline cache**: staff always see live data. `next.config.ts` serves it
+  with `Cache-Control: no-cache, no-store` and a strict CSP, so a fix reaches
+  installed apps on their next load.
+- **`modules/notifications`**: `ServiceWorkerRegistrar` (in `AppShell`)
+  registers `/sw.js` on the staff app; `InstallAppHint` (top of every
+  staff page) is a dismissible card: an Install button where the browser
+  offers one (`beforeinstallprompt`: Chrome, Edge, Android), and "Tap Share,
+  then Add to Home Screen" on iPhone and iPad (where web push only works for
+  an installed app). Nothing shows once installed or after "Not now" (kept in
+  this browser's storage). `NotificationBell` sits in the phone/tablet
+  header but **renders nothing** until M9 sets `NOTIFICATIONS_ENABLED`
+  (needleye's rule: no placeholders that do nothing).
+- **M9 adds:** push subscription (needs `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and
+  hok-api's subscribe endpoint), the bell's unread count and list, and the
+  same bell on the desktop sidebar. Push needs HTTPS (or `localhost`).
 
 ### No shared package, on purpose
 

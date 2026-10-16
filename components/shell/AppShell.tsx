@@ -6,6 +6,9 @@ import type { Profile } from "../../lib/domain";
 import { Sidebar } from "./Sidebar";
 import { BrandMark } from "./BrandMark";
 import { Icon } from "../ui/Icon";
+import { InstallAppHint } from "../../modules/notifications/components/InstallAppHint";
+import { NotificationBell } from "../../modules/notifications/components/NotificationBell";
+import { ServiceWorkerRegistrar } from "../../modules/notifications/components/ServiceWorkerRegistrar";
 
 export function AppShell({ profile, children }: { profile: Profile; children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -13,6 +16,7 @@ export function AppShell({ profile, children }: { profile: Profile; children: Re
 
   return (
     <div className="flex min-h-screen">
+      <ServiceWorkerRegistrar />
       <Sidebar profile={profile} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex min-w-0 flex-1 flex-col xl:ml-65 print:ml-0">
@@ -32,11 +36,15 @@ export function AppShell({ profile, children }: { profile: Profile; children: Re
             <BrandMark size={32} />
             <span className="font-serif text-[18px] text-text-primary">HOK</span>
           </div>
+
+          {/* Notifications (M9): renders nothing until notifications are enabled. */}
+          <NotificationBell className="ml-auto" />
         </header>
 
         <main className="flex-1 bg-app-bg px-4 py-5 sm:px-6 lg:px-10 lg:py-9 print:bg-white print:p-0">
           {/* key on pathname so each route change replays the entrance animation */}
           <div key={pathname} className="animate-fade-in mx-auto w-full max-w-[1400px]">
+            <InstallAppHint />
             {children}
           </div>
         </main>

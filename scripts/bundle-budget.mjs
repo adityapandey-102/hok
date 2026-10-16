@@ -23,7 +23,7 @@ import { gzipSync } from "node:zlib";
 import vm from "node:vm";
 
 const BUDGET_KB = 300;
-const NEXT = ".next";
+const NEXT = process.env.NEXT_DIST_DIR || ".next"; // the build folder (next.config.ts distDir)
 
 /** The template scripts SiteDocument/SiteScripts load (modules/site/components). */
 const PORTFOLIO_SCRIPTS = [

@@ -64,6 +64,11 @@ export const authApi = {
     return apiFetch("/auth/password-update", { method: "POST", body: JSON.stringify(payload) });
   },
 
+  /** The signed-in user edits their own name, phone and time zone (PATCH /auth/me). An empty phone clears it. */
+  updateOwnProfile(payload: { fullName: string; phone: string | null; timeZone: string }): Promise<{ profile: Profile }> {
+    return apiFetch("/auth/me", { method: "PATCH", body: JSON.stringify(payload) });
+  },
+
   /** Stores a session obtained client-side (implicit email-link flow). See app/api/session/establish. */
   establish(payload: { accessToken: string; refreshToken: string }): Promise<void> {
     return postSession<void>("establish", payload);
