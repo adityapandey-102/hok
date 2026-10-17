@@ -69,7 +69,8 @@ test("a manager sees an event in the right calendar slot, switches views and sta
   await page.getByRole("button", { name: new RegExp(`Add an event on .* ${D + 1} ${SHORT[M]}`) }).first().click();
   await page.getByRole("link", { name: "Client event" }).click();
   await expect(page).toHaveURL(new RegExp(`date=${NEXT_DAY}`));
-  await page.locator("#ne-client").selectOption({ label: "Chai Point Cafe" });
+  await page.locator("#ne-client").fill("Chai Point");
+  await page.getByRole("option", { name: /Chai Point Cafe/ }).click();
   await expect(page.locator("#ev-start")).toHaveValue(`${NEXT_DAY}T09:00`, { timeout: 30_000 });
 });
 

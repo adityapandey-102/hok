@@ -1,5 +1,6 @@
 import type { EventDetail, EventState, EventSummary, EventType } from "../../../lib/domain";
 import { apiFetch } from "../../../lib/api/client";
+import { SEARCH_SELECT_LIMIT, type SelectOption } from "../../../lib/api/options";
 
 export interface EventListFilters {
   clientId?: string;
@@ -52,6 +53,12 @@ export const eventsApi = {
       if (value !== undefined && value !== "") q.set(key, String(value));
     }
     return apiFetch(`/events?${q.toString()}`);
+  },
+
+  /** SearchSelect loader: one client's events matching `search`, newest first, at most 20. */
+  async searchOptions(clientId: string, search: string): Promise<SelectOption<EventSummary>[]> {
+    const page = await eventsApi.list({ clientId, search: search || undefined, limit: SEARCH_SELECT_LIMIT, offset: 0 });
+    return page.events.map((e) => ({ id: e.id, label: e.title, hint: new Date(e.startsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }), data: e }));
   },
 
   get(id: string): Promise<{ event: EventDetail }> {

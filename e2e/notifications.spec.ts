@@ -35,7 +35,8 @@ test("reassigning a client puts a notification in the new owner's bell", async (
   await login(admin, "admin@hok.test");
   await admin.goto(clientUrl);
   await admin.getByRole("button", { name: "Reassign owner" }).click();
-  await admin.locator("#reassign-owner").selectOption({ label: "Sara Ali" });
+  await admin.locator("#reassign-owner").fill("Sara");
+  await admin.getByRole("option", { name: /Sara Ali/ }).click();
   await admin.getByRole("button", { name: "Reassign", exact: true }).click();
   await expect(admin.getByText("Reassigned to Sara Ali.")).toBeVisible({
     timeout: 30_000,

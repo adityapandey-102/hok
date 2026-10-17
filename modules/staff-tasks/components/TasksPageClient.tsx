@@ -13,7 +13,7 @@ import {
   type StaffTaskPriority,
 } from "../../../lib/domain";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
-import { usersApi, type UserAccount } from "../../admin-users/api/usersApi";
+import { usersApi } from "../../admin-users/api/usersApi";
 import { EMPTY_FILTERS, toApiFilters, type DueFilter, type TaskFilterState } from "./taskFilters";
 import { TaskList } from "./TaskList";
 import { TaskBoard } from "./TaskBoard";
@@ -22,16 +22,11 @@ import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Input } from "../../../components/ui/Field";
 import { Select } from "../../../components/ui/Select";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { useToast } from "../../../components/ui/Toast";
 
 type View = "list" | "board";
 const VIEW_KEY = "hok.tasks.view";
-
-/** Active staff for the Admin's assignee filter and picker (one page; HOK has ~20-50 staff, the API caps at 100). */
-export async function loadAssignees(): Promise<UserAccount[]> {
-  const page = await usersApi.list({ limit: 100, offset: 0 });
-  return page.users.filter((u) => u.active).sort((a, b) => a.fullName.localeCompare(b.fullName));
-}
 
 /**
  * /app/tasks. Everyone but the Admin sees "My tasks" (FR-TSK-08): their own
@@ -46,7 +41,6 @@ export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: str
   const debouncedSearch = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
   const [page, setPage] = useState(0);
   const [view, setView] = useState<View>("list");
-  const [assignees, setAssignees] = useState<UserAccount[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -62,19 +56,6 @@ export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: str
       }
     };
     restore();
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    let cancelled = false;
-    loadAssignees()
-      .then((a) => !cancelled && setAssignees(a))
-      .catch(() => {
-        // Only the assignee filter and picker need it; the lists still work.
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [isAdmin]);
 
   function chooseView(next: View) {
@@ -165,14 +146,15 @@ export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: str
         </Select>
         {isAdmin && (
           <>
-            <Select className="sm:w-auto" aria-label="Filter by assignee" value={filters.assigneeId} onChange={(e) => update("assigneeId", e.target.value)}>
-              <option value="">Everyone</option>
-              {assignees.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.fullName}
-                </option>
-              ))}
-            </Select>
+            <SearchSelect
+              className="max-sm:col-span-2 sm:w-52"
+              aria-label="Filter by assignee"
+              placeholder="Everyone"
+              value={filters.assigneeId || null}
+              clearable
+              load={(q) => usersApi.searchOptions(q)}
+              onChange={(id) => update("assigneeId", id ?? "")}
+            />
             <Select className="sm:w-auto" aria-label="Filter by role" value={filters.role} onChange={(e) => update("role", e.target.value as Role | "")}>
               <option value="">Any role</option>
               {ROLES.map((r) => (
@@ -203,7 +185,6 @@ export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: str
       {isAdmin && formOpen && (
         <TaskFormModal
           open
-          assignees={assignees}
           zone={zone}
           onClose={() => setFormOpen(false)}
           onSaved={(task) => {

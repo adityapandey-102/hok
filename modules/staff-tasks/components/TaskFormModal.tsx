@@ -1,21 +1,19 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 import {
-  ROLE_LABELS,
-  ROLES,
   STAFF_TASK_PRIORITIES,
   STAFF_TASK_PRIORITY_LABELS,
   buildStaffTaskPayload,
-  formatInZone,
   isEditorRole,
   isoToZonedInput,
+  type Role,
   staffTaskFormSchema,
   type StaffTask,
   type StaffTaskFormValues,
 } from "../../../lib/domain";
-import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
-import type { UserAccount } from "../../admin-users/api/usersApi";
+import { teamMembersApi, type TeamMember } from "../../team-members/api/teamMembersApi";
+import { eventsApi } from "../../events/api/eventsApi";
 import { clientsApi } from "../../clients/api/clientsApi";
 import { staffTasksApi } from "../api/staffTasksApi";
 import { describeTaskError } from "./taskUi";
@@ -23,6 +21,7 @@ import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
 import { Select, Textarea } from "../../../components/ui/Select";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { Icon } from "../../../components/ui/Icon";
 
 function initialValues(task?: StaffTask, zone?: string): StaffTaskFormValues {
@@ -51,7 +50,6 @@ function initialValues(task?: StaffTask, zone?: string): StaffTaskFormValues {
 export function TaskFormModal({
   open,
   task,
-  assignees,
   zone,
   onClose,
   onSaved,
@@ -59,8 +57,6 @@ export function TaskFormModal({
   open: boolean;
   /** Present = edit. */
   task?: StaffTask;
-  /** Active staff (any role), loaded once by the page. */
-  assignees: UserAccount[];
   zone: string;
   onClose: () => void;
   onSaved: (task: StaffTask) => void;
@@ -73,51 +69,11 @@ export function TaskFormModal({
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof StaffTaskFormValues>(k: K, value: StaffTaskFormValues[K]) => setV((s) => ({ ...s, [k]: value }));
 
-  const assignee = assignees.find((a) => a.id === v.assigneeId) ?? null;
-  const role = assignee?.role ?? (task && v.assigneeId === task.assigneeId ? task.assigneeRole : null);
+  // The assignee picker searches the API; remember the picked person's role (it decides whether the editor brief shows).
+  const [pickedRole, setPickedRole] = useState<Role | null>(task?.assigneeRole ?? null);
+  const role = v.assigneeId ? pickedRole : null;
   const editor = isEditorRole(role);
   const losingBrief = editing && isEditorRole(task!.assigneeRole) && !!role && !editor;
-
-  // -- client picker (debounced server search) + that client's events --------
-  const [clientQuery, setClientQuery] = useState("");
-  const debouncedClientQuery = useDebouncedValue(clientQuery.trim(), SEARCH_DEBOUNCE_MS);
-  const [clientOptions, setClientOptions] = useState<{ id: string; businessName: string }[]>([]);
-  const [clientName, setClientName] = useState<string | null>(task?.clientName ?? null);
-  useEffect(() => {
-    if (!open || !debouncedClientQuery) return;
-    let cancelled = false;
-    clientsApi
-      .list({ search: debouncedClientQuery, limit: 8 })
-      .then((r) => !cancelled && setClientOptions(r.clients.map((c) => ({ id: c.id, businessName: c.businessName }))))
-      .catch(() => !cancelled && setClientOptions([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [open, debouncedClientQuery]);
-
-  const [loadedEvents, setLoadedEvents] = useState<{ clientId: string; list: { id: string; title: string; startsAt: string }[] } | null>(null);
-  // Only the current client's events count; anything else is still loading (null).
-  const events = loadedEvents && loadedEvents.clientId === v.clientId ? loadedEvents.list : null;
-  // Results only while there's a query (an old result list never lingers).
-  const shownClientOptions = debouncedClientQuery && clientQuery.trim() ? clientOptions : [];
-  useEffect(() => {
-    if (!open || !v.clientId) return;
-    const clientId = v.clientId;
-    let cancelled = false;
-    staffTasksApi
-      .listClientEvents(clientId)
-      .then((list) => !cancelled && setLoadedEvents({ clientId, list }))
-      // No event picker if events can't be loaded; the task still saves without one.
-      .catch(() => !cancelled && setLoadedEvents({ clientId, list: [] }));
-    return () => {
-      cancelled = true;
-    };
-  }, [open, v.clientId]);
-
-  const grouped = useMemo(
-    () => ROLES.map((r) => ({ role: r, people: assignees.filter((a) => a.role === r) })).filter((g) => g.people.length > 0),
-    [assignees],
-  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -169,20 +125,17 @@ export function TaskFormModal({
             <FieldLabel required htmlFor="tf-assignee">
               Assign to
             </FieldLabel>
-            <Select id="tf-assignee" value={v.assigneeId} onChange={(e) => set("assigneeId", e.target.value)}>
-              <option value="">Choose a person…</option>
-              {grouped.map((g) => (
-                <optgroup key={g.role} label={ROLE_LABELS[g.role]}>
-                  {g.people.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.fullName}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-              {/* Keep the current assignee selectable even if deactivated since. */}
-              {task && !assignees.some((a) => a.id === task.assigneeId) && <option value={task.assigneeId}>{task.assigneeName}</option>}
-            </Select>
+            <SearchSelect<TeamMember>
+              id="tf-assignee"
+              placeholder="Search people…"
+              value={v.assigneeId || null}
+              selectedLabel={task?.assigneeName}
+              load={(q) => teamMembersApi.searchOptions(q)}
+              onChange={(id, item) => {
+                set("assigneeId", id ?? "");
+                setPickedRole(item?.data?.role ?? null);
+              }}
+            />
             <FieldError>{errors.assigneeId}</FieldError>
           </div>
 
@@ -241,62 +194,34 @@ export function TaskFormModal({
 
           <div>
             <FieldLabel htmlFor="tf-client">Client (optional)</FieldLabel>
-            {v.clientId ? (
-              <div className="flex items-center gap-2 rounded-app-sm border border-border bg-card px-3 py-2 text-sm">
-                <span className="min-w-0 flex-1 truncate">{clientName ?? "Selected client"}</span>
-                <button
-                  type="button"
-                  className="text-xs font-medium text-primary underline"
-                  onClick={() => {
-                    set("clientId", "");
-                    set("eventId", "");
-                    setClientName(null);
-                  }}
-                >
-                  Change
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Input id="tf-client" placeholder="Search clients…" value={clientQuery} onChange={(e) => setClientQuery(e.target.value)} autoComplete="off" />
-                {shownClientOptions.length > 0 && (
-                  <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-app-sm border border-border bg-card shadow-app-md">
-                    {shownClientOptions.map((c) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          className="w-full px-3 py-2 text-left text-sm hover:bg-primary-bg"
-                          onClick={() => {
-                            set("clientId", c.id);
-                            set("eventId", "");
-                            setClientName(c.businessName);
-                            setClientQuery("");
-                            setClientOptions([]);
-                          }}
-                        >
-                          {c.businessName}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
+            <SearchSelect
+              id="tf-client"
+              placeholder="Search clients…"
+              value={v.clientId || null}
+              selectedLabel={task?.clientName ?? undefined}
+              clearable
+              load={clientsApi.searchOptions}
+              onChange={(id) => {
+                set("clientId", id ?? "");
+                set("eventId", "");
+              }}
+            />
           </div>
 
           <div>
             <FieldLabel htmlFor="tf-event">Event (optional)</FieldLabel>
-            <Select id="tf-event" value={v.eventId} disabled={!v.clientId || !events || events.length === 0} onChange={(e) => set("eventId", e.target.value)}>
-              <option value="">{!v.clientId ? "Pick a client first" : events && events.length === 0 ? "No events" : "None"}</option>
-              {(events ?? []).map((ev) => (
-                <option key={ev.id} value={ev.id}>
-                  {ev.title} · {formatInZone(ev.startsAt, zone)}
-                </option>
-              ))}
-              {task?.eventId && v.eventId === task.eventId && !(events ?? []).some((ev) => ev.id === task.eventId) && (
-                <option value={task.eventId}>{task.eventTitle ?? "Linked event"}</option>
-              )}
-            </Select>
+            <SearchSelect
+              id="tf-event"
+              placeholder={v.clientId ? "None" : "Pick a client first"}
+              emptyText="No events"
+              value={v.eventId || null}
+              selectedLabel={task?.eventTitle ?? undefined}
+              clearable
+              disabled={!v.clientId}
+              loadKey={v.clientId}
+              load={(q) => eventsApi.searchOptions(v.clientId, q)}
+              onChange={(id) => set("eventId", id ?? "")}
+            />
           </div>
 
           <div className="sm:col-span-2">

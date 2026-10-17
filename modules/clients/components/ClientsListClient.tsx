@@ -11,11 +11,11 @@ import {
 } from "../../../lib/domain";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
 import { clientsApi } from "../api/clientsApi";
-import type { UserAccount } from "../../admin-users/api/usersApi";
 import { ButtonLink } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Input } from "../../../components/ui/Field";
 import { Select } from "../../../components/ui/Select";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { Pager } from "../../../components/ui/Pager";
 import { StatusPill, type PillTone } from "../../../components/ui/StatusPill";
 
@@ -36,26 +36,9 @@ export function ClientsListClient({ isAdmin }: { isAdmin: boolean }) {
   const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS);
   const [status, setStatus] = useState<ClientStatus | "">("");
   const [ownerId, setOwnerId] = useState("");
-  const [owners, setOwners] = useState<UserAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    let cancelled = false;
-    clientsApi
-      .listOwnerCandidates()
-      .then((o) => {
-        if (!cancelled) setOwners(o);
-      })
-      .catch(() => {
-        // The owner filter is a convenience; the list still works without it.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isAdmin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,22 +115,18 @@ export function ClientsListClient({ isAdmin }: { isAdmin: boolean }) {
           ))}
         </Select>
         {isAdmin && (
-          <Select
-            className="w-auto"
+          <SearchSelect
+            className="sm:w-56"
             aria-label="Filter by owner"
-            value={ownerId}
-            onChange={(e) => {
-              setOwnerId(e.target.value);
+            placeholder="All owners"
+            value={ownerId || null}
+            clearable
+            load={clientsApi.searchOwnerOptions}
+            onChange={(id) => {
+              setOwnerId(id ?? "");
               setPage(0);
             }}
-          >
-            <option value="">All owners</option>
-            {owners.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.fullName}
-              </option>
-            ))}
-          </Select>
+          />
         )}
       </div>
 

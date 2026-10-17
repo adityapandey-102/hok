@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   CLIENT_STATUS_LABELS,
   formatDateOnly,
@@ -10,13 +10,12 @@ import {
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { clientsApi, type CreateClientPayload, type UpdateClientPayload } from "../api/clientsApi";
-import type { UserAccount } from "../../admin-users/api/usersApi";
 import { Button, ButtonLink } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
 import { FieldLabel } from "../../../components/ui/Field";
 import { Modal } from "../../../components/ui/Modal";
-import { Select } from "../../../components/ui/Select";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import { useToast } from "../../../components/ui/Toast";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
@@ -152,14 +151,14 @@ export function ClientWorkspaceClient({
         </div>
       )}
 
-      <div role="tablist" aria-label="Client workspace" className="mb-4 flex gap-1 border-b border-border">
+      <div role="tablist" aria-label="Client workspace" className="mb-4 flex gap-1 overflow-x-auto border-b border-border [scrollbar-width:none]">
         {(["overview", "events", "calendar", "assets", "portal"] as const).map((t) => (
           <button
             key={t}
             role="tab"
             aria-selected={tab === t}
             onClick={() => setTab(t)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium capitalize ${tab === t ? "border-primary text-primary" : "border-transparent text-text-muted hover:text-text-primary"}`}
+            className={`-mb-px shrink-0 border-b-2 px-3 py-2 whitespace-nowrap sm:px-4 text-sm font-medium capitalize ${tab === t ? "border-primary text-primary" : "border-transparent text-text-muted hover:text-text-primary"}`}
           >
             {t}
           </button>
@@ -276,26 +275,8 @@ function ReassignModal({
   onDone: (client: Client) => void;
   onError: (err: unknown) => void;
 }) {
-  const [owners, setOwners] = useState<UserAccount[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [ownerId, setOwnerId] = useState(client.ownerId);
   const [saving, setSaving] = useState(false);
-  const selectRef = useRef<HTMLSelectElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    clientsApi
-      .listOwnerCandidates()
-      .then((o) => {
-        if (!cancelled) setOwners(o);
-      })
-      .catch((err) => {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Failed to load managers");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   async function submit() {
     setSaving(true);
@@ -309,29 +290,24 @@ function ReassignModal({
   }
 
   return (
-    <Modal open onClose={onClose} labelledBy="reassign-title" initialFocusRef={selectRef} panelClassName="max-w-sm p-6">
+    <Modal open onClose={onClose} labelledBy="reassign-title" panelClassName="max-w-sm p-6">
       <h2 id="reassign-title" className="font-serif text-lg font-bold text-text-primary">
         Reassign {client.businessName}
       </h2>
       <p className="mt-1 text-xs text-text-muted">The new owner takes over the client and everything under it.</p>
       <div className="mt-4">
         <FieldLabel htmlFor="reassign-owner">New owner</FieldLabel>
-        {loadError ? (
-          <p className="text-sm text-error">{loadError}</p>
-        ) : owners === null ? (
-          <p className="text-sm text-text-muted">Loading…</p>
-        ) : (
-          <Select id="reassign-owner" ref={selectRef} value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
-            {owners.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.fullName}
-              </option>
-            ))}
-          </Select>
-        )}
+        <SearchSelect
+          id="reassign-owner"
+          placeholder="Search managers…"
+          value={ownerId}
+          selectedLabel={client.ownerName}
+          load={clientsApi.searchOwnerOptions}
+          onChange={(id) => id && setOwnerId(id)}
+        />
       </div>
       <div className="mt-5 flex gap-2">
-        <Button onClick={submit} disabled={saving || !owners || ownerId === client.ownerId}>
+        <Button onClick={submit} disabled={saving || ownerId === client.ownerId}>
           {saving ? "Reassigning…" : "Reassign"}
         </Button>
         <Button variant="outline" onClick={onClose}>

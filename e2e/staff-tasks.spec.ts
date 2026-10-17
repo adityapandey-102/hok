@@ -28,7 +28,8 @@ test("the Admin assigns an editor task; the editor closes it; the Admin reopens 
   await admin.goto("/app/tasks");
   await admin.getByRole("button", { name: "New task" }).click();
   await admin.locator("#tf-title").fill(title);
-  await admin.locator("#tf-assignee").selectOption({ label: "Meera Nair" });
+  await admin.locator("#tf-assignee").fill("Meera");
+  await admin.getByRole("option", { name: /Meera Nair/ }).click();
   // Picking an editor shows the brief, and the raw files link is required.
   await admin.getByRole("button", { name: "Create task" }).click();
   await expect(admin.getByText("An editor task needs the raw files (Google Drive) link")).toBeVisible();

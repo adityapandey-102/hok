@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
-import { Select, Textarea } from "../../../components/ui/Select";
+import { Textarea } from "../../../components/ui/Select";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
+import { clientsApi } from "../../clients/api/clientsApi";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { personalEventsApi, type PersonalEvent } from "../api/personalEventsApi";
 import { emptyValues, toPayload, valuesFromEvent, type PersonalEventFormValues } from "../personalEventForm";
@@ -18,14 +20,12 @@ export function PersonalEventModal({
   eventId,
   day,
   zone,
-  clients,
   onClose,
   onChanged,
 }: {
   eventId: string | null;
   day?: string;
   zone: string;
-  clients: { id: string; name: string }[];
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -55,9 +55,6 @@ export function PersonalEventModal({
   }, [eventId, zone, reloadKey]);
 
   const set = (patch: Partial<PersonalEventFormValues>) => setValues((v) => ({ ...v, ...patch }));
-  // A linked client that is not in the caller's list (an Admin editing someone else's entry) stays selectable.
-  const clientOptions =
-    entry?.clientId && !clients.some((c) => c.id === entry.clientId) ? [...clients, { id: entry.clientId, name: entry.clientName ?? "Linked client" }] : clients;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -137,14 +134,15 @@ export function PersonalEventModal({
             <p className="-mt-2 text-xs text-text-muted">Times are in {zone}.</p>
             <div>
               <FieldLabel htmlFor="pe-client">Client (optional)</FieldLabel>
-              <Select id="pe-client" value={values.clientId} onChange={(e) => set({ clientId: e.target.value })}>
-                <option value="">No client</option>
-                {clientOptions.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+              <SearchSelect
+                id="pe-client"
+                placeholder="No client"
+                value={values.clientId || null}
+                selectedLabel={entry?.clientName ?? undefined}
+                clearable
+                load={clientsApi.searchOptions}
+                onChange={(id) => set({ clientId: id ?? "" })}
+              />
             </div>
             <div>
               <FieldLabel htmlFor="pe-description">Description</FieldLabel>

@@ -9,7 +9,6 @@ import {
   nextDay,
   type Asset,
   type AssetType,
-  type EventSummary,
   type TagSuggestion,
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
@@ -20,6 +19,7 @@ import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Input } from "../../../components/ui/Field";
 import { Select } from "../../../components/ui/Select";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { Pager } from "../../../components/ui/Pager";
 import { StatusPill, type PillTone } from "../../../components/ui/StatusPill";
 import { useToast } from "../../../components/ui/Toast";
@@ -66,13 +66,12 @@ export function AssetsPanel({
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [tagOptions, setTagOptions] = useState<TagSuggestion[]>([]);
-  const [eventOptions, setEventOptions] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [form, setForm] = useState<{ asset?: Asset } | null>(null);
 
-  // Filter choices: this scope's tags (and, in a client, its events), refreshed after any change.
+  // Filter choices: this scope's tags, refreshed after any change. (The event filter searches the API as you type.)
   useEffect(() => {
     let cancelled = false;
     assetsApi
@@ -83,16 +82,6 @@ export function AssetsPanel({
       .catch(() => {
         // Filter choices are a convenience.
       });
-    if (clientId) {
-      eventsApi
-        .list({ clientId, limit: 100 })
-        .then((d) => {
-          if (!cancelled) setEventOptions(d.events);
-        })
-        .catch(() => {
-          // Same: the list still works without the event filter.
-        });
-    }
     return () => {
       cancelled = true;
     };
@@ -202,14 +191,19 @@ export function AssetsPanel({
           ))}
         </Select>
         {clientId && (
-          <Select className="w-auto" aria-label="Filter by event" value={eventId} onChange={(e) => { setEventId(e.target.value); resetPage(); }}>
-            <option value="">All events</option>
-            {eventOptions.map((ev) => (
-              <option key={ev.id} value={ev.id}>
-                {ev.title}
-              </option>
-            ))}
-          </Select>
+          <SearchSelect
+            className="sm:w-56"
+            aria-label="Filter by event"
+            placeholder="All events"
+            value={eventId || null}
+            clearable
+            loadKey={clientId}
+            load={(q) => eventsApi.searchOptions(clientId, q)}
+            onChange={(id) => {
+              setEventId(id ?? "");
+              resetPage();
+            }}
+          />
         )}
         <label className="flex items-center gap-1.5 text-xs text-text-muted">
           Added from

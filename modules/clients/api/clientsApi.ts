@@ -1,6 +1,7 @@
 import type { Client, ClientStatus, ClientSummary, Role, SocialHandles } from "../../../lib/domain";
 import { apiFetch } from "../../../lib/api/client";
-import { usersApi, type UserAccount } from "../../admin-users/api/usersApi";
+import { SEARCH_SELECT_LIMIT, mergeOptions, type SelectOption } from "../../../lib/api/options";
+import { teamMembersApi, type TeamMember } from "../../team-members/api/teamMembersApi";
 
 export interface ClientListFilters {
   search?: string;
@@ -84,12 +85,18 @@ export const clientsApi = {
     return apiFetch(`/clients/${id}/reassign`, { method: "POST", body: JSON.stringify({ ownerId, version }) });
   },
 
-  /** Admin only (needs users:manage): the active accounts that can own clients. One page per role, capped at 100 each. */
-  async listOwnerCandidates(): Promise<UserAccount[]> {
-    const pages = await Promise.all(OWNER_ROLES.map((role) => usersApi.list({ role, limit: 100, offset: 0 })));
-    return pages
-      .flatMap((p) => p.users)
-      .filter((u) => u.active)
-      .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  /** SearchSelect loader: clients matching `search` (the API scopes a manager to their own), at most 20. */
+  async searchOptions(search: string): Promise<SelectOption<ClientSummary>[]> {
+    const page = await clientsApi.list({ search: search || undefined, limit: SEARCH_SELECT_LIMIT, offset: 0 });
+    return page.clients.map((c) => ({ id: c.id, label: c.businessName, hint: c.industry ?? undefined, data: c }));
+  },
+
+  /**
+   * SearchSelect loader for owners (Admin only, needs users:manage): active accounts that can own clients.
+   * The users API takes one role per call, so this asks once per owner role (3 small calls) and merges.
+   */
+  async searchOwnerOptions(search: string): Promise<SelectOption<TeamMember>[]> {
+    const lists = await Promise.all(OWNER_ROLES.map((role) => teamMembersApi.searchOptions(search, role)));
+    return mergeOptions(lists);
   },
 };

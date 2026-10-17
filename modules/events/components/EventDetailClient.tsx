@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   describeEventTime,
@@ -11,7 +11,6 @@ import {
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { eventsApi } from "../api/eventsApi";
-import { usersApi, type UserAccount } from "../../admin-users/api/usersApi";
 import { Button, ButtonLink } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
@@ -40,7 +39,6 @@ export function EventDetailClient({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
-  const [staff, setStaff] = useState<UserAccount[] | undefined>(undefined);
 
   const [targetStageId, setTargetStageId] = useState("");
   const [note, setNote] = useState("");
@@ -54,22 +52,6 @@ export function EventDetailClient({
   const stageNames = new Map(event.stages.map((s) => [s.id, s.name]));
   const start = describeEventTime(event.startsAt, viewerTimeZone, event.timeZone);
   const end = describeEventTime(event.endsAt, viewerTimeZone, event.timeZone);
-
-  useEffect(() => {
-    if (!isAdmin || !editing || staff) return;
-    let cancelled = false;
-    usersApi
-      .list({ limit: 100 })
-      .then((u) => {
-        if (!cancelled) setStaff(u.users.filter((x) => x.active));
-      })
-      .catch(() => {
-        // The team picker is optional.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isAdmin, editing, staff]);
 
   function describe(err: unknown, fallback: string): string {
     if (isApiErrorCode(err, "EVENT_MODIFIED")) {
@@ -200,7 +182,7 @@ export function EventDetailClient({
         <EventForm
           event={event}
           clientTimeZone={event.timeZone}
-          staff={staff}
+          canPickTeam={isAdmin}
           submitLabel="Save changes"
           onSubmit={handleSave}
           onCancel={() => setEditing(false)}

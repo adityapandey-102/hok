@@ -14,6 +14,8 @@ import { eventsApi } from "../api/eventsApi";
 import { ButtonLink } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Select } from "../../../components/ui/Select";
+import { Input } from "../../../components/ui/Field";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
 import { Pager } from "../../../components/ui/Pager";
 import { StatusPill, type PillTone } from "../../../components/ui/StatusPill";
 import { StageProgressBar } from "./StageTracker";
@@ -35,6 +37,8 @@ export function EventsTab({
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [state, setState] = useState<EventState | "">("");
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -45,7 +49,7 @@ export function EventsTab({
     const run = () => {
       setLoading(true);
       eventsApi
-        .list({ clientId, state: state || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
+        .list({ clientId, state: state || undefined, search: debouncedSearch || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
         .then((data) => {
           if (cancelled) return;
           setEvents(data.events);
@@ -64,11 +68,22 @@ export function EventsTab({
     return () => {
       cancelled = true;
     };
-  }, [clientId, state, page, reloadKey]);
+  }, [clientId, state, debouncedSearch, page, reloadKey]);
 
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+        <Input
+          className="min-w-0 flex-1 sm:max-w-xs"
+          placeholder="Search events by title"
+          aria-label="Search events"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(0);
+          }}
+        />
         <Select
           className="w-auto"
           aria-label="Filter events by state"
@@ -85,6 +100,7 @@ export function EventsTab({
             </option>
           ))}
         </Select>
+        </div>
         {!readOnly && (
           <ButtonLink href={`/app/events/new?clientId=${clientId}`} className="max-sm:w-full">
             <Icon name="plus" size={16} /> New event
@@ -104,7 +120,7 @@ export function EventsTab({
           </div>
         ) : events.length === 0 ? (
           <div className="p-6 text-sm text-text-muted">
-            {state ? "No events in this state." : readOnly ? "No events." : "No events yet. Create the first one."}
+            {state || debouncedSearch ? "No events match these filters." : readOnly ? "No events." : "No events yet. Create the first one."}
           </div>
         ) : (
           <ul className="divide-y divide-border-light">

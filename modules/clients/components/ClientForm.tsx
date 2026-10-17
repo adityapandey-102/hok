@@ -11,11 +11,12 @@ import {
   type SocialHandles,
 } from "../../../lib/domain";
 import type { CreateClientPayload, UpdateClientPayload } from "../api/clientsApi";
-import type { UserAccount } from "../../admin-users/api/usersApi";
+import { clientsApi } from "../api/clientsApi";
 import { TimeZoneInput } from "../../admin-users/components/TimeZoneInput";
 import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
 import { Select, Textarea } from "../../../components/ui/Select";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
 
 type TextKey =
   | "businessName"
@@ -61,18 +62,18 @@ function initialValues(c?: Client): Values {
 
 /**
  * Shared create/edit form. On create, blank optional fields are omitted; on edit
- * they are sent as null so they clear. `owners` (Admin only, create) adds an owner picker.
+ * they are sent as null so they clear. `canPickOwner` (Admin only, create) adds an owner picker that searches the API.
  * The caller does the HTTP call and returns an error message (or null on success).
  */
 export function ClientForm({
   client,
-  owners,
+  canPickOwner = false,
   submitLabel,
   onSubmit,
   onCancel,
 }: {
   client?: Client;
-  owners?: UserAccount[];
+  canPickOwner?: boolean;
   submitLabel: string;
   onSubmit: (payload: CreateClientPayload | Omit<UpdateClientPayload, "version">) => Promise<string | null>;
   onCancel?: () => void;
@@ -165,17 +166,17 @@ export function ClientForm({
             </Select>
           </div>
         )}
-        {!editing && owners && owners.length > 0 && (
+        {!editing && canPickOwner && (
           <div>
             <FieldLabel htmlFor="cf-owner">Owner</FieldLabel>
-            <Select id="cf-owner" value={v.ownerId} onChange={(e) => set("ownerId", e.target.value)}>
-              <option value="">Me</option>
-              {owners.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.fullName}
-                </option>
-              ))}
-            </Select>
+            <SearchSelect
+              id="cf-owner"
+              placeholder="Me"
+              value={v.ownerId || null}
+              clearable
+              load={clientsApi.searchOwnerOptions}
+              onChange={(id) => set("ownerId", id ?? "")}
+            />
           </div>
         )}
       </section>

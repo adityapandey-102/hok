@@ -9,13 +9,16 @@ import {
   zonedWallTimeToIso,
   type EventDetail,
   type EventType,
-  type StageTemplate,
 } from "../../../lib/domain";
-import type { UserAccount } from "../../admin-users/api/usersApi";
+import type { SelectOption } from "../../../lib/api/options";
+import { teamMembersApi } from "../../team-members/api/teamMembersApi";
+import { templatesApi } from "../../stage-templates/api/templatesApi";
 import { TimeZoneInput } from "../../admin-users/components/TimeZoneInput";
 import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
 import { Select, Textarea } from "../../../components/ui/Select";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
+import { Icon } from "../../../components/ui/Icon";
 
 export interface EventFormValues {
   templateId?: string;
@@ -32,15 +35,16 @@ export interface EventFormValues {
 /**
  * Create / edit / reschedule form. Start and end are typed as wall-clock times
  * in the chosen event time zone and sent as ISO instants with that zone offset.
- * Create needs `templates` (active ones) and shows the template picker; edit
- * never changes the template. `staff` (Admin only) enables the team picker.
+ * Create shows the template picker (searched on the server; `defaultTemplate`
+ * is the preselected one); edit never changes the template. `canPickTeam`
+ * (Admin only) enables the team picker, also searched on the server.
  */
 export function EventForm({
   event,
   clientTimeZone,
   defaultDate,
-  templates,
-  staff,
+  defaultTemplate,
+  canPickTeam = false,
   submitLabel,
   onSubmit,
   onCancel,
@@ -49,21 +53,23 @@ export function EventForm({
   clientTimeZone: string;
   /** YYYY-MM-DD to prefill a new event (a clicked calendar day): 09:00 to 10:00. */
   defaultDate?: string;
-  templates?: StageTemplate[];
-  staff?: UserAccount[];
+  defaultTemplate?: SelectOption;
+  canPickTeam?: boolean;
   submitLabel: string;
   onSubmit: (values: EventFormValues) => Promise<string | null>;
   onCancel?: () => void;
 }) {
   const [title, setTitle] = useState(event?.title ?? "");
   const [type, setType] = useState<EventType>(event?.type ?? "shoot");
-  const [templateId, setTemplateId] = useState(templates?.[0]?.id ?? "");
+  const [templateId, setTemplateId] = useState(defaultTemplate?.id ?? "");
   const [timeZone, setTimeZone] = useState(event?.timeZone ?? clientTimeZone);
   const [start, setStart] = useState(event ? isoToZonedInput(event.startsAt, event.timeZone) : defaultDate ? `${defaultDate}T09:00` : "");
   const [end, setEnd] = useState(event ? isoToZonedInput(event.endsAt, event.timeZone) : defaultDate ? `${defaultDate}T10:00` : "");
   const [location, setLocation] = useState(event?.location ?? "");
   const [description, setDescription] = useState(event?.description ?? "");
   const [team, setTeam] = useState<string[]>(event?.assignedTeam ?? []);
+  // Display names for the team chips: the event's own team list, plus each new pick.
+  const [teamNames, setTeamNames] = useState<Record<string, string>>(() => Object.fromEntries((event?.team ?? []).map((m) => [m.id, m.fullName])));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -89,7 +95,7 @@ export function EventForm({
       timeZone: zone,
       location: location.trim() || null,
       description: description.trim() || null,
-      assignedTeam: staff ? team : undefined,
+      assignedTeam: canPickTeam ? team : undefined,
     });
     setSaving(false);
     if (message) setError(message);
@@ -119,13 +125,14 @@ export function EventForm({
             <FieldLabel required htmlFor="ev-template">
               Stage template
             </FieldLabel>
-            <Select id="ev-template" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-              {(templates ?? []).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.stages.length} stages)
-                </option>
-              ))}
-            </Select>
+            <SearchSelect
+              id="ev-template"
+              placeholder="Search stage templates…"
+              value={templateId || null}
+              selectedLabel={defaultTemplate?.id === templateId ? defaultTemplate.label : undefined}
+              load={templatesApi.searchActiveOptions}
+              onChange={(id) => setTemplateId(id ?? "")}
+            />
           </div>
         )}
         <div>
@@ -155,21 +162,40 @@ export function EventForm({
         </div>
       </div>
 
-      {staff && staff.length > 0 && (
+      {canPickTeam && (
         <fieldset>
           <legend className="mb-2 text-xs font-medium text-text-secondary">Team (optional)</legend>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {staff.map((u) => (
-              <label key={u.id} className="flex items-center gap-2 text-sm text-text-primary">
-                <input
-                  type="checkbox"
-                  checked={team.includes(u.id)}
-                  onChange={(e) => setTeam((t) => (e.target.checked ? [...t, u.id] : t.filter((id) => id !== u.id)))}
-                />
-                {u.fullName}
-              </label>
-            ))}
-          </div>
+          {team.length > 0 && (
+            <ul className="mb-2 flex flex-wrap gap-2">
+              {team.map((id) => (
+                <li key={id} className="inline-flex items-center gap-1 rounded-full bg-primary-bg py-1 pl-3 pr-1.5 text-sm text-text-primary">
+                  {teamNames[id] ?? "Team member"}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${teamNames[id] ?? "team member"}`}
+                    onClick={() => setTeam((t) => t.filter((x) => x !== id))}
+                    className="rounded-full p-0.5 text-text-muted hover:text-text-primary"
+                  >
+                    <Icon name="x" size={13} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <SearchSelect
+            id="ev-team"
+            aria-label="Add a team member"
+            placeholder="Search people to add…"
+            clearOnSelect
+            value={null}
+            excludeIds={team}
+            load={(q) => teamMembersApi.searchOptions(q)}
+            onChange={(id, item) => {
+              if (!id || !item) return;
+              setTeam((t) => (t.includes(id) ? t : [...t, id]));
+              setTeamNames((n) => ({ ...n, [id]: item.label }));
+            }}
+          />
         </fieldset>
       )}
 

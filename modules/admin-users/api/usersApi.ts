@@ -1,5 +1,6 @@
 import type { Role } from "../../../lib/domain";
 import { apiFetch } from "../../../lib/api/client";
+import { SEARCH_SELECT_LIMIT, type SelectOption } from "../../../lib/api/options";
 
 /** A staff account as returned by hok-api's /users endpoints. */
 export interface UserAccount {
@@ -54,6 +55,12 @@ export const usersApi = {
     if (filters.limit !== undefined) query.set("limit", String(filters.limit));
     if (filters.offset !== undefined) query.set("offset", String(filters.offset));
     return apiFetch(`/users?${query.toString()}`);
+  },
+
+  /** SearchSelect loader: active accounts matching `search` (name or email), at most 20, server-searched. */
+  async searchOptions(search: string, role?: Role): Promise<SelectOption<UserAccount>[]> {
+    const page = await usersApi.list({ search: search || undefined, role, limit: SEARCH_SELECT_LIMIT, offset: 0 });
+    return page.users.map((u) => ({ id: u.id, label: u.fullName, hint: u.active ? u.email : `${u.email} (inactive)`, data: u }));
   },
 
   get(id: string): Promise<{ user: UserAccount }> {

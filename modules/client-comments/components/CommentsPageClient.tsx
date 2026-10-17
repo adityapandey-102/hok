@@ -13,7 +13,9 @@ import {
   type CommentStatus,
 } from "../lib/commentStatus";
 import { Pager } from "../../../components/ui/Pager";
-import { Select } from "../../../components/ui/Select";
+import { Input } from "../../../components/ui/Field";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import { CommentDetailModal } from "./CommentDetailModal";
 
@@ -37,9 +39,8 @@ export function CommentsPageClient({
   const deepLinkId = params.get("commentId");
   const [tab, setTab] = useState<Tab>("open");
   const [clientId, setClientId] = useState("");
-  const [clients, setClients] = useState<
-    { id: string; businessName: string }[]
-  >([]);
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS);
   const [page, setPage] = useState(0);
   const [comments, setComments] = useState<ClientComment[]>([]);
   const [total, setTotal] = useState(0);
@@ -50,25 +51,13 @@ export function CommentsPageClient({
   const openedDeepLink = useRef<string | null>(null);
 
   useEffect(() => {
-    clientsApi
-      .list({ limit: 100 })
-      .then((d) =>
-        setClients(
-          d.clients.map((c) => ({ id: c.id, businessName: c.businessName })),
-        ),
-      )
-      .catch(() => {
-        // The client filter is a convenience.
-      });
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
     const run = () => {
       setLoading(true);
       clientCommentsApi
         .list({
           clientId: clientId || undefined,
+          search: debouncedSearch || undefined,
           status: tab === "open" ? undefined : tab,
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
@@ -93,7 +82,7 @@ export function CommentsPageClient({
     return () => {
       cancelled = true;
     };
-  }, [tab, clientId, page, reloadKey]);
+  }, [tab, clientId, debouncedSearch, page, reloadKey]);
 
   // ?commentId= from a notification opens that comment once.
   useEffect(() => {
@@ -146,22 +135,31 @@ export function CommentsPageClient({
             </button>
           ))}
         </div>
-        <Select
-          className="w-auto max-sm:w-full sm:ml-auto"
-          aria-label="Filter by client"
-          value={clientId}
-          onChange={(e) => {
-            setClientId(e.target.value);
-            setPage(0);
-          }}
-        >
-          <option value="">All clients</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.businessName}
-            </option>
-          ))}
-        </Select>
+        <div className="flex flex-wrap items-center gap-3 max-sm:w-full sm:ml-auto">
+          <Input
+            className="min-w-0 flex-1 sm:w-56 sm:flex-none"
+            placeholder="Search comments or clients"
+            aria-label="Search comments"
+            maxLength={100}
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+          />
+          <SearchSelect
+            className="sm:w-56"
+            aria-label="Filter by client"
+            placeholder="All clients"
+            value={clientId || null}
+            clearable
+            load={clientsApi.searchOptions}
+            onChange={(id) => {
+              setClientId(id ?? "");
+              setPage(0);
+            }}
+          />
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app">
@@ -179,7 +177,9 @@ export function CommentsPageClient({
           </div>
         ) : comments.length === 0 ? (
           <div className="p-6 text-sm text-text-muted">
-            {tab === "open"
+            {debouncedSearch
+              ? "No comments match your search."
+              : tab === "open"
               ? "No open comments. You are all caught up."
               : `No ${COMMENT_STATUS_LABELS[tab].toLowerCase()} comments.`}
           </div>

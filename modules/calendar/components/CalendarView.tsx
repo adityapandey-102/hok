@@ -28,10 +28,10 @@ import { PersonalEventModal } from "../../personal-events/components/PersonalEve
 import { Modal } from "../../../components/ui/Modal";
 import { ButtonLink } from "../../../components/ui/Button";
 import { clientsApi } from "../../clients/api/clientsApi";
-import type { UserAccount } from "../../admin-users/api/usersApi";
 import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Select } from "../../../components/ui/Select";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { fromFeedItem, TYPE_CHIP_CLASSES, type CalendarItem } from "../calendarItems";
 
 type View = "month" | "week" | "list";
@@ -79,37 +79,9 @@ export function CalendarView({
   const canPersonal = !clientId && !readOnly;
   const [slotDay, setSlotDay] = useState<DayKey | null>(null);
   const [personal, setPersonal] = useState<{ id: string | null; day?: string } | null>(null);
-  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
-  const [owners, setOwners] = useState<UserAccount[]>([]);
 
   const range = useMemo(() => visibleRange(view, cursor), [view, cursor]);
   const today = todayKey(viewerTimeZone);
-
-  useEffect(() => {
-    if (clientId) return;
-    let cancelled = false;
-    clientsApi
-      .list({ limit: 100 })
-      .then((d) => {
-        if (!cancelled) setClients(d.clients.map((c) => ({ id: c.id, name: c.businessName })));
-      })
-      .catch(() => {
-        // The client filter is a convenience.
-      });
-    if (isAdmin) {
-      clientsApi
-        .listOwnerCandidates()
-        .then((o) => {
-          if (!cancelled) setOwners(o);
-        })
-        .catch(() => {
-          // The owner filter is a convenience.
-        });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [clientId, isAdmin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,14 +170,15 @@ export function CalendarView({
 
       <div className="mb-3 flex flex-wrap gap-2">
         {!clientId && (
-          <Select className="w-auto" aria-label="Filter by client" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
-            <option value="">All clients</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
+          <SearchSelect
+            className="sm:w-56"
+            aria-label="Filter by client"
+            placeholder="All clients"
+            value={clientFilter || null}
+            clearable
+            load={clientsApi.searchOptions}
+            onChange={(id) => setClientFilter(id ?? "")}
+          />
         )}
         <Select className="w-auto" aria-label="Filter by type" value={type} onChange={(e) => setType(e.target.value as EventType | "")}>
           <option value="">All types</option>
@@ -224,14 +197,15 @@ export function CalendarView({
           ))}
         </Select>
         {isAdmin && !clientId && (
-          <Select className="w-auto" aria-label="Filter by owner" value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)}>
-            <option value="">All owners</option>
-            {owners.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.fullName}
-              </option>
-            ))}
-          </Select>
+          <SearchSelect
+            className="sm:w-56"
+            aria-label="Filter by owner"
+            placeholder="All owners"
+            value={ownerFilter || null}
+            clearable
+            load={clientsApi.searchOwnerOptions}
+            onChange={(id) => setOwnerFilter(id ?? "")}
+          />
         )}
       </div>
 
@@ -289,7 +263,6 @@ export function CalendarView({
           eventId={personal.id}
           day={personal.day}
           zone={viewerTimeZone}
-          clients={clients}
           onClose={() => setPersonal(null)}
           onChanged={() => setReloadKey((k) => k + 1)}
         />

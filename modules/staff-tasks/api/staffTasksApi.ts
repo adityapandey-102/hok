@@ -76,10 +76,4 @@ export const staffTasksApi = {
   comment(id: string, body: string): Promise<{ task: StaffTask }> {
     return apiFetch(`/staff-tasks/${id}/comments`, { method: "POST", body: JSON.stringify({ body }) });
   },
-
-  /** The task form's event picker (Admin): one client's events, newest first, capped at 100. */
-  async listClientEvents(clientId: string): Promise<{ id: string; title: string; startsAt: string }[]> {
-    const data = (await apiFetch(`/events?clientId=${clientId}&limit=100`)) as { events: { id: string; title: string; startsAt: string }[] };
-    return data.events;
-  },
 };

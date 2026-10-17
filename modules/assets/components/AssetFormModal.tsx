@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ASSET_TYPES,
   ASSET_TYPE_LABELS,
   assetFormSchema,
   type Asset,
   type AssetType,
-  type ClientSummary,
-  type EventSummary,
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { assetsApi } from "../api/assetsApi";
@@ -18,6 +16,7 @@ import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
 import { Modal } from "../../../components/ui/Modal";
 import { Select, Textarea } from "../../../components/ui/Select";
+import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { TagInput } from "./TagInput";
 
 /**
@@ -38,8 +37,6 @@ export function AssetFormModal({
   onSaved: (asset: Asset, created: boolean) => void;
 }) {
   const [client, setClient] = useState(asset?.clientId ?? clientId ?? "");
-  const [clients, setClients] = useState<ClientSummary[]>([]);
-  const [events, setEvents] = useState<EventSummary[]>([]);
   const [title, setTitle] = useState(asset?.title ?? "");
   const [url, setUrl] = useState(asset?.url ?? "");
   const [type, setType] = useState<AssetType>(asset?.type ?? "other");
@@ -51,39 +48,6 @@ export function AssetFormModal({
   const [saving, setSaving] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const needsClientPicker = !asset && !clientId;
-
-  useEffect(() => {
-    if (!needsClientPicker) return;
-    let cancelled = false;
-    clientsApi
-      .list({ limit: 100 })
-      .then((data) => {
-        if (cancelled) return;
-        setClients(data.clients.filter((c) => c.status !== "archived"));
-      })
-      .catch(() => {
-        if (!cancelled) setFormError("Could not load your clients. Close and try again.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [needsClientPicker]);
-
-  useEffect(() => {
-    if (!client) return;
-    let cancelled = false;
-    eventsApi
-      .list({ clientId: client, limit: 100 })
-      .then((data) => {
-        if (!cancelled) setEvents(data.events);
-      })
-      .catch(() => {
-        // The event link is optional; the form still saves without the list.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [client]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -144,14 +108,17 @@ export function AssetFormModal({
             <FieldLabel htmlFor="asset-client" required>
               Client
             </FieldLabel>
-            <Select id="asset-client" value={client} onChange={(e) => { setClient(e.target.value); setEventId(""); setEvents([]); }}>
-              <option value="">Select a client…</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.businessName}
-                </option>
-              ))}
-            </Select>
+            <SearchSelect
+              id="asset-client"
+              placeholder="Search clients…"
+              value={client || null}
+              loadKey="active"
+              load={async (q) => (await clientsApi.searchOptions(q)).filter((o) => o.data?.status !== "archived")}
+              onChange={(id) => {
+                setClient(id ?? "");
+                setEventId("");
+              }}
+            />
             <FieldError>{errors.client}</FieldError>
           </div>
         )}
@@ -182,14 +149,17 @@ export function AssetFormModal({
           </div>
           <div>
             <FieldLabel htmlFor="asset-event">Event (optional)</FieldLabel>
-            <Select id="asset-event" value={eventId} onChange={(e) => setEventId(e.target.value)} disabled={!client}>
-              <option value="">No event</option>
-              {events.map((ev) => (
-                <option key={ev.id} value={ev.id}>
-                  {ev.title}
-                </option>
-              ))}
-            </Select>
+            <SearchSelect
+              id="asset-event"
+              placeholder={client ? "No event" : "Pick a client first"}
+              value={eventId || null}
+              selectedLabel={asset?.eventTitle ?? undefined}
+              clearable
+              disabled={!client}
+              loadKey={client}
+              load={(q) => eventsApi.searchOptions(client, q)}
+              onChange={(id) => setEventId(id ?? "")}
+            />
           </div>
         </div>
         <div>

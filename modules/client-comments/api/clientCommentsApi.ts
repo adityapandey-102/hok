@@ -21,6 +21,7 @@ export interface ClientComment {
 export interface CommentListFilters {
   clientId?: string;
   status?: CommentStatus;
+  search?: string;
   limit?: number;
   offset?: number;
 }
@@ -37,6 +38,7 @@ export const clientCommentsApi = {
     const q = new URLSearchParams();
     if (filters.clientId) q.set("clientId", filters.clientId);
     if (filters.status) q.set("status", filters.status);
+    if (filters.search) q.set("search", filters.search);
     if (filters.limit !== undefined) q.set("limit", String(filters.limit));
     if (filters.offset !== undefined) q.set("offset", String(filters.offset));
     return apiFetch(`/client-comments?${q.toString()}`);

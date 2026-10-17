@@ -12,11 +12,9 @@ import {
   type StaffTaskStatus,
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
-import type { UserAccount } from "../../admin-users/api/usersApi";
 import { staffTasksApi } from "../api/staffTasksApi";
 import { DueLabel, PriorityPill, TaskStatusPill, describeTaskError, roleLabel } from "./taskUi";
 import { TaskFormModal } from "./TaskFormModal";
-import { loadAssignees } from "./TasksPageClient";
 import { Button, ButtonLink } from "../../../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
 import { FieldLabel } from "../../../components/ui/Field";
@@ -66,7 +64,6 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [assignees, setAssignees] = useState<UserAccount[] | null>(null);
 
   const canWork = isAdmin || task.assigneeId === viewerId;
   const overdue = isTaskOverdue(task);
@@ -110,18 +107,6 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
   function postComment() {
     if (!comment.trim()) return;
     void run(() => staffTasksApi.comment(task.id, comment.trim()), "Comment added.", "Failed to add the comment");
-  }
-
-  async function openEdit() {
-    if (!assignees) {
-      try {
-        setAssignees(await loadAssignees());
-      } catch (err) {
-        showToast(describeTaskError(err, "Failed to load the staff list"), "error");
-        return;
-      }
-    }
-    setEditOpen(true);
   }
 
   async function handleDelete() {
@@ -224,7 +209,7 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
 
           {isAdmin && (
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" disabled={busy} onClick={openEdit}>
+              <Button variant="outline" disabled={busy} onClick={() => setEditOpen(true)}>
                 <Icon name="edit" size={16} /> Edit or reassign
               </Button>
               <Button variant="danger" disabled={busy} onClick={handleDelete}>
@@ -292,11 +277,10 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
         </div>
       </div>
 
-      {isAdmin && assignees && editOpen && (
+      {isAdmin && editOpen && (
         <TaskFormModal
           open
           task={task}
-          assignees={assignees}
           zone={zone}
           onClose={() => setEditOpen(false)}
           onSaved={(saved) => {
