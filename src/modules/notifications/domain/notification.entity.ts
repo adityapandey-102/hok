@@ -38,22 +38,22 @@ export const NOTIFICATION_TYPE_INFO: Record<NotificationType, NotificationTypeIn
   task_assigned: {
     label: "Task assigned to me",
     description: "The Admin gives you a new task (or moves one to you).",
-    live: false, // M7: flipped when StaffTasksService calls the notifier
+    live: true,
   },
   task_status_changed: {
     label: "Task status changed",
     description: "A task you assigned or work on moves to another status.",
-    live: false, // M7
+    live: true,
   },
   task_commented: {
     label: "Comment on a task",
     description: "Someone comments on a task you assigned or work on.",
-    live: false, // M7
+    live: true,
   },
   client_comment: {
     label: "New client comment",
     description: "A client posts a comment on their portal (to the client's manager).",
-    live: false, // M8
+    live: true,
   },
 };
 

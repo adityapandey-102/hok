@@ -47,6 +47,12 @@ tags:
     description: Tasks the Admin assigns to staff (one assignee, any role). Admin creates, edits, reassigns, reopens and deletes (`staff_tasks:assign`); the assignee sees only their own tasks (others are 404) and changes the status with an optional comment (`staff_tasks:read` / `staff_tasks:update`). Every status change and comment is an append-only timeline entry.
   - name: Notifications
     description: The caller's own bell (in-app notifications), per-trigger preferences and the devices that receive web push. Every role; always scoped to the caller (someone else's row is a 404).
+  - name: Portal
+    description: The client portal. Staff manage each client's link (portal:manage); the public endpoints take the link token as the only credential.
+  - name: Dashboard
+    description: Role dashboards (FR-DSH-01..03) -- every staff role, sections by role.
+  - name: Client comments
+    description: Comments clients post on their portal, worked by the owning manager (comments:read / comments:manage).
 paths:
   /health:
     get:
@@ -1091,6 +1097,28 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  # ------------------------------------------------------ Dashboard (M10) --
+  /api/v1/dashboard:
+    get:
+      tags: [Dashboard]
+      summary: The caller's role dashboard
+      description: |
+        Every staff role (FR-DSH-01..03). `tasks` (the caller's own staff
+        tasks) is always present; `clients` (the caller's OWN clients) for
+        Admin, Social Media and Marketing Managers, else null; `firm` for the
+        Admin only, else null. Figures are SQL aggregates and every list is
+        capped (8; events 20 before the today/upcoming split; team 50), so
+        the query count is fixed per role. "Today" and "this week" (today + 6
+        days) are the caller's own time zone; instants are UTC.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The dashboard.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dashboard" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   # ------------------------------------------------- Team members (M4+) --
   /api/v1/team-members:
     get:
@@ -1610,6 +1638,160 @@ paths:
         "200": { description: Delivery report., content: { application/json: { schema: { $ref: "#/components/schemas/PushTestResult" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/PushNotConfigured" }
+  # ------------------------------------------------------- Portal (staff) --
+  /api/v1/portal-links/{clientId}:
+    parameters:
+      - { name: clientId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Portal]
+      summary: The client's current portal link (never the token)
+      description: "`portal:manage`: Admin any client, SMM/MM own clients (another manager's client is 404 CLIENT_NOT_FOUND); task-only staff 403."
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The active link, else the latest revoked one, else null., content: { application/json: { schema: { type: object, properties: { link: { allOf: [{ $ref: "#/components/schemas/PortalLink" }], nullable: true } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: CLIENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    post:
+      tags: [Portal]
+      summary: Generate or regenerate the link (the old one stops working)
+      description: The token and full URL are returned ONCE and stored only as a SHA-256 hash. Refused (409 CLIENT_ARCHIVED) for an archived client.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: The new link plus its one-time token and URL., content: { application/json: { schema: { type: object, required: [link, token, url], properties: { link: { $ref: "#/components/schemas/PortalLink" }, token: { type: string }, url: { type: string } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: CLIENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: CLIENT_ARCHIVED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/portal-links/{clientId}/disable:
+    parameters:
+      - { name: clientId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Portal]
+      summary: Disable the client's link (idempotent)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The revoked link (or null if there was none)., content: { application/json: { schema: { type: object, properties: { link: { allOf: [{ $ref: "#/components/schemas/PortalLink" }], nullable: true } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: CLIENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  # ------------------------------------------------------ Portal (public) --
+  /api/v1/portal/{token}:
+    parameters:
+      - { name: token, in: path, required: true, description: The link token (the credential). Redacted from logs., schema: { type: string } }
+    get:
+      tags: [Portal]
+      summary: "Public: the client's dashboard"
+      description: No login. Unknown, regenerated, disabled and archived-client links all return the same 404 PORTAL_LINK_INVALID. Rate-limited per IP. Client-safe fields only (no assets, internal notes, tasks or staff data beyond the manager's first name).
+      responses:
+        "200": { description: Dashboard., content: { application/json: { schema: { $ref: "#/components/schemas/PortalDashboard" } } } }
+        "404": { description: PORTAL_LINK_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/portal/{token}/events:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Portal]
+      summary: "Public: the client's calendar range (from + to required, at most 92 days)"
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+      responses:
+        "200": { description: Events overlapping the range., content: { application/json: { schema: { type: object, properties: { from: { type: string }, to: { type: string }, timeZone: { type: string }, events: { type: array, items: { $ref: "#/components/schemas/PortalEvent" } } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: PORTAL_LINK_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/portal/{token}/events/{eventId}:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: string } }
+      - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Portal]
+      summary: "Public: one of the client's events with its client-visible updates"
+      responses:
+        "200": { description: The event., content: { application/json: { schema: { type: object, properties: { event: { $ref: "#/components/schemas/PortalEvent" } } } } } }
+        "404": { description: PORTAL_LINK_INVALID or PORTAL_EVENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/portal/{token}/comments:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Portal]
+      summary: "Public: the client's own comments with status and reply (FR-CMT-05)"
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200": { description: Newest first., content: { application/json: { schema: { type: object, properties: { comments: { type: array, items: { $ref: "#/components/schemas/PortalComment" } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } } } } } }
+        "404": { description: PORTAL_LINK_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    post:
+      tags: [Portal]
+      summary: "Public: post a comment (general or about one of the client's events)"
+      description: "Body limit 4 KB (413). Rate-limited per IP, overall and per link (429). Notifies the client's manager only (bell + push, never email). Unknown keys are refused."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [body], properties: { body: { type: string, minLength: 1, maxLength: 2000 }, eventId: { type: string, format: uuid, nullable: true } } }
+      responses:
+        "201": { description: The saved comment (status received)., content: { application/json: { schema: { type: object, properties: { comment: { $ref: "#/components/schemas/PortalComment" } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: PORTAL_LINK_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  # ----------------------------------------------------- Client comments --
+  /api/v1/client-comments:
+    get:
+      tags: [Client comments]
+      summary: The comment inbox (default the open ones), newest first
+      description: "`comments:read`: Admin all, SMM/MM own clients; task-only 403."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: clientId, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/CommentStatus" } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200": { description: A page of comments., content: { application/json: { schema: { type: object, properties: { comments: { type: array, items: { $ref: "#/components/schemas/ClientComment" } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/client-comments/counts:
+    get:
+      tags: [Client comments]
+      summary: Open comments by status (the inbox badge)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Counts., content: { application/json: { schema: { type: object, properties: { received: { type: integer }, inProgress: { type: integer } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/client-comments/{commentId}:
+    parameters:
+      - { name: commentId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Client comments]
+      summary: One comment (another manager's is 404 COMMENT_NOT_FOUND)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The comment., content: { application/json: { schema: { type: object, properties: { comment: { $ref: "#/components/schemas/ClientComment" } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: COMMENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    patch:
+      tags: [Client comments]
+      summary: Change the status and/or reply (version required)
+      description: "Moves: received to in_progress or solved, in_progress to solved, solved to in_progress (reopen); never back to received (409 COMMENT_STATUS_TRANSITION_INVALID). A stale version is 409 COMMENT_MODIFIED. An empty or null reply clears it."
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [version], properties: { status: { $ref: "#/components/schemas/CommentStatus" }, reply: { type: string, maxLength: 2000, nullable: true }, version: { type: integer, minimum: 1 } } }
+      responses:
+        "200": { description: The updated comment., content: { application/json: { schema: { type: object, properties: { comment: { $ref: "#/components/schemas/ClientComment" } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: COMMENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: COMMENT_MODIFIED or COMMENT_STATUS_TRANSITION_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1783,6 +1965,198 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    TaskStatusCounts:
+      type: object
+      required: [todo, in_progress, blocked, done]
+      properties:
+        todo: { type: integer }
+        in_progress: { type: integer }
+        blocked: { type: integer }
+        done: { type: integer }
+    DashboardTask:
+      type: object
+      required: [id, title, status, priority, dueAt, clientName, assigneeName]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { $ref: "#/components/schemas/StaffTaskStatus" }
+        priority: { $ref: "#/components/schemas/StaffTaskPriority" }
+        dueAt: { type: string, format: date-time, nullable: true }
+        clientName: { type: string, nullable: true }
+        assigneeName: { type: string, nullable: true, description: Firm lists only; null on the caller's own tasks. }
+    DashboardTaskComment:
+      type: object
+      required: [id, taskId, taskTitle, authorName, comment, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        taskId: { type: string, format: uuid }
+        taskTitle: { type: string }
+        authorName: { type: string, nullable: true }
+        comment: { type: string }
+        createdAt: { type: string, format: date-time }
+    DashboardEvent:
+      type: object
+      required: [id, title, type, state, startsAt, endsAt, timeZone, clientId, clientName, currentStageName, currentStagePosition, stageCount]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        type: { $ref: "#/components/schemas/EventType" }
+        state: { $ref: "#/components/schemas/EventState" }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        timeZone: { type: string }
+        clientId: { type: string, format: uuid }
+        clientName: { type: string }
+        currentStageName: { type: string }
+        currentStagePosition: { type: integer, minimum: 1 }
+        stageCount: { type: integer }
+    DashboardComment:
+      type: object
+      required: [id, clientId, clientName, eventTitle, excerpt, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        clientName: { type: string }
+        eventTitle: { type: string, nullable: true }
+        excerpt: { type: string, description: First 160 characters. }
+        status: { $ref: "#/components/schemas/CommentStatus" }
+        createdAt: { type: string, format: date-time }
+    Dashboard:
+      type: object
+      required: [role, window, tasks, clients, firm]
+      properties:
+        role: { $ref: "#/components/schemas/Role" }
+        window:
+          type: object
+          required: [timeZone, today, todayStart, tomorrowStart, weekEnd]
+          properties:
+            timeZone: { type: string }
+            today: { type: string, format: date }
+            todayStart: { type: string, format: date-time }
+            tomorrowStart: { type: string, format: date-time }
+            weekEnd: { type: string, format: date-time }
+        tasks:
+          type: object
+          required: [counts, dueToday, overdue, open, recentComments]
+          properties:
+            counts: { $ref: "#/components/schemas/TaskStatusCounts" }
+            dueToday: { type: integer }
+            overdue: { type: integer }
+            open: { type: array, items: { $ref: "#/components/schemas/DashboardTask" } }
+            recentComments: { type: array, items: { $ref: "#/components/schemas/DashboardTaskComment" } }
+        clients:
+          type: object
+          nullable: true
+          required: [clientCount, today, upcoming, byStage, unresolvedComments, latestComments]
+          properties:
+            clientCount: { type: integer }
+            today: { type: array, items: { $ref: "#/components/schemas/DashboardEvent" } }
+            upcoming: { type: array, items: { $ref: "#/components/schemas/DashboardEvent" } }
+            byStage:
+              type: array
+              items: { type: object, required: [stageName, count], properties: { stageName: { type: string }, count: { type: integer } } }
+            unresolvedComments:
+              type: object
+              required: [received, inProgress]
+              properties: { received: { type: integer }, inProgress: { type: integer } }
+            latestComments: { type: array, items: { $ref: "#/components/schemas/DashboardComment" } }
+        firm:
+          type: object
+          nullable: true
+          required: [totals, tasksByStatus, week, overdueTasks, latestComments, team]
+          properties:
+            totals:
+              type: object
+              required: [clients, activeEvents, openTasks, unresolvedComments]
+              properties:
+                clients: { type: integer }
+                activeEvents: { type: integer }
+                openTasks: { type: integer }
+                unresolvedComments: { type: integer }
+            tasksByStatus: { $ref: "#/components/schemas/TaskStatusCounts" }
+            week: { type: array, items: { $ref: "#/components/schemas/DashboardEvent" } }
+            overdueTasks: { type: array, items: { $ref: "#/components/schemas/DashboardTask" } }
+            latestComments: { type: array, items: { $ref: "#/components/schemas/DashboardComment" } }
+            team:
+              type: array
+              items:
+                type: object
+                required: [userId, name, role, open, overdue, doneThisWeek]
+                properties:
+                  userId: { type: string, format: uuid }
+                  name: { type: string }
+                  role: { $ref: "#/components/schemas/Role" }
+                  open: { type: integer }
+                  overdue: { type: integer }
+                  doneThisWeek: { type: integer }
+    CommentStatus:
+      type: string
+      enum: [received, in_progress, solved]
+    PortalLink:
+      type: object
+      description: Staff view of a client's portal link. Never the token or its hash.
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        createdByName: { type: string, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+    PortalEvent:
+      type: object
+      description: Client-safe event. No description, team, template, staff names or version.
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        type: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        timeZone: { type: string }
+        location: { type: string, nullable: true }
+        state: { type: string }
+        stages: { type: array, items: { type: object, properties: { position: { type: integer }, name: { type: string } } } }
+        currentStagePosition: { type: integer }
+        stageCount: { type: integer }
+        updates: { type: array, description: Only on the single-event read. Client-visible stage notes., items: { type: object, properties: { stageName: { type: string }, note: { type: string, nullable: true }, createdAt: { type: string, format: date-time } } } }
+    PortalDashboard:
+      type: object
+      properties:
+        client: { type: object, properties: { businessName: { type: string }, logoUrl: { type: string, nullable: true }, timeZone: { type: string } } }
+        manager: { type: object, properties: { firstName: { type: string } } }
+        current: { allOf: [{ $ref: "#/components/schemas/PortalEvent" }], nullable: true }
+        upcoming: { type: array, items: { $ref: "#/components/schemas/PortalEvent" } }
+        recent: { type: array, items: { $ref: "#/components/schemas/PortalEvent" } }
+    PortalComment:
+      type: object
+      description: The client's view of their comment. No staff names.
+      properties:
+        id: { type: string, format: uuid }
+        eventId: { type: string, format: uuid, nullable: true }
+        eventTitle: { type: string, nullable: true }
+        body: { type: string }
+        status: { $ref: "#/components/schemas/CommentStatus" }
+        reply: { type: string, nullable: true }
+        repliedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    ClientComment:
+      type: object
+      description: Staff inbox view.
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        clientName: { type: string }
+        ownerId: { type: string, format: uuid }
+        eventId: { type: string, format: uuid, nullable: true }
+        eventTitle: { type: string, nullable: true }
+        body: { type: string }
+        status: { $ref: "#/components/schemas/CommentStatus" }
+        reply: { type: string, nullable: true }
+        repliedAt: { type: string, format: date-time, nullable: true }
+        repliedByName: { type: string, nullable: true }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     Role:
       type: string
       description: |

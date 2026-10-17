@@ -316,6 +316,41 @@ async function main() {
   const mmCal = await req(`/calendar?${calRange}&ownerId=${smm.id}`, {}, mm.token);
   check("GET /calendar as MM never shows the SMM's items (ownerId ignored)", mmCal.body?.items?.every((i) => i.ownerId === mm.id), true);
 
+  console.log("\n--- portal links + client comments (admin: all; SMM / MM: own clients, others' 404; task-only: 403; public: token only) ---");
+  const porClient = (await req("/clients", { method: "POST", body: newClient("portal-client") }, smm.token)).body?.client;
+  const linkExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  let porToken = null;
+  for (const [role, token] of everyone) {
+    const r = await req(`/portal-links/${porClient?.id}`, { method: "POST" }, token);
+    check(`POST /portal-links/:clientId (SMM's) as ${role} -> ${linkExpect[role]}`, r.status, linkExpect[role]);
+    if (r.status === 201) porToken = r.body.token; // the last 201 wins; earlier tokens are revoked
+  }
+  check("GET /portal/:token (no login) -> 200", (await req(`/portal/${porToken}`)).status, 200);
+  check("GET /portal/<made-up token> -> 404", (await req(`/portal/${"A".repeat(43)}`)).status, 404);
+  const posted = await req(`/portal/${porToken}/comments`, { method: "POST", body: JSON.stringify({ body: `RBAC comment ${stamp}` }) });
+  check("POST /portal/:token/comments (no login) -> 201", posted.status, 201);
+  const commentId = posted.body?.comment?.id;
+  for (const [role, token] of everyone) {
+    const listExpect = TASK_ONLY.includes(role) ? 403 : 200;
+    check(`GET /client-comments as ${role} -> ${listExpect}`, (await req("/client-comments", {}, token)).status, listExpect);
+    check(`GET /client-comments/counts as ${role} -> ${listExpect}`, (await req("/client-comments/counts", {}, token)).status, listExpect);
+    const oneExpect = { admin: 200, social_media_manager: 200, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 }[role];
+    check(`GET /client-comments/:id (SMM's) as ${role} -> ${oneExpect}`, (await req(`/client-comments/${commentId}`, {}, token)).status, oneExpect);
+  }
+  for (const [role, token] of everyone) {
+    if (role === "admin" || role === "social_media_manager") continue; // writers checked below
+    const expected = role === "marketing_manager" ? 404 : 403;
+    const r = await req(`/client-comments/${commentId}`, { method: "PATCH", body: JSON.stringify({ status: "in_progress", version: 1 }) }, token);
+    check(`PATCH /client-comments/:id (SMM's) as ${role} -> ${expected}`, r.status, expected);
+  }
+  check(
+    "PATCH /client-comments/:id as SMM (own) -> 200",
+    (await req(`/client-comments/${commentId}`, { method: "PATCH", body: JSON.stringify({ status: "in_progress", version: 1 }) }, smm.token)).status,
+    200,
+  );
+  check("POST /portal-links/:clientId/disable as SMM -> 200", (await req(`/portal-links/${porClient?.id}/disable`, { method: "POST" }, smm.token)).status, 200);
+  check("GET /portal/:token after disable -> 404", (await req(`/portal/${porToken}`)).status, 404);
+
   console.log("\n--- assets (admin: all; SMM / MM: their clients' assets, others' are 404; task-only: 403) ---");
   const astClient = (await req("/clients", { method: "POST", body: newClient("assets-client") }, smm.token)).body?.client;
   const astBody = JSON.stringify({ clientId: astClient?.id, title: `RBAC asset ${stamp}`, url: "https://drive.google.com/drive/folders/rbac", type: "photo", tags: ["rbac"] });
@@ -413,6 +448,16 @@ async function main() {
   check("DELETE /staff-tasks/:id as admin -> 204", (await req(`/staff-tasks/${tid}`, { method: "DELETE" }, admin.token)).status, 204);
   check("... a deleted task is 404 for the admin", (await req(`/staff-tasks/${tid}`, {}, admin.token)).status, 404);
   if (smmTask.body?.task?.id) await req(`/staff-tasks/${smmTask.body.task.id}`, { method: "DELETE" }, admin.token);
+
+  console.log("\n--- dashboard (M10: every role; own tasks for all, own clients for admin / SMM / MM, the firm for admin only) ---");
+  check("GET /dashboard without a token -> 401", (await req("/dashboard")).status, 401);
+  for (const [role, token] of everyone) {
+    const r = await req("/dashboard", {}, token);
+    check(`GET /dashboard as ${role} -> 200`, r.status, 200);
+    const managesClients = ["admin", "social_media_manager", "marketing_manager"].includes(role);
+    check(`  ${role}: clients section ${managesClients ? "present" : "absent"}`, r.body?.clients != null, managesClients);
+    check(`  ${role}: firm section ${role === "admin" ? "present" : "absent"}`, r.body?.firm != null, role === "admin");
+  }
 
   console.log("\n--- users:manage (admin only) ---");
   for (const [role, token] of everyone) {

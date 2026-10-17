@@ -6,6 +6,8 @@ import { db } from "../../src/common/database/drizzle-client";
 import { notifications, pushSubscriptions } from "../../src/modules/notifications/infrastructure/notifications.schema";
 import { DrizzleNotificationsRepository } from "../../src/modules/notifications/infrastructure/drizzle-notifications.repository";
 import { NotificationDispatcher } from "../../src/modules/notifications/application/notification-dispatcher";
+import { inArray, or } from "drizzle-orm";
+import { staffTasks } from "../../src/modules/staff-tasks/infrastructure/staff-tasks.schema";
 import type { PushOutcome, PushSender } from "../../src/modules/notifications/application/ports/push-sender.port";
 import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, type FixtureUser } from "./helpers";
 
@@ -58,6 +60,7 @@ beforeAll(async () => {
 afterAll(async () => {
   const people = [admin, smm, mm, editor].filter(Boolean).map((u) => u.id);
   await deleteClientsOwnedBy(people);
+  await db.delete(staffTasks).where(or(inArray(staffTasks.assigneeId, people), inArray(staffTasks.assignedBy, people)));
   // Notifications, devices and preferences cascade with the profiles.
   for (const id of people) await deleteFixtureUser(id);
   await closeDb();
@@ -108,6 +111,23 @@ describe("client reassigned -> the new owner's bell", () => {
   });
 });
 
+describe("staff tasks -> the other side's bell (M7 + M9)", () => {
+  it("assigning notifies the assignee; the assignee's status change notifies the assigning Admin", async () => {
+    const created = await request(app).post("/api/v1/staff-tasks").set("Authorization", auth.admin!).send({ title: "Bell task", assigneeId: editor.id, rawFilesUrl: "https://drive.google.com/drive/folders/bell" });
+    expect(created.status).toBe(201);
+    const task = (created.body as { task: { id: string; version: number } }).task;
+    expect((await bell("editor")).notifications.some((n) => n.type === "task_assigned")).toBe(true);
+
+    const moved = await request(app).post(`/api/v1/staff-tasks/${task.id}/status`).set("Authorization", auth.editor!).send({ status: "in_progress", version: task.version });
+    expect(moved.status).toBe(200);
+    expect((await bell("admin")).notifications.some((n) => n.type === "task_status_changed")).toBe(true);
+    // Nobody is told about their own action.
+    expect((await bell("editor")).notifications.some((n) => n.type === "task_status_changed")).toBe(false);
+    // Leave both bells read for the tests below.
+    for (const role of ["admin", "editor"]) await request(app).post("/api/v1/notifications/read-all").set("Authorization", auth[role]!);
+  });
+});
+
 describe("the bell", () => {
   it("marks one read (idempotent); someone else's or a bad id is a 404", async () => {
     const [first] = (await bell("marketing_manager")).notifications;
@@ -136,7 +156,13 @@ describe("the bell", () => {
 describe("preferences", () => {
   it("lists the live triggers, all on by default", async () => {
     const res = await request(app).get("/api/v1/notifications/preferences").set("Authorization", auth.social_media_manager!);
-    expect((res.body as Prefs).preferences.map(({ type, push, inApp }) => ({ type, push, inApp }))).toEqual([{ type: "client_reassigned", push: true, inApp: true }]);
+    expect((res.body as Prefs).preferences.map(({ type, push, inApp }) => ({ type, push, inApp }))).toEqual([
+      { type: "client_reassigned", push: true, inApp: true },
+      { type: "task_assigned", push: true, inApp: true },
+      { type: "task_status_changed", push: true, inApp: true },
+      { type: "task_commented", push: true, inApp: true },
+      { type: "client_comment", push: true, inApp: true },
+    ]);
   });
 
   it("a muted bell means no notification at all", async () => {

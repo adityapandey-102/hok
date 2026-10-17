@@ -22,6 +22,12 @@ import { teamMembersRouter } from "./modules/team-members/api/team-members.route
 import { assetsRouter } from "./modules/assets/api/assets.routes";
 import { staffTasksRouter } from "./modules/staff-tasks/api/staff-tasks.routes";
 import { notificationsRouter } from "./modules/notifications/api/notifications.routes";
+import { portalLinksRouter } from "./modules/portal/api/portal-links.routes";
+import { portalPublicRouter } from "./modules/portal/api/portal-public.routes";
+import { clientCommentsRouter, portalCommentsRouter } from "./modules/client-comments/api/client-comments.routes";
+import { dashboardRouter } from "./modules/dashboard/api/dashboard.routes";
+import { requirePortalLink } from "./common/middleware/portal-link.middleware";
+import { portalReadLimiter } from "./common/middleware/portal-rate-limit.middleware";
 
 /** Turns the TRUST_PROXY env string into what Express's `trust proxy` expects:
  *  a boolean, a hop count, or a preset/subnet string (e.g. "loopback"). */
@@ -72,8 +78,19 @@ export function createApp() {
     .map((o) => o.trim())
     .filter(Boolean);
   app.use(cors({ origin: allowedOrigins }));
-  // The public client-portal routes (M8) mount here, BEFORE the global JSON
-  // parser, with their own small body limit -- needleye's public-form pattern.
+  // The public client portal (M8): no login, the link token is the credential.
+  // Mounted BEFORE the global JSON parser with its own small body limit (an
+  // oversized body is a 413 before any work), behind the read limiter, and
+  // only after requirePortalLink has resolved the token (same 404 for every
+  // bad link). needleye's public-form pattern. Tokens are redacted from logs.
+  app.use(
+    "/api/v1/portal/:token",
+    portalReadLimiter,
+    express.json({ limit: "4kb" }),
+    requirePortalLink,
+    portalCommentsRouter,
+    portalPublicRouter,
+  );
   app.use(express.json());
 
   // Liveness: is the process up and serving? No dependencies checked -- an
@@ -113,6 +130,9 @@ export function createApp() {
   apiV1.use("/assets", assetsRouter);
   apiV1.use("/staff-tasks", staffTasksRouter);
   apiV1.use("/notifications", notificationsRouter);
+  apiV1.use("/portal-links", portalLinksRouter);
+  apiV1.use("/client-comments", clientCommentsRouter);
+  apiV1.use("/dashboard", dashboardRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

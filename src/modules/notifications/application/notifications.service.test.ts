@@ -65,9 +65,9 @@ describe("NotificationsService", () => {
       expect(repo.prefs.get("sara")).toEqual({ mutedPush: [], mutedInApp: ["client_reassigned"] });
     });
 
-    it("ignores triggers that aren't live yet", async () => {
+    it("stores mutes for a live trigger (all five triggers are live since M8)", async () => {
       await service.updatePreferences("sara", { preferences: [{ type: "client_comment", push: false, inApp: false }] });
-      expect(repo.prefs.get("sara")).toEqual({ mutedPush: [], mutedInApp: [] });
+      expect(repo.prefs.get("sara")).toEqual({ mutedPush: ["client_comment"], mutedInApp: ["client_comment"] });
     });
   });
 

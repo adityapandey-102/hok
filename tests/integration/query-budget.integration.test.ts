@@ -7,6 +7,7 @@ import { clients } from "../../src/modules/clients/infrastructure/clients.schema
 import { eventStages, events } from "../../src/modules/events/infrastructure/events.schema";
 import { personalEvents } from "../../src/modules/personal-events/infrastructure/personal-events.schema";
 import { assetTags, assets, tags } from "../../src/modules/assets/infrastructure/assets.schema";
+import { clientComments } from "../../src/modules/client-comments/infrastructure/client-comments.schema";
 import { staffTasks } from "../../src/modules/staff-tasks/infrastructure/staff-tasks.schema";
 import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, deleteStaffTasksFor, type FixtureUser } from "./helpers";
 
@@ -31,6 +32,7 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
   let staffTasksReady = false;
   // M5: personal events (migration 20261014300001); entries skip until it's applied.
   let personalReady = false;
+  let firstClientId = "";
   const pool = db.$client;
   const original = pool.query.bind(pool) as (...args: unknown[]) => Promise<unknown>;
 
@@ -59,6 +61,9 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
       .values(Array.from({ length: 12 }, (_, i) => ({ clientId: qbClients[0]!.id, title: `QB Asset ${i}`, url: `https://example.test/qb/${i}`, type: "photo" as const, comment: "budget", createdBy: admin.id })))
       .returning({ id: assets.id });
     await db.insert(assetTags).values(qbAssets.flatMap((a) => qbTags.map((t) => ({ assetId: a.id, tagId: t.id }))));
+    // ...and 12 client comments (half linked to an event) spread over the clients, for the comment inbox.
+    firstClientId = qbClients[0]!.id;
+    await db.insert(clientComments).values(Array.from({ length: 12 }, (_, i): typeof clientComments.$inferInsert => ({ clientId: qbClients[i % qbClients.length]!.id, body: `QB comment ${i}`, status: i % 3 === 0 ? "in_progress" : "received" })));
     // ...and 12 staff tasks assigned to the admin fixture (half linked to a client, half overdue), for the task lists.
     const probe = await db.execute(sql`select to_regclass('public.staff_tasks') is not null as ok`);
     staffTasksReady = (probe.rows[0] as { ok: boolean } | undefined)?.ok === true;
@@ -127,6 +132,8 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     ["assets search + type", (l) => `/api/v1/assets?search=QB&type=photo&limit=${l}`],
     ["assets by tag + date range", (l) => `/api/v1/assets?tag=qbtag&from=2020-01-01T00:00:00Z&to=2099-01-01T00:00:00Z&limit=${l}`],
     ["assets tag suggestions", (l) => `/api/v1/assets/tags?q=QB&limit=${l}`],
+    ["client comments inbox", (l) => `/api/v1/client-comments?limit=${l}`],
+    ["client comments by client + status", (l) => `/api/v1/client-comments?clientId=${firstClientId}&status=received&limit=${l}`],
     ["staff tasks", (l) => `/api/v1/staff-tasks?limit=${l}`],
     ["staff tasks by assignee + search + priority", (l) => `/api/v1/staff-tasks?assigneeId=${admin.id}&search=QB&priority=high&limit=${l}`],
     ["staff tasks by role + overdue", (l) => `/api/v1/staff-tasks?role=admin&overdue=true&limit=${l}`],
@@ -152,6 +159,13 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     const month = await queriesFor("/api/v1/calendar?from=2031-01-01T00:00:00Z&to=2031-02-01T00:00:00Z");
     expect(month, `calendar: ${day} queries for a day, ${month} for a month`).toBe(day);
     expect(day).toBeLessThanOrEqual(3);
+  });
+
+  // M10: the dashboard is aggregates + capped lists. The fixture Admin owns 12 clients, events and
+  // comments, yet the count is fixed: auth profile + 12 reads (3 own tasks, 4 own clients, 5 firm).
+  it("dashboard: a fixed number of queries, whatever the data", async (ctx) => {
+    if (!staffTasksReady) ctx.skip();
+    expect(await queriesFor("/api/v1/dashboard")).toBe(13);
   });
 
   it("list page sizes are capped (an over-large limit is clamped, never honoured)", async () => {

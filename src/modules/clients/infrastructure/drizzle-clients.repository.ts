@@ -10,6 +10,10 @@ import { profiles } from "../../users/infrastructure/profile.schema";
 // the same transaction as the reassignment, through the Notifications
 // module's public surface (ARCHITECTURE §8). See docs/adr/0003.
 import { clientReassignedPayload, insertNotificationsInTransaction } from "../../notifications/notifications.module";
+// Cross-module Infrastructure-only write: archiving a client revokes its active
+// portal link in the same transaction (FR-CLI-07: archive disables the portal;
+// an unarchive must never bring an old link back). See docs/adr/0003.
+import { portalLinks } from "../../portal/infrastructure/portal.schema";
 import { clients } from "./clients.schema";
 import { ClientMapper, type ClientRow, type ClientSummaryRow } from "./client.mapper";
 import type { ClientEntity } from "../domain/client.entity";
@@ -185,6 +189,13 @@ export class DrizzleClientsRepository implements ClientsRepositoryPort {
             version: sql`${clients.version} + 1`,
           })
           .where(eq(clients.id, id));
+
+        if (changes.archivedAt === "now") {
+          await tx
+            .update(portalLinks)
+            .set({ active: false, revokedAt: sql`now()` })
+            .where(and(eq(portalLinks.clientId, id), eq(portalLinks.active, true)));
+        }
 
         const notice = changes.reassignedNotice;
         if (notice) {

@@ -7,6 +7,9 @@ import { uuidParam } from "../../../common/http/uuid-param";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { StaffTasksService, type StaffTasksCaller } from "../application/staff-tasks.service";
 import { DrizzleStaffTasksRepository } from "../infrastructure/drizzle-staff-tasks.repository";
+import { auditLogger } from "../../../common/audit/drizzle-audit-logger";
+import { notifier, taskAssignedPayload, taskCommentedPayload, taskStatusChangedPayload } from "../../notifications/notifications.module";
+import type { StaffTaskNotifier } from "../application/ports/staff-task-notifier.port";
 import { toStaffTaskDetailResponseDto, toStaffTaskSummaryResponseDto } from "./staff-task.presenter";
 import {
   changeStatusDtoSchema,
@@ -23,8 +26,27 @@ import {
   type UpdateStaffTaskDto,
 } from "./dto/staff-task.dto";
 
-/** Composition root for the Staff Tasks module. M9 passes its notifier as the third argument. */
-const service = new StaffTasksService(new DrizzleStaffTasksRepository());
+/**
+ * M9 wiring (FR-TSK-07): bell + web push, never email. The dispatcher skips the
+ * actor, so nobody is notified about their own action.
+ * - assigned: the assignee.
+ * - status changed / comment: the other side -- the assignee when the Admin acts,
+ *   the assigning Admin when the assignee acts.
+ */
+const otherSide = (e: { assigneeId: string; assignedBy: string | null; actorId: string }) =>
+  e.actorId === e.assigneeId ? (e.assignedBy ? [e.assignedBy] : []) : [e.assigneeId];
+
+const taskNotifier: StaffTaskNotifier = {
+  taskAssigned: (e) =>
+    notifier.notify({ type: "task_assigned", recipientIds: [e.assigneeId], actorId: e.actorId, payload: taskAssignedPayload({ taskId: e.taskId, title: e.title }) }),
+  statusChanged: (e) =>
+    notifier.notify({ type: "task_status_changed", recipientIds: otherSide(e), actorId: e.actorId, payload: taskStatusChangedPayload({ taskId: e.taskId, title: e.title, to: e.to }) }),
+  commentAdded: (e) =>
+    notifier.notify({ type: "task_commented", recipientIds: otherSide(e), actorId: e.actorId, payload: taskCommentedPayload({ taskId: e.taskId, title: e.title }) }),
+};
+
+/** Composition root for the Staff Tasks module. */
+const service = new StaffTasksService(new DrizzleStaffTasksRepository(), auditLogger, taskNotifier);
 
 export const staffTasksRouter = Router();
 

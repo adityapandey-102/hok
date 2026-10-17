@@ -13,6 +13,8 @@ import * as personalEventsSchema from "../../modules/personal-events/infrastruct
 import * as assetsSchema from "../../modules/assets/infrastructure/assets.schema";
 import * as staffTasksSchema from "../../modules/staff-tasks/infrastructure/staff-tasks.schema";
 import * as notificationsSchema from "../../modules/notifications/infrastructure/notifications.schema";
+import * as portalSchema from "../../modules/portal/infrastructure/portal.schema";
+import * as clientCommentsSchema from "../../modules/client-comments/infrastructure/client-comments.schema";
 
 /**
  * The one Postgres connection pool every repository queries through.
@@ -40,6 +42,8 @@ const schema = {
   ...assetsSchema,
   ...staffTasksSchema,
   ...notificationsSchema,
+  ...portalSchema,
+  ...clientCommentsSchema,
 };
 
 const pool = new Pool({

@@ -17,6 +17,11 @@ import { ASSET_TYPES } from "../modules/assets/domain/asset.entity";
 import { staffTasksRouter } from "../modules/staff-tasks/api/staff-tasks.routes";
 import { STAFF_TASK_PRIORITIES, STAFF_TASK_STATUSES, STAFF_TASK_UPDATE_KINDS } from "../modules/staff-tasks/domain/staff-task.entity";
 import { notificationsRouter } from "../modules/notifications/api/notifications.routes";
+import { portalLinksRouter } from "../modules/portal/api/portal-links.routes";
+import { portalPublicRouter } from "../modules/portal/api/portal-public.routes";
+import { clientCommentsRouter, portalCommentsRouter } from "../modules/client-comments/api/client-comments.routes";
+import { dashboardRouter } from "../modules/dashboard/api/dashboard.routes";
+import { COMMENT_STATUSES } from "../modules/client-comments/domain/client-comment.entity";
 import { NOTIFICATION_TYPES } from "../modules/notifications/domain/notification.entity";
 
 /**
@@ -43,6 +48,11 @@ const MOUNTED: [string, Router][] = [
   ["/api/v1/assets", assetsRouter],
   ["/api/v1/staff-tasks", staffTasksRouter],
   ["/api/v1/notifications", notificationsRouter],
+  ["/api/v1/portal-links", portalLinksRouter],
+  ["/api/v1/client-comments", clientCommentsRouter],
+  ["/api/v1/dashboard", dashboardRouter],
+  ["/api/v1/portal/{token}", portalCommentsRouter],
+  ["/api/v1/portal/{token}", portalPublicRouter],
 ];
 
 /** Express 4 keeps each route on its router's stack as { route: { path, methods } }. */
@@ -101,6 +111,12 @@ describe("openapi.yaml stays in sync with the Staff tasks module", () => {
 describe("openapi.yaml stays in sync with the Notifications module", () => {
   it("documents exactly the notification types, in order", () => {
     expect(schemas.NotificationType?.enum).toEqual([...NOTIFICATION_TYPES]);
+  });
+});
+
+describe("openapi.yaml: client comments", () => {
+  it("documents exactly the comment statuses", () => {
+    expect(schemas.CommentStatus?.enum).toEqual([...COMMENT_STATUSES]);
   });
 });
 

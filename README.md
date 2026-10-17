@@ -465,8 +465,28 @@ REQUIREMENTS §5.9 (FR-TSK-01..10; reminders FR-TSK-11 are Phase 2). Migration `
 - **Links.** Optional `clientId` / `eventId` (`ON DELETE SET NULL`). An event must belong to the named client; an event alone links its client; changing the client without an event unlinks the old event (`400 STAFF_TASK_CLIENT_INVALID` / `STAFF_TASK_EVENT_INVALID`). The assignee sees the client's name and the event's title on the task even without client access -- that's the task's context, nothing more. **Events safety:** the migration adds the `event_id` FK only if `public.events` exists (it does whenever `migration up` runs, because 20261013000004 sorts first); the repository treats a missing events table (SQLSTATE 42P01) as "no such event", so tasks keep working and `eventId` is refused with 400 instead of a 500.
 - **Optimistic lock.** `version` required on PATCH, status and reopen (`409 STAFF_TASK_MODIFIED`); every write is `SELECT … FOR UPDATE OF staff_tasks` + the service's guard callback + the update + the timeline row. Delete is a hard delete (timeline cascades; `staff_task.deleted` stays in the audit log).
 - **Lists.** `GET /staff-tasks`: page cap 100, one page query (joined to the assignee's profile and the client) + one `count(*)`. Filters: `status`, `open=true` (not done), `priority`, `overdue=true` (due before now and not done), `dueFrom`/`dueTo` (instants; the web sends the viewer's day boundaries), `search` (title), and for the Admin `assigneeId`, `role` (the assignee's) and `clientId`. Order: open before done, soonest due first (no due date last), newest; with `status=done`, latest completed first (one Kanban column = one `status` query).
-- **Notifications (M9 hook).** `StaffTasksService` calls a `StaffTaskNotifier` (`application/ports/staff-task-notifier.port.ts`) after commit: `taskAssigned` (create, reassign), `statusChanged` (status, reopen) and `commentAdded`, each with the actor. Today it's a no-op; M9 passes the real one in `staff-tasks.routes.ts`.
+- **Notifications (M9).** `StaffTasksService` calls a `StaffTaskNotifier` (`application/ports/staff-task-notifier.port.ts`) after commit: `taskAssigned` (create, reassign), `statusChanged` (status, reopen) and `commentAdded`, each with the actor. `staff-tasks.routes.ts` wires the real one: it notifies the other side (the assignee when the Admin acts, the assigner when the assignee acts).
 - Audit: `staff_task.created`, `staff_task.updated` (field names only), `staff_task.reassigned` (`{ from, to }`), `staff_task.deleted`. Status changes and comments live in the timeline instead.
+
+### Calendars and personal events (M5)
+
+REQUIREMENTS §5.6. Migration `20261014300001_personal_events.sql`. `personal-events` owns a manager's own entries (`personal_events:manage`, owner-only; anyone else's is 404). `calendar` owns no table: `GET /calendar?from&to` (≤ 92 days) merges client events and personal entries overlapping the range, in **two** parallel queries (one per kind, each capped at 500, `truncated: true` if hit). A manager gets their clients' events plus their own entries; the Admin gets every event (or one `ownerId`'s). Times are UTC; the web shows them in the viewer's zone.
+
+### Client portal and comments (M8)
+
+REQUIREMENTS §5.7–5.8. Migration `20261014400001_portal_comments.sql` (`portal_links`, `client_comments`, `client_comment_history`).
+
+- **The link is the only credential.** 32 random bytes, base64url; only its **SHA-256 hash** is stored, and the token is shown once (on generate / regenerate). At most one active link per client (partial unique index). Regenerate replaces it, disable switches it off, and **archiving a client revokes it for good** (inside the archive transaction).
+- **Public routes** (`/api/v1/portal/:token`, `/events`, `/events/:id`, `/comments`) are mounted **before** the global JSON parser with a 4 kb body limit. `requirePortalLink` answers **the same 404 `PORTAL_LINK_INVALID`** for every bad, disabled or revoked link. Rate limits: reads per IP; comments per IP, per link and globally. The token is redacted from logs. Responses are `Cache-Control: no-store`, and the presenters list client-safe fields explicitly (no staff names, ids or versions; only stage notes marked visible to the client).
+- **Comments.** The client posts (1–2000 characters, optionally about one of their events); the owning manager is notified (push + bell, never email). Staff inbox `GET /client-comments` (+ `/counts`), `PATCH /:id` to change status and reply (`version` required, `409` on a stale one). Lifecycle: received → in progress → solved, solved can reopen to in progress, never back to received. Status changes are appended to `client_comment_history` in the same transaction.
+
+### Notifications (M9)
+
+`notifier.notify({ type, recipientIds, actorId, payload })` writes the bell row and sends web push in the background (VAPID keys in `.env`; dead subscriptions are pruned). Five triggers, all live: client comment, task assigned, task status changed, task commented, client reassigned. Each user can mute push and/or the bell per trigger. **No email, ever** (the user's decision).
+
+### Dashboards (M10)
+
+REQUIREMENTS §5.11. `GET /api/v1/dashboard`, every staff role; the module owns no table. One response, shaped by role: `tasks` (the caller's own staff tasks) for everyone, `clients` (the caller's **own** clients) for Admin / SMM / MM, `firm` for the Admin only. Figures are `count(*) filter (…)` aggregates and every list is capped, so the query count is **fixed per role** (task-only staff 3, managers 7, Admin 12, plus the auth lookup), whatever the data size (query-budget test). "Today" and "this week" are the caller's own time zone (`src/domain/zoned-day.ts`, DST-safe).
 
 ### Dependency injection
 
