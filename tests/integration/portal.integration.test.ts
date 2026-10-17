@@ -114,6 +114,19 @@ describe("client comments end to end", () => {
     expect((await request(app).get("/api/v1/client-comments").set("Authorization", editorAuth)).status).toBe(403);
   });
 
+  it("searches the inbox by comment text or client name, with LIKE wildcards escaped", async () => {
+    const ids = async (search: string) => {
+      const res = await request(app).get(`/api/v1/client-comments?search=${encodeURIComponent(search)}`).set("Authorization", ownerAuth);
+      expect(res.status).toBe(200);
+      return (body(res).comments as Json[]).map((c) => c.id);
+    };
+    expect(await ids("BACKGROUND music")).toContain(commentId);
+    expect(await ids("test bakery")).toContain(commentId);
+    expect(await ids("no such words")).not.toContain(commentId);
+    expect(await ids("%")).not.toContain(commentId);
+    expect((await request(app).get(`/api/v1/client-comments?search=${"x".repeat(101)}`).set("Authorization", ownerAuth)).status).toBe(400);
+  });
+
   it("works through the lifecycle with history, version and transition checks", async () => {
     const stale = await request(app).patch(`/api/v1/client-comments/${commentId}`).set("Authorization", ownerAuth).send({ status: "in_progress", version: version + 5 });
     expect(body(stale).code).toBe("COMMENT_MODIFIED");

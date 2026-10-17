@@ -15,6 +15,13 @@ const offset = z.coerce.number().int().min(0).optional().default(0);
 /** GET /client-comments: no status = the open inbox (received + in progress). */
 export const commentQueryDtoSchema = z.object({
   clientId: z.string().uuid("clientId must be a client id").optional(),
+  /** Comment text or client name, case-insensitive; blank = no search. */
+  search: z
+    .string()
+    .trim()
+    .max(100)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
   status: z.enum(COMMENT_STATUSES).optional(),
   limit,
   offset,

@@ -2,6 +2,8 @@ import type { ClientCommentEntity, CommentCounts, CommentScope, CommentStatus, P
 
 export interface CommentListFilters {
   clientId?: string;
+  /** Matches the comment text or the client name (ILIKE, escaped). */
+  search?: string;
   /** No status = the open inbox (received + in_progress). */
   status?: CommentStatus;
   limit: number;

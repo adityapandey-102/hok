@@ -1,4 +1,5 @@
-import { and, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { containsPattern } from "../../../common/database/like-pattern";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../common/database/drizzle-client";
 import { InternalError, NotFoundError, AppError } from "../../../common/errors/app-error";
@@ -96,6 +97,9 @@ export class DrizzleClientCommentsRepository implements ClientCommentsRepository
       const where = and(
         scopeCondition(scope),
         filters.clientId ? eq(clientComments.clientId, filters.clientId) : undefined,
+        filters.search
+          ? or(ilike(clientComments.body, containsPattern(filters.search)), ilike(clients.businessName, containsPattern(filters.search)))
+          : undefined,
         filters.status ? eq(clientComments.status, filters.status) : inArray(clientComments.status, ["received", "in_progress"]),
       );
       const [rows, [total]] = await Promise.all([
