@@ -7,9 +7,9 @@ export const COMMENT_STATUS_LABEL: Record<PortalCommentStatus, string> = {
   solved: "Solved",
 };
 
-export const COMMENT_STATUS_TONE: Record<PortalCommentStatus, "blue" | "amber" | "green"> = {
-  received: "blue",
-  in_progress: "amber",
+export const COMMENT_STATUS_TONE: Record<PortalCommentStatus, "gray" | "blue" | "green"> = {
+  received: "gray",
+  in_progress: "blue",
   solved: "green",
 };
 

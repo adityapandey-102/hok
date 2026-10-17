@@ -38,14 +38,19 @@ export function fromEvent(e: EventSummary): CalendarItem {
   };
 }
 
-/** Chip colours by type; personal events get a dashed outline so they never read as client work. */
+/**
+ * Chip styles. Client work is a neutral tint (crimson is kept for today's date
+ * marker); personal entries are outlined and transparent so they never read as
+ * client work. The map stays keyed by type so a type can get its own look later.
+ */
+const CLIENT_CHIP = "bg-accent-bg text-text-primary border-border border-l-[3px] border-l-ink";
 export const TYPE_CHIP_CLASSES: Record<CalendarItem["type"], string> = {
-  shoot: "bg-primary-bg text-primary border-primary/25",
-  campaign: "bg-info-bg text-info border-info/25",
-  meeting: "bg-warning-bg text-warning-text border-warning-text/20",
-  content_posting: "bg-gold-bg text-[#7d6230] border-[#7d6230]/20",
-  other: "bg-gray-pill-bg text-text-secondary border-border",
-  personal: "bg-card text-text-secondary border-dashed border-text-muted",
+  shoot: CLIENT_CHIP,
+  campaign: CLIENT_CHIP,
+  meeting: CLIENT_CHIP,
+  content_posting: CLIENT_CHIP,
+  other: CLIENT_CHIP,
+  personal: "bg-transparent text-text-secondary border-dashed border-text-muted",
 };
 
 /** One item of GET /calendar (client events and personal entries merged). */

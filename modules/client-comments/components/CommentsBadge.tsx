@@ -28,7 +28,7 @@ export function CommentsBadge({ className = "" }: { className?: string }) {
   return (
     <span
       aria-label={`${count} open comments`}
-      className={`inline-flex min-w-5 items-center justify-center rounded-full bg-error px-1.5 text-[11px] font-semibold leading-5 text-white ${className}`}
+      className={`inline-flex min-w-5 items-center justify-center rounded-full bg-error px-1.5 text-[11px] font-semibold leading-5 text-on-ink ${className}`}
     >
       {count > 99 ? "99+" : count}
     </span>

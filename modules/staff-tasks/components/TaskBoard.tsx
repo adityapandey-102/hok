@@ -15,7 +15,7 @@ import {
 } from "@dnd-kit/core";
 import { STAFF_TASK_STATUSES, STAFF_TASK_STATUS_LABELS, isTaskOverdue, type StaffTaskStatus, type StaffTaskSummary } from "../../../lib/domain";
 import { staffTasksApi, type StaffTaskListFilters } from "../api/staffTasksApi";
-import { DueLabel, PriorityPill, describeTaskError } from "./taskUi";
+import { DueChip, PRIORITY_ACCENT, PersonDot, PriorityPill, describeTaskError } from "./taskUi";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
 import { useToast } from "../../../components/ui/Toast";
 
@@ -102,7 +102,14 @@ export function TaskBoard({ filters, filterKey, zone, reloadKey }: { filters: St
       </div>
     );
   }
-  if (!columns) return <div className="rounded-app-lg border border-border bg-card p-6 text-sm text-text-muted shadow-app">Loading…</div>;
+  if (!columns)
+    return (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-busy="true" aria-label="Loading tasks">
+        {STAFF_TASK_STATUSES.map((s) => (
+          <div key={s} className="skeleton h-64 rounded-app-lg" />
+        ))}
+      </div>
+    );
 
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
@@ -115,25 +122,33 @@ export function TaskBoard({ filters, filterKey, zone, reloadKey }: { filters: St
   );
 }
 
+const COLUMN_DOT: Record<StaffTaskStatus, string> = {
+  todo: "bg-accent",
+  in_progress: "bg-info",
+  blocked: "bg-warning",
+  done: "bg-success",
+};
+
 function BoardColumn({ status, column, zone }: { status: StaffTaskStatus; column: Column; zone: string }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
     <section
       ref={setNodeRef}
       aria-label={`${STAFF_TASK_STATUS_LABELS[status]} column`}
-      className={`flex w-[82%] shrink-0 snap-start flex-col rounded-app-lg border bg-app-bg/60 p-2.5 transition-colors sm:w-[45%] lg:w-auto ${
-        isOver ? "border-primary/50 bg-primary-bg/40" : "border-border"
+      className={`flex w-[82%] shrink-0 snap-start flex-col rounded-app-lg border p-2.5 transition-colors sm:w-[45%] lg:w-auto ${
+        isOver ? "border-primary bg-primary-bg" : "border-border-light bg-accent-bg"
       }`}
     >
-      <header className="mb-2 flex items-center justify-between px-1">
-        <h2 className="text-sm font-semibold text-text-primary">{STAFF_TASK_STATUS_LABELS[status]}</h2>
-        <span className="text-xs text-text-muted">{column.total}</span>
+      <header className="mb-2.5 flex items-center gap-2 px-1.5 pt-1">
+        <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${COLUMN_DOT[status]}`} />
+        <h2 className="font-serif text-[15px] text-text-primary">{STAFF_TASK_STATUS_LABELS[status]}</h2>
+        <span className="figure ml-auto rounded-full bg-card px-2 py-0.5 text-xs text-text-secondary ring-1 ring-border ring-inset">{column.total}</span>
       </header>
-      <ul className="flex min-h-24 flex-col gap-2">
+      <ul className="flex min-h-24 flex-col gap-2.5">
         {column.tasks.map((t) => (
           <BoardCard key={t.id} task={t} zone={zone} />
         ))}
-        {column.tasks.length === 0 && <li className="rounded-app border border-dashed border-border p-3 text-center text-xs text-text-muted">No tasks</li>}
+        {column.tasks.length === 0 && <li className="rounded-app border border-dashed border-accent-light p-4 text-center text-xs text-text-muted">Nothing here</li>}
       </ul>
       {column.total > column.tasks.length && (
         <p className="mt-2 px-1 text-xs text-text-muted">
@@ -154,20 +169,21 @@ function BoardCard({ task, zone }: { task: StaffTaskSummary; zone: string }) {
       style={style}
       {...attributes}
       {...listeners}
-      className={`touch-manipulation rounded-app border bg-card p-3 shadow-app ${overdue ? "border-error/50" : "border-border"} ${
-        isDragging ? "relative z-50 cursor-grabbing opacity-90 shadow-app-lg" : "cursor-grab"
+      className={`lift relative touch-manipulation overflow-hidden rounded-app border bg-card py-3 pr-3 pl-4 shadow-app ${overdue ? "border-error/40" : "border-border"} ${
+        isDragging ? "z-50 cursor-grabbing opacity-90 shadow-app-lg" : "cursor-grab"
       }`}
     >
-      <Link href={`/app/tasks/${task.id}`} className="block text-sm font-semibold text-text-primary hover:underline">
+      <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${PRIORITY_ACCENT[task.priority]}`} />
+      <Link href={`/app/tasks/${task.id}`} className="block text-[13.5px] leading-snug font-semibold text-text-primary hover:underline">
         {task.title}
       </Link>
-      <div className="mt-1 text-xs text-text-muted">
-        {task.assigneeName}
-        {task.clientName ? ` · ${task.clientName}` : ""}
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      {task.clientName && <div className="mt-1 truncate text-xs text-text-muted">{task.clientName}</div>}
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         <PriorityPill priority={task.priority} />
-        {task.status !== "done" && <DueLabel dueAt={task.dueAt} status={task.status} zone={zone} />}
+        <DueChip dueAt={task.dueAt} status={task.status} zone={zone} />
+        <span className="ml-auto">
+          <PersonDot name={task.assigneeName} size={24} />
+        </span>
       </div>
     </li>
   );

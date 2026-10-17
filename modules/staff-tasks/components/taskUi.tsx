@@ -19,10 +19,16 @@ export const STATUS_TONES: Record<StaffTaskStatus, PillTone> = {
 
 const PRIORITY_TONES: Record<StaffTaskPriority, PillTone> = {
   low: "gray",
-  medium: "purple",
-  high: "gold",
+  medium: "gray",
+  high: "amber",
   urgent: "red",
 };
+
+/** True when the due moment falls on today's calendar date in `zone`. */
+function isDueToday(dueAt: string, zone: string): boolean {
+  const day = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  return day(new Date(dueAt)) === day(new Date());
+}
 
 export function TaskStatusPill({ status }: { status: StaffTaskStatus }) {
   return <StatusPill label={STAFF_TASK_STATUS_LABELS[status]} tone={STATUS_TONES[status]} />;
@@ -36,10 +42,13 @@ export function PriorityPill({ priority }: { priority: StaffTaskPriority }) {
 export function DueLabel({ dueAt, status, zone }: { dueAt: string | null; status: StaffTaskStatus; zone: string }) {
   if (!dueAt) return <span className="text-xs text-text-muted">No due date</span>;
   const overdue = isTaskOverdue({ dueAt, status });
+  const today = !overdue && status !== "done" && isDueToday(dueAt, zone);
   return (
-    <span className={`inline-flex flex-wrap items-center gap-1.5 text-xs ${overdue ? "font-semibold text-error" : "text-text-muted"}`}>
-      <Icon name={overdue ? "alert" : "clock"} size={13} />
-      Due {formatInZone(dueAt, zone)}
+    <span className={`inline-flex flex-wrap items-center gap-1.5 text-xs ${overdue ? "font-semibold text-error" : today ? "font-medium text-warning-text" : "text-text-muted"}`}>
+      <span className="inline-flex items-center gap-1.5">
+        <Icon name={overdue ? "alert" : "clock"} size={13} className="shrink-0" />
+        Due {formatInZone(dueAt, zone)}
+      </span>
       {overdue && <StatusPill label="Overdue" tone="red" />}
     </span>
   );
@@ -72,4 +81,49 @@ export function describeTaskError(err: unknown, fallback: string): string {
     default:
       return err instanceof Error ? err.message : fallback;
   }
+}
+
+/** Left accent per priority: urgent crimson, high amber, the rest a quiet hairline. */
+export const PRIORITY_ACCENT: Record<StaffTaskPriority, string> = {
+  low: "bg-border",
+  medium: "bg-border",
+  high: "bg-warning",
+  urgent: "bg-primary",
+};
+
+/** Two-letter initials in an ink disc (the assignee). */
+export function PersonDot({ name, size = 28 }: { name: string; size?: number }) {
+  const text = name
+    .split(" ")
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  return (
+    <span
+      aria-hidden
+      title={name}
+      style={{ width: size, height: size }}
+      className="flex shrink-0 items-center justify-center rounded-full bg-ink text-[10.5px] font-semibold text-on-ink"
+    >
+      {text}
+    </span>
+  );
+}
+
+/** A compact due chip: "Overdue · 13 Oct" in red, "Today" in amber, otherwise muted. Done tasks show nothing. */
+export function DueChip({ dueAt, status, zone }: { dueAt: string | null; status: StaffTaskStatus; zone: string }) {
+  if (status === "done") return null;
+  if (!dueAt) return <span className="inline-flex items-center gap-1 rounded-app-sm bg-gray-pill-bg px-2 py-0.5 text-xs text-text-muted">No due date</span>;
+  const overdue = isTaskOverdue({ dueAt, status });
+  const today = !overdue && isDueToday(dueAt, zone);
+  const date = new Intl.DateTimeFormat("en-GB", { timeZone: zone, day: "numeric", month: "short" }).format(new Date(dueAt));
+  const tone = overdue ? "bg-error-bg text-error font-semibold" : today ? "bg-warning-bg text-warning-text font-medium" : "bg-gray-pill-bg text-text-secondary";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-app-sm px-2 py-0.5 text-xs whitespace-nowrap ${tone}`}>
+      <Icon name={overdue ? "alert" : "clock"} size={12} />
+      {overdue ? `Overdue · ${date}` : today ? "Due today" : `Due ${date}`}
+    </span>
+  );
 }

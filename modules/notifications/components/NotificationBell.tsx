@@ -4,12 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "../../../components/ui/Icon";
+import { EmptyState } from "../../../components/ui/EmptyState";
+import { Loader } from "../../../components/ui/Loader";
 import { NOTIFICATIONS_ENABLED } from "../config";
 import {
   notificationsApi,
   type AppNotification,
 } from "../api/notificationsApi";
-import { badgeLabel, safeAppPath, timeAgo } from "../format";
+import { badgeLabel, notificationIcon, safeAppPath, timeAgo } from "../format";
 import { PushPrompt } from "./PushPrompt";
 
 const POLL_MS = 60_000;
@@ -132,7 +134,7 @@ export function NotificationBell({ className = "" }: { className?: string }) {
     <div ref={rootRef} className={`relative ${className}`}>
       <button
         type="button"
-        className="relative rounded-app p-2 text-text-secondary transition-colors hover:bg-app-bg"
+        className="relative rounded-app p-2.5 text-text-secondary transition-colors hover:bg-accent-bg hover:text-text-primary"
         aria-label={
           count > 0 ? `Notifications, ${count} unread` : "Notifications"
         }
@@ -144,7 +146,7 @@ export function NotificationBell({ className = "" }: { className?: string }) {
         {label && (
           <span
             data-testid="bell-badge"
-            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white"
+            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-on-ink"
           >
             {label}
           </span>
@@ -157,7 +159,7 @@ export function NotificationBell({ className = "" }: { className?: string }) {
           className="fixed inset-x-3 top-14 z-50 overflow-hidden rounded-app-lg border border-border bg-card shadow-app-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96"
         >
           <div className="flex items-center justify-between border-b border-border-light px-4 py-3">
-            <h2 className="font-serif text-base font-bold text-text-primary">
+            <h2 className="font-serif text-base text-text-primary">
               Notifications
             </h2>
             <button
@@ -182,13 +184,11 @@ export function NotificationBell({ className = "" }: { className?: string }) {
                 </button>
               </p>
             ) : items === null ? (
-              <p className="px-4 py-6 text-center text-sm text-text-muted">
-                Loading…
-              </p>
+              <div className="flex justify-center py-8">
+                <Loader label="Loading notifications" />
+              </div>
             ) : items.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-text-muted">
-                You are all caught up.
-              </p>
+              <EmptyState compact icon="check-circle" title="You are all caught up." />
             ) : (
               <ul>
                 {items.map((n) => (
@@ -199,12 +199,16 @@ export function NotificationBell({ className = "" }: { className?: string }) {
                     <button
                       type="button"
                       onClick={() => openItem(n)}
-                      className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-primary-bg ${n.readAt ? "" : "bg-primary-bg/50"}`}
+                      className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-accent-bg ${n.readAt ? "opacity-70" : ""}`}
                     >
                       <span
-                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.readAt ? "bg-transparent" : "bg-primary"}`}
                         aria-hidden
-                      />
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ${
+                          n.readAt ? "bg-accent-bg text-text-muted ring-border" : "bg-primary-bg text-primary ring-primary/20"
+                        }`}
+                      >
+                        <Icon name={notificationIcon(n.type)} size={14} />
+                      </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold text-text-primary">
                           {n.title}

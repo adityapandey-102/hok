@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { Icon } from "../../../components/ui/Icon";
+import { EmptyState } from "../../../components/ui/EmptyState";
 import { Pager } from "../../../components/ui/Pager";
 import { useToast } from "../../../components/ui/Toast";
 import {
   notificationsApi,
   type NotificationListResult,
 } from "../api/notificationsApi";
-import { safeAppPath, timeAgo } from "../format";
+import { notificationIcon, safeAppPath, timeAgo } from "../format";
 
 const PAGE_SIZE = 20;
 
@@ -64,82 +65,75 @@ export function NotificationsPageClient() {
     else void load();
   }
 
+  const unread = data?.notifications.filter((n) => !n.readAt).length ?? 0;
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="font-serif text-2xl font-bold text-text-primary">
-          Notifications
-        </h1>
-        <Button
-          variant="outline"
-          onClick={markAll}
-          disabled={!data || data.notifications.every((n) => n.readAt)}
-        >
-          <Icon name="check" size={16} /> Mark all read
-        </Button>
-      </div>
+    <div className="mx-auto max-w-3xl">
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="page-title">Notifications</h1>
+          <p className="text-sm text-text-muted">{unread > 0 ? `${unread} unread on this page, marked in crimson.` : "Unread ones are marked in crimson."}</p>
+        </div>
+        <div className="page-actions">
+          <Button variant="outline" onClick={markAll} disabled={!data || data.notifications.every((n) => n.readAt)}>
+            <Icon name="check" size={16} /> Mark all read
+          </Button>
+        </div>
+      </header>
       <Card>
         {error ? (
           <div className="p-6 text-center text-sm text-error">
             {error}{" "}
-            <button
-              type="button"
-              className="font-semibold underline"
-              onClick={load}
-            >
+            <button type="button" className="font-semibold underline" onClick={load}>
               Retry
             </button>
           </div>
         ) : !data ? (
-          <p className="p-6 text-center text-sm text-text-muted">Loading…</p>
+          <ul className="divide-y divide-border-light" aria-busy="true" aria-label="Loading notifications">
+            {Array.from({ length: 5 }, (_, i) => (
+              <li key={i} className="flex gap-3 px-5 py-4">
+                <div className="skeleton h-9 w-9 shrink-0 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <div className="skeleton h-3.5 w-1/2 rounded-app-sm" />
+                  <div className="skeleton h-3 w-3/4 rounded-app-sm" />
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : data.notifications.length === 0 ? (
-          <div className="p-8 text-center text-sm text-text-muted">
-            <Icon name="bell" size={24} className="mx-auto mb-2" />
-            No notifications yet.
-          </div>
+          <EmptyState icon="bell" title="No notifications yet." description="Comments, task assignments and reminders will show up here." />
         ) : (
-          <ul>
+          <ul className="divide-y divide-border-light">
             {data.notifications.map((n) => (
-              <li
-                key={n.id}
-                className="border-t border-border-light first:border-t-0"
-              >
+              <li key={n.id}>
                 <button
                   type="button"
                   onClick={() => open(n.id, n.url, !!n.readAt)}
-                  className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-primary-bg ${n.readAt ? "" : "bg-primary-bg/50"}`}
+                  className={`group relative flex w-full items-start gap-3.5 px-5 py-4 text-left transition-colors hover:bg-accent-bg ${n.readAt ? "" : "bg-primary-bg/40"}`}
                 >
+                  {!n.readAt && <span aria-hidden className="absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-primary" />}
                   <span
-                    className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.readAt ? "bg-transparent" : "bg-primary"}`}
                     aria-hidden
-                  />
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ${
+                      n.readAt ? "bg-accent-bg text-text-muted ring-border" : "bg-primary-bg text-primary ring-primary/20"
+                    }`}
+                  >
+                    <Icon name={notificationIcon(n.type)} size={16} />
+                  </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-text-primary">
-                      {n.title}
-                    </span>
-                    {n.body && (
-                      <span className="block text-sm text-text-secondary">
-                        {n.body}
-                      </span>
-                    )}
-                    <span className="block text-xs text-text-muted">
+                    <span className={`block text-sm text-text-primary ${n.readAt ? "font-medium" : "font-semibold"}`}>{n.title}</span>
+                    {n.body && <span className="mt-0.5 block text-sm break-words text-text-secondary">{n.body}</span>}
+                    <span className="mt-1 block text-xs text-text-muted">
                       {n.actorName ? `${n.actorName} · ` : ""}
                       {timeAgo(n.createdAt)}
                     </span>
                   </span>
+                  <Icon name="chevron-right" size={15} className="mt-2 hidden shrink-0 text-text-muted transition-transform group-hover:translate-x-0.5 sm:block" />
                 </button>
               </li>
             ))}
           </ul>
         )}
-        {data && (
-          <Pager
-            page={page}
-            pageSize={PAGE_SIZE}
-            total={data.total}
-            onPageChange={setPage}
-          />
-        )}
+        {data && <Pager page={page} pageSize={PAGE_SIZE} total={data.total} onPageChange={setPage} />}
       </Card>
     </div>
   );

@@ -87,6 +87,8 @@ export interface TasksSection {
 
 export interface ClientsSection {
   clientCount: number;
+  /** All events overlapping this week (the lists are capped at 5). */
+  weekEventCount: number;
   today: DashboardEvent[];
   upcoming: DashboardEvent[];
   byStage: StageGroup[];
@@ -95,7 +97,15 @@ export interface ClientsSection {
 }
 
 export interface FirmSection {
-  totals: { clients: number; activeEvents: number; openTasks: number; unresolvedComments: number };
+  totals: {
+    clients: number;
+    activeEvents: number;
+    openTasks: number;
+    overdueTasks: number;
+    unresolvedComments: number;
+    weekEvents: number;
+    teamSize: number;
+  };
   tasksByStatus: TaskStatusCounts;
   week: DashboardEvent[];
   overdueTasks: DashboardTask[];
@@ -103,17 +113,37 @@ export interface FirmSection {
   team: WorkloadRow[];
 }
 
+export type DashboardView = "overview" | "mine";
+
 export interface Dashboard {
   role: Role;
+  view: DashboardView;
   window: DashboardWindow;
-  tasks: TasksSection;
+  /** Null only on the Admin's overview (the firm replaces it). */
+  tasks: TasksSection | null;
   clients: ClientsSection | null;
   firm: FirmSection | null;
 }
 
+export interface TeamWorkloadPage {
+  members: WorkloadRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 /** All HTTP calls the Dashboard module makes against hok-api. */
 export const dashboardApi = {
-  get(): Promise<Dashboard> {
-    return apiFetch("/dashboard");
+  /** `overview` (the landing page; the firm alone for the Admin) or `mine` (the Admin's "My clients"). */
+  get(view: DashboardView = "overview"): Promise<Dashboard> {
+    return apiFetch(view === "mine" ? "/dashboard?view=mine" : "/dashboard");
+  },
+
+  /** The whole team's workload (Admin): server-side name search, role filter and paging. */
+  team(params: { search?: string; role?: Role; limit: number; offset: number }): Promise<TeamWorkloadPage> {
+    const q = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
+    if (params.search) q.set("search", params.search);
+    if (params.role) q.set("role", params.role);
+    return apiFetch(`/dashboard/team?${q.toString()}`);
   },
 };

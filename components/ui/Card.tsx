@@ -1,6 +1,6 @@
 import { Icon } from "./Icon";
 
-/** A panel: warm paper, a hairline border and a soft warm shadow. */
+/** A panel: white paper (deep graphite in dark mode), a hairline border, a faint shadow. */
 export function Card({
   children,
   className = "",
@@ -12,7 +12,7 @@ export function Card({
   className?: string;
   /** Clickable card: lifts a touch and deepens its shadow on hover. */
   hover?: boolean;
-  /** A gold hairline along the top -- reserved for the hero panel on a page. */
+  /** A crimson hairline along the top -- reserved for the one panel on a page that matters most. */
   accent?: boolean;
   /** Makes the card a named landmark (<section aria-label>) -- for pages with several similar panels. */
   regionLabel?: string;
@@ -23,7 +23,7 @@ export function Card({
       aria-label={regionLabel}
       className={`rounded-app-lg border border-border bg-card shadow-app print:border-neutral-300 print:shadow-none ${
         accent ? "card-accent-top" : ""
-      } ${hover ? "lift hover:border-primary/25" : ""} ${className}`}
+      } ${hover ? "lift hover:border-accent-light" : ""} ${className}`}
     >
       {children}
     </Tag>
@@ -38,19 +38,19 @@ export function Card({
 export const CARD_GRID_CELL = "border-t border-border-light first:border-t-0 md:odd:border-r md:nth-2:border-t-0";
 
 const TONES: Record<string, string> = {
-  purple: "bg-primary-bg text-primary ring-primary/10",
-  pink: "bg-primary-bg text-primary ring-primary/10",
-  blue: "bg-primary-bg text-primary ring-primary/10",
-  green: "bg-primary-bg text-primary ring-primary/10",
+  purple: "bg-accent-bg text-text-secondary ring-border",
+  pink: "bg-accent-bg text-text-secondary ring-border",
+  blue: "bg-accent-bg text-text-secondary ring-border",
+  green: "bg-accent-bg text-text-secondary ring-border",
   amber: "bg-gold-bg text-gold ring-gold/15",
   gold: "bg-gold-bg text-gold ring-gold/15",
 };
 
 /**
- * Panel heading: a brand-tinted icon badge, the title in the display face, an
- * optional one-line subtitle and a right-aligned action. Icon badges use the
- * brand's burgundy (or gold for `amber`/`gold`) -- one family of colours, not
- * a rainbow; colour for meaning is kept for statuses and money.
+ * Panel heading: a graphite icon badge, the title in the display face, an
+ * optional one-line subtitle and a right-aligned action. Badges stay neutral so
+ * crimson keeps meaning "look here" (`amber`/`gold` = the crimson tint, for
+ * the one panel that needs attention); colour for meaning is kept for statuses.
  *
  * When the action doesn't fit beside the title (a phone), it wraps to its own
  * line instead of squeezing the title; `wideAction` gives it that whole line
@@ -83,7 +83,7 @@ export function CardHeader({
           {typeof icon === "string" ? <Icon emoji={icon} size={17} /> : icon}
         </div>
         <div className="min-w-0">
-          <div className="font-serif text-[17px] leading-snug text-text-primary">{title}</div>
+          <div className="font-serif text-[15.5px] leading-snug text-text-primary">{title}</div>
           {subtitle && <div className="truncate text-xs text-text-muted">{subtitle}</div>}
         </div>
       </div>

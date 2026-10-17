@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { isTaskOverdue, type StaffTaskSummary } from "../../../lib/domain";
+import { type StaffTaskSummary } from "../../../lib/domain";
 import { staffTasksApi, type StaffTaskListFilters } from "../api/staffTasksApi";
-import { DueLabel, PriorityPill, TaskStatusPill, roleLabel } from "./taskUi";
+import { DueChip, PRIORITY_ACCENT, PersonDot, PriorityPill, TaskStatusPill, roleLabel } from "./taskUi";
 import { Pager } from "../../../components/ui/Pager";
 import { Icon } from "../../../components/ui/Icon";
+import { EmptyState } from "../../../components/ui/EmptyState";
 
 export const TASK_PAGE_SIZE = 20;
 
@@ -66,7 +67,18 @@ export function TaskList({
   return (
     <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app">
       {loading ? (
-        <div className="p-6 text-sm text-text-muted">Loading…</div>
+        <ul className="divide-y divide-border-light" aria-busy="true" aria-label="Loading tasks">
+          {Array.from({ length: 6 }, (_, i) => (
+            <li key={i} className="flex items-center gap-3 px-5 py-4">
+              <div className="skeleton h-8 w-8 rounded-full" />
+              <div className="flex-1 space-y-2">
+                <div className="skeleton h-3.5 w-2/3 rounded-app-sm" />
+                <div className="skeleton h-3 w-1/3 rounded-app-sm" />
+              </div>
+              <div className="skeleton hidden h-6 w-20 rounded-app-sm sm:block" />
+            </li>
+          ))}
+        </ul>
       ) : error ? (
         <div className="flex items-center justify-between gap-3 p-6 text-sm text-error">
           <span>{error}</span>
@@ -75,46 +87,43 @@ export function TaskList({
           </button>
         </div>
       ) : tasks.length === 0 ? (
-        <div className="p-6 text-sm text-text-muted">{filtered ? "No tasks match your filters." : "No tasks yet."}</div>
+        <EmptyState icon="clipboard" title={filtered ? "No tasks match your filters." : "No tasks yet."} description={filtered ? "Try a different filter." : "Tasks the Admin assigns will show up here."} />
       ) : (
         <ul className="divide-y divide-border-light">
-          {tasks.map((t, i) => {
-            const overdue = isTaskOverdue(t);
-            return (
-              <li key={t.id}>
-                <Link
-                  href={`/app/tasks/${t.id}`}
-                  style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}
-                  className={`group animate-fade-in flex items-start gap-3 border-l-4 p-4 transition-colors hover:bg-primary-bg/30 ${overdue ? "border-l-error" : "border-l-transparent"}`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-text-primary">{t.title}</span>
-                      {t.hasEditorBrief && (
-                        <span className="inline-flex items-center gap-1 text-xs text-text-muted">
-                          <Icon name="file" size={12} /> Brief
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
-                      {showAssignee && (
-                        <span>
-                          {t.assigneeName} · {roleLabel(t.assigneeRole)}
-                        </span>
-                      )}
-                      {t.clientName && <span>{t.clientName}</span>}
-                      <DueLabel dueAt={t.dueAt} status={t.status} zone={zone} />
-                    </div>
+          {tasks.map((t, i) => (
+            <li key={t.id}>
+              <Link
+                href={`/app/tasks/${t.id}`}
+                style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}
+                className="group animate-fade-in relative flex items-center gap-3 py-3.5 pr-4 pl-5 transition-colors hover:bg-accent-bg sm:gap-4 sm:pr-5"
+              >
+                <span aria-hidden className={`absolute inset-y-2.5 left-0 w-[3px] rounded-r-full ${PRIORITY_ACCENT[t.priority]}`} />
+                <PersonDot name={t.assigneeName} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="line-clamp-2 text-[14px] font-semibold text-text-primary sm:truncate">{t.title}</span>
+                    {t.hasEditorBrief && <Icon name="file" size={13} className="shrink-0 text-text-muted" />}
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <div className="mt-0.5 truncate text-xs text-text-muted">
+                    {[showAssignee ? `${t.assigneeName} · ${roleLabel(t.assigneeRole)}` : null, t.clientName].filter(Boolean).join(" · ") || "No client"}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:hidden">
                     <TaskStatusPill status={t.status} />
                     <PriorityPill priority={t.priority} />
+                    <DueChip dueAt={t.dueAt} status={t.status} zone={zone} />
                   </div>
-                  <Icon name="chevron-right" size={14} className="mt-1 shrink-0 transition-transform group-hover:translate-x-0.5" />
-                </Link>
-              </li>
-            );
-          })}
+                </div>
+                <div className="hidden shrink-0 items-center gap-2 sm:flex">
+                  <DueChip dueAt={t.dueAt} status={t.status} zone={zone} />
+                  <PriorityPill priority={t.priority} />
+                  <span className="w-24 text-right">
+                    <TaskStatusPill status={t.status} />
+                  </span>
+                </div>
+                <Icon name="chevron-right" size={15} className="shrink-0 text-text-muted transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            </li>
+          ))}
         </ul>
       )}
       {!loading && !error && <Pager page={page} pageSize={TASK_PAGE_SIZE} total={total} onPageChange={onPageChange} />}

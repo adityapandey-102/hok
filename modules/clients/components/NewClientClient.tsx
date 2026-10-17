@@ -23,13 +23,18 @@ export function NewClientClient({ isAdmin }: { isAdmin: boolean }) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="page-title">New client</h1>
-        <ButtonLink href="/app/clients" variant="outline">
-          <Icon name="chevron-right" size={15} className="rotate-180" /> All clients
-        </ButtonLink>
-      </div>
+    <div className="mx-auto flex max-w-4xl flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="page-title">New client</h1>
+          <p className="text-sm text-text-muted">Add the business, its contact and its contract. You can change any of it later.</p>
+        </div>
+        <div className="page-actions">
+          <ButtonLink href="/app/clients" variant="outline">
+            <Icon name="chevron-right" size={15} className="rotate-180" /> All clients
+          </ButtonLink>
+        </div>
+      </header>
       <ClientForm canPickOwner={isAdmin} submitLabel="Create client" onSubmit={handleCreate} />
     </div>
   );

@@ -26,7 +26,7 @@ export function ProgressRing({
   const p = Math.min(100, Math.max(0, percent));
   const style = { "--ring-length": LENGTH } as CSSProperties;
   // On the deep red, done reads in the brand gold too (no green on the band).
-  const stroke = tone === "success" ? (onDark ? "var(--on-dark-success)" : "var(--color-success)") : "var(--color-gold-light)";
+  const stroke = tone === "success" ? "var(--color-success)" : "var(--color-primary)";
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }} role="img" aria-label={`${p}% ${label}`}>
       <svg viewBox="0 0 80 80" className="h-full w-full -rotate-90" aria-hidden>

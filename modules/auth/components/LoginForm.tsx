@@ -36,33 +36,40 @@ export function LoginForm() {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div>
-        <h1 className="mb-1.5 font-serif text-[26px] leading-tight text-text-primary">Sign in</h1>
-        <p className="text-xs text-text-muted">Staff access is invite-only. Contact your manager if you need an account.</p>
+        <h1 className="mb-1.5 font-serif text-[28px] leading-tight text-text-primary">Welcome back</h1>
+        <p className="text-sm text-text-muted">Sign in to your workspace. Staff access is invite-only, so ask your manager if you need an account.</p>
       </div>
 
       <div>
-        <FieldLabel required>Email</FieldLabel>
-        <Input
-          type="email"
-          required
-          autoComplete="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@houseofkhalak.com"
-        />
-      </div>
-
-      <div>
-        <FieldLabel required>Password</FieldLabel>
+        <FieldLabel required htmlFor="login-email">Email</FieldLabel>
         <div className="relative">
+          <Icon name="user" size={16} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-text-muted" />
           <Input
+            id="login-email"
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@houseofkhalak.com"
+            className="py-3 pl-10"
+          />
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel required htmlFor="login-password">Password</FieldLabel>
+        <div className="relative">
+          <Icon name="lock" size={16} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-text-muted" />
+          <Input
+            id="login-password"
             type={showPassword ? "text" : "password"}
             required
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
-            className="pr-11"
+            className="py-3 pr-11 pl-10"
           />
           {/* type="button" so it never submits the form. */}
           <button
@@ -80,15 +87,15 @@ export function LoginForm() {
 
       <FieldError>{error}</FieldError>
 
-      <Button type="submit" disabled={loading} className="mt-1 w-full">
+      <Button type="submit" disabled={loading} className="mt-1 w-full py-3">
         {loading ? "Signing in…" : "Sign in"}
       </Button>
 
       <div className="flex items-center justify-between text-xs text-text-muted">
-        <Link href="/reset-password" className="hover:text-primary">
+        <Link href="/reset-password" className="py-2 transition-colors hover:text-primary">
           Forgot password?
         </Link>
-        <Link href="/register" className="hover:text-primary">
+        <Link href="/register" className="py-2 transition-colors hover:text-primary">
           First-time setup
         </Link>
       </div>

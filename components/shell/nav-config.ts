@@ -25,6 +25,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Workspace",
     items: [
       { label: "Dashboard", href: "/app", icon: "home" },
+      { label: "My clients", href: "/app/my-clients", icon: "user", requires: "dashboard:global" },
       { label: "Clients", href: "/app/clients", icon: "briefcase", requires: "clients:read" },
       { label: "Assets", href: "/app/assets", icon: "tag", requires: "assets:read" },
       { label: "Calendar", href: "/app/calendar", icon: "calendar", requires: "events:read" },
@@ -37,6 +38,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Administration",
     items: [
+      { label: "Team workload", href: "/app/team", icon: "bar-chart", requires: "dashboard:global" },
       { label: "Users", href: "/app/admin/users", icon: "users", requires: "users:manage" },
       { label: "Stage templates", href: "/app/templates", icon: "layers", requires: "stage_templates:manage" },
     ],

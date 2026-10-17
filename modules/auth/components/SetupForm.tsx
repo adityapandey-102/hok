@@ -54,7 +54,7 @@ export function SetupForm() {
   if (adminExists) {
     return (
       <div className="text-center">
-        <h1 className="font-serif text-[26px] leading-tight text-text-primary">Invite-only</h1>
+        <h1 className="font-serif text-[28px] leading-tight text-text-primary">Invite-only</h1>
         <p className="mt-2 text-sm text-text-secondary">
           HOK is already set up. Ask your Admin to create your account from Administration → Users.
         </p>
@@ -65,7 +65,7 @@ export function SetupForm() {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div>
-        <h1 className="font-serif text-[26px] leading-tight text-text-primary">First-time setup</h1>
+        <h1 className="font-serif text-[28px] leading-tight text-text-primary">First-time setup</h1>
         <p className="text-xs text-text-muted">
           No Admin account exists yet. Create the first one -- every other account is created from here afterward.
         </p>
@@ -95,7 +95,7 @@ export function SetupForm() {
 
       <FieldError>{error}</FieldError>
 
-      <Button type="submit" disabled={loading} className="mt-1 w-full">
+      <Button type="submit" disabled={loading} className="mt-1 w-full py-3">
         {loading ? "Creating account…" : "Create Admin account"}
       </Button>
     </form>

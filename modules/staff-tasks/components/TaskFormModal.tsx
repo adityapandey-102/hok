@@ -107,7 +107,7 @@ export function TaskFormModal({
           <h2 id={titleId} className="font-serif text-lg text-text-primary">
             {editing ? "Edit task" : "New task"}
           </h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="rounded-app-sm p-1 text-text-muted hover:bg-primary-bg">
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-app-sm p-1 text-text-muted hover:bg-accent-bg">
             <Icon name="x" size={18} />
           </button>
         </div>
@@ -170,7 +170,7 @@ export function TaskFormModal({
           )}
 
           {editor && (
-            <fieldset className="grid grid-cols-1 gap-4 rounded-app border border-gold/30 bg-gold-bg/40 p-4 sm:col-span-2 sm:grid-cols-2">
+            <fieldset className="grid grid-cols-1 gap-4 rounded-app border border-border bg-accent-bg p-4 sm:col-span-2 sm:grid-cols-2">
               <legend className="px-1 text-xs font-semibold text-text-secondary">Editor brief</legend>
               <div>
                 <FieldLabel required htmlFor="tf-raw">

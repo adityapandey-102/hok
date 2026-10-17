@@ -45,7 +45,7 @@ test("the Admin assigns an editor task; the editor closes it; the Admin reopens 
   const meeraCtx = await browser.newContext();
   const meera = await meeraCtx.newPage();
   await login(meera, "meera.editor@hok.test");
-  await expect(meera.getByRole("link", { name: "Tasks" })).toBeVisible();
+  await expect(meera.getByRole("link", { name: "Tasks", exact: true })).toBeVisible();
   await meera.goto("/app/tasks");
   await expect(meera.getByRole("heading", { name: "My tasks" })).toBeVisible();
   await meera.getByLabel("Search tasks").fill(title);

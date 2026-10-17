@@ -34,10 +34,21 @@ const VIEW_KEY = "hok.tasks.view";
  * (FR-TSK-09) sees every task, adds assignee and role filters, switches
  * between list and Kanban, and creates tasks.
  */
-export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: string }) {
+export function TasksPageClient({
+  isAdmin,
+  zone,
+  initialFilters = {},
+  initialAssigneeName,
+}: {
+  isAdmin: boolean;
+  zone: string;
+  /** From the URL (e.g. the dashboard's "View all overdue"). */
+  initialFilters?: Partial<TaskFilterState>;
+  initialAssigneeName?: string;
+}) {
   const router = useRouter();
   const { showToast } = useToast();
-  const [filters, setFilters] = useState<TaskFilterState>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<TaskFilterState>(() => ({ ...EMPTY_FILTERS, ...initialFilters }));
   const debouncedSearch = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
   const [page, setPage] = useState(0);
   const [view, setView] = useState<View>("list");
@@ -81,22 +92,22 @@ export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: str
 
   return (
     <div className={`mx-auto ${board ? "max-w-7xl" : "max-w-5xl"}`}>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="page-title">{isAdmin ? "Tasks" : "My tasks"}</h1>
           <p className="text-sm text-text-muted">{isAdmin ? "Every task you've assigned to the team." : "Tasks the Admin has assigned to you."}</p>
         </div>
         {isAdmin && (
-          <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
-            <div role="group" aria-label="View" className="inline-flex rounded-app border border-border bg-card p-0.5">
+          <div className="page-actions items-center">
+            <div role="group" aria-label="View" className="inline-flex rounded-app border border-border bg-card p-0.5 shadow-app max-sm:w-full">
               {(["list", "board"] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
                   aria-pressed={view === v}
                   onClick={() => chooseView(v)}
-                  className={`inline-flex items-center gap-1.5 rounded-app-sm px-3 py-1.5 text-sm font-medium transition-colors ${
-                    view === v ? "bg-primary-bg text-primary" : "text-text-secondary hover:text-text-primary"
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-app-sm px-3.5 py-2 text-sm font-medium transition-colors max-sm:flex-1 ${
+                    view === v ? "bg-ink text-on-ink" : "text-text-secondary hover:bg-accent-bg hover:text-text-primary"
                   }`}
                 >
                   <Icon name={v === "list" ? "list" : "columns"} size={15} />
@@ -104,23 +115,26 @@ export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: str
                 </button>
               ))}
             </div>
-            <Button onClick={() => setFormOpen(true)} className="max-sm:flex-1">
+            <Button onClick={() => setFormOpen(true)}>
               <Icon name="plus" size={16} /> New task
             </Button>
           </div>
         )}
-      </div>
+      </header>
 
-      <div className="mb-3 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
-        <Input
-          className="col-span-2 sm:max-w-xs"
-          placeholder="Search by title"
-          aria-label="Search tasks"
-          value={filters.search}
-          onChange={(e) => update("search", e.target.value)}
-        />
+      <div className="mb-4 grid grid-cols-1 gap-3 rounded-app-lg border border-border bg-card p-3 shadow-app sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        <div className="relative sm:col-span-2">
+          <Icon name="search" size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-text-muted" />
+          <Input
+            className="pl-9"
+            placeholder="Search by title"
+            aria-label="Search tasks"
+            value={filters.search}
+            onChange={(e) => update("search", e.target.value)}
+          />
+        </div>
         {!board && (
-          <Select className="sm:w-auto" aria-label="Filter by status" value={filters.status} onChange={(e) => update("status", e.target.value as TaskFilterState["status"])}>
+          <Select aria-label="Filter by status" value={filters.status} onChange={(e) => update("status", e.target.value as TaskFilterState["status"])}>
             <option value="open">Open tasks</option>
             <option value="all">All statuses</option>
             {STAFF_TASK_STATUSES.map((s) => (
@@ -130,7 +144,7 @@ export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: str
             ))}
           </Select>
         )}
-        <Select className="sm:w-auto" aria-label="Filter by priority" value={filters.priority} onChange={(e) => update("priority", e.target.value as StaffTaskPriority | "")}>
+        <Select aria-label="Filter by priority" value={filters.priority} onChange={(e) => update("priority", e.target.value as StaffTaskPriority | "")}>
           <option value="">Any priority</option>
           {STAFF_TASK_PRIORITIES.map((p) => (
             <option key={p} value={p}>
@@ -138,7 +152,7 @@ export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: str
             </option>
           ))}
         </Select>
-        <Select className="sm:w-auto" aria-label="Filter by due date" value={filters.due} onChange={(e) => update("due", e.target.value as DueFilter)}>
+        <Select aria-label="Filter by due date" value={filters.due} onChange={(e) => update("due", e.target.value as DueFilter)}>
           <option value="">Any due date</option>
           <option value="overdue">Overdue</option>
           <option value="today">Due today</option>
@@ -147,15 +161,15 @@ export function TasksPageClient({ isAdmin, zone }: { isAdmin: boolean; zone: str
         {isAdmin && (
           <>
             <SearchSelect
-              className="max-sm:col-span-2 sm:w-52"
               aria-label="Filter by assignee"
               placeholder="Everyone"
               value={filters.assigneeId || null}
+              selectedLabel={filters.assigneeId === initialFilters.assigneeId ? initialAssigneeName : undefined}
               clearable
               load={(q) => usersApi.searchOptions(q)}
               onChange={(id) => update("assigneeId", id ?? "")}
             />
-            <Select className="sm:w-auto" aria-label="Filter by role" value={filters.role} onChange={(e) => update("role", e.target.value as Role | "")}>
+            <Select aria-label="Filter by role" value={filters.role} onChange={(e) => update("role", e.target.value as Role | "")}>
               <option value="">Any role</option>
               {ROLES.map((r) => (
                 <option key={r} value={r}>

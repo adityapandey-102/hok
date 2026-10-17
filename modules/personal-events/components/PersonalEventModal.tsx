@@ -10,6 +10,7 @@ import { clientsApi } from "../../clients/api/clientsApi";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { personalEventsApi, type PersonalEvent } from "../api/personalEventsApi";
 import { emptyValues, toPayload, valuesFromEvent, type PersonalEventFormValues } from "../personalEventForm";
+import { Loader } from "../../../components/ui/Loader";
 
 /**
  * Create / edit / delete a personal calendar entry. `eventId` set = edit (loads the
@@ -108,7 +109,7 @@ export function PersonalEventModal({
           {eventId ? "Edit personal event" : "New personal event"}
         </h2>
         {loading ? (
-          <p className="text-sm text-text-muted">Loading…</p>
+          <div className="flex justify-center py-6"><Loader label="Loading" /></div>
         ) : (
           <>
             <div>

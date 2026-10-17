@@ -4,9 +4,12 @@ import { useState } from "react";
 import { formatDate, isValidTimeZone, ROLE_LABELS, ROLES, type Role } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { usersApi, type UserAccount } from "../api/usersApi";
-import { Button, ButtonLink } from "../../../components/ui/Button";
+import Link from "next/link";
+import { Button } from "../../../components/ui/Button";
+import { Select } from "../../../components/ui/Select";
 import { Icon } from "../../../components/ui/Icon";
-import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
+import { Panel } from "../../../components/ui/Panel";
+import { StatusPill } from "../../../components/ui/StatusPill";
 import { FieldLabel, Input } from "../../../components/ui/Field";
 import { useToast } from "../../../components/ui/Toast";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
@@ -108,23 +111,35 @@ export function UserDetailClient({ initialUser, currentUserId }: { initialUser: 
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="page-title">{user.fullName}</h1>
-          <p className="text-sm text-text-muted">
-            {ROLE_LABELS[user.role]} · {user.email}
-          </p>
+      <header className="mb-6">
+        <Link href="/app/admin/users" className="mb-3 inline-flex items-center gap-1 text-sm text-text-muted transition-colors hover:text-text-primary">
+          <Icon name="chevron-right" size={14} className="rotate-180" /> All users
+        </Link>
+        <div className="flex items-center gap-4">
+          <span aria-hidden className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-ink font-serif text-lg text-on-ink">
+            {user.fullName
+              .split(" ")
+              .map((p) => p[0])
+              .filter(Boolean)
+              .slice(0, 2)
+              .join("")
+              .toUpperCase()}
+          </span>
+          <div className="min-w-0">
+            <h1 className="page-title break-words">{user.fullName}</h1>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-text-muted">
+              <StatusPill label={ROLE_LABELS[user.role]} tone="pink" />
+              <StatusPill label={user.active ? "Active" : "Deactivated"} tone={user.active ? "green" : "gray"} />
+              <span className="break-all">{user.email}</span>
+            </div>
+          </div>
         </div>
-        <ButtonLink href="/app/admin/users" variant="outline">
-          <Icon name="chevron-right" size={15} className="rotate-180" /> All Users
-        </ButtonLink>
-      </div>
+      </header>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader icon="👤" iconTone="purple" title="Account Info" subtitle="Identity and activity" />
-          <CardBody>
-            <form onSubmit={handleSaveDetails} className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <Panel icon="user" title="Account info" subtitle="Identity and activity">
+          <div className="px-5 pb-5">
+            <form onSubmit={handleSaveDetails} className="flex flex-col gap-3.5">
               <div>
                 <FieldLabel htmlFor="ud-name">Full name</FieldLabel>
                 <Input id="ud-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
@@ -141,42 +156,27 @@ export function UserDetailClient({ initialUser, currentUserId }: { initialUser: 
               <Button type="submit" variant="outline" disabled={busy}>
                 Save details
               </Button>
-              <div className="mt-1 flex items-center justify-between">
+              <div className="mt-1 flex items-center justify-between border-t border-border-light pt-3.5">
                 <span className="text-xs text-text-muted">Status</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs ${
-                    user.active ? "bg-success font-medium text-white" : "bg-gray-pill-bg text-text-secondary"
-                  }`}
-                >
-                  {user.active ? "Active" : "Deactivated"}
-                </span>
+                <StatusPill label={user.active ? "Active" : "Deactivated"} tone={user.active ? "green" : "gray"} />
               </div>
               <InfoRow label="Created" value={formatDate(user.createdAt)} />
               <InfoRow label="Last login" value={user.lastLoginAt ? formatDate(user.lastLoginAt) : "Never"} />
             </form>
-          </CardBody>
-        </Card>
+          </div>
+        </Panel>
 
-        <Card>
-          <CardHeader icon="🛠️" iconTone="amber" title="Account Actions" subtitle="Role, credentials, and access" />
-          <CardBody className="flex flex-col gap-4">
+        <Panel icon="shield" title="Account actions" subtitle="Role, credentials, and access">
+          <div className="flex flex-col gap-4 px-5 pb-5">
             <div>
-              <label htmlFor="ud-role" className="mb-1 block text-xs text-text-muted">
-                Role
-              </label>
-              <select
-                id="ud-role"
-                value={user.role}
-                disabled={!user.active || busy || isSelf}
-                onChange={(e) => handleRoleChange(e.target.value as Role)}
-                className="w-full rounded-app-sm border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
-              >
+              <FieldLabel htmlFor="ud-role">Role</FieldLabel>
+              <Select id="ud-role" value={user.role} disabled={!user.active || busy || isSelf} onChange={(e) => handleRoleChange(e.target.value as Role)}>
                 {ROLES.map((r) => (
                   <option key={r} value={r}>
                     {ROLE_LABELS[r]}
                   </option>
                 ))}
-              </select>
+              </Select>
               {isSelf && <p className="mt-1 text-[11px] text-text-muted">You cannot change your own role.</p>}
             </div>
 
@@ -200,8 +200,8 @@ export function UserDetailClient({ initialUser, currentUserId }: { initialUser: 
                 <Icon name="check" size={16} /> Reactivate account
               </Button>
             )}
-          </CardBody>
-        </Card>
+          </div>
+        </Panel>
       </div>
 
       {reveal && <CredentialRevealOverlay reveal={reveal} onClose={() => setReveal(null)} />}

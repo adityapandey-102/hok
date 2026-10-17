@@ -96,85 +96,57 @@ export function CommentDetailModal({
   }).format(new Date(current.createdAt));
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      labelledBy="comment-title"
-      panelClassName="max-w-lg"
-    >
-      <div className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2
-              id="comment-title"
-              className="font-serif text-lg font-bold text-text-primary"
-            >
+    <Modal open onClose={onClose} labelledBy="comment-title" panelClassName="max-h-[92vh] sm:max-w-xl">
+      <div className="flex min-h-0 flex-col">
+        <div className="flex items-start gap-3.5 border-b border-border-light px-5 py-4">
+          <span aria-hidden className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink text-[13px] font-semibold text-on-ink">
+            {current.clientName
+              .split(" ")
+              .map((p) => p[0])
+              .filter(Boolean)
+              .slice(0, 2)
+              .join("")
+              .toUpperCase()}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 id="comment-title" className="font-serif text-lg leading-snug text-text-primary">
               {current.clientName}
             </h2>
-            <p className="text-xs text-text-muted">
-              {[
-                current.eventTitle
-                  ? `Event: ${current.eventTitle}`
-                  : "General comment",
-                when,
-              ].join(" · ")}
+            <p className="text-xs text-text-muted">{current.eventTitle ? `Event: ${current.eventTitle}` : "General comment"} · {when}</p>
+          </div>
+          <StatusPill label={COMMENT_STATUS_LABELS[current.status]} tone={STATUS_TONES[current.status]} />
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <p className="mb-1.5 text-xs font-medium text-text-secondary">Their comment</p>
+          <p className="rounded-app-lg rounded-tl-sm border border-border-light bg-accent-bg p-3.5 text-sm leading-relaxed break-words whitespace-pre-wrap text-text-primary">{current.body}</p>
+
+          <div className="mt-5">
+            <FieldLabel htmlFor="comment-reply">Reply (shown to the client)</FieldLabel>
+            <Textarea id="comment-reply" rows={4} maxLength={REPLY_MAX} value={reply} onChange={(e) => setReply(e.target.value)} />
+            <p className="mt-1 text-xs text-text-muted">
+              {reply.length}/{REPLY_MAX}. Leave empty to clear the reply.
+              {current.repliedAt && current.repliedByName ? ` Last reply by ${current.repliedByName}.` : ""}
             </p>
           </div>
-          <StatusPill
-            label={COMMENT_STATUS_LABELS[current.status]}
-            tone={STATUS_TONES[current.status]}
-          />
-        </div>
-        <p className="mt-3 whitespace-pre-wrap break-words rounded-app bg-primary-bg/50 p-3 text-sm text-text-primary">
-          {current.body}
-        </p>
 
-        <div className="mt-4">
-          <FieldLabel htmlFor="comment-reply">
-            Reply (shown to the client)
-          </FieldLabel>
-          <Textarea
-            id="comment-reply"
-            rows={4}
-            maxLength={REPLY_MAX}
-            value={reply}
-            onChange={(e) => setReply(e.target.value)}
-          />
-          <p className="mt-1 text-xs text-text-muted">
-            {reply.length}/{REPLY_MAX}. Leave empty to clear the reply.
-            {current.repliedAt && current.repliedByName
-              ? ` Last reply by ${current.repliedByName}.`
-              : ""}
-          </p>
+          {error && (
+            <p role="alert" className="mt-3 flex flex-wrap items-center gap-2 text-sm text-error">
+              {error}
+              {stale && (
+                <button type="button" onClick={reload} className="font-medium underline">
+                  Reload latest
+                </button>
+              )}
+            </p>
+          )}
         </div>
 
-        {error && (
-          <p
-            role="alert"
-            className="mt-3 flex flex-wrap items-center gap-2 text-sm text-error"
-          >
-            {error}
-            {stale && (
-              <button
-                type="button"
-                onClick={reload}
-                className="font-medium underline"
-              >
-                Reload latest
-              </button>
-            )}
-          </p>
-        )}
-
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
+        <div className="flex flex-col-reverse gap-2 border-t border-border-light bg-accent-bg/50 px-5 py-4 sm:flex-row sm:flex-wrap sm:justify-end">
+          <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
-          <Button
-            variant="outline"
-            disabled={busy || stale}
-            onClick={() => save()}
-          >
+          <Button variant="outline" disabled={busy || stale} onClick={() => save()}>
             Save reply
           </Button>
           {allowedMoves(current.status).map((to) => (

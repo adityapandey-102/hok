@@ -31,7 +31,7 @@ export function UpdatePasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div>
-        <h1 className="font-serif text-[26px] leading-tight text-text-primary">Set a new password</h1>
+        <h1 className="font-serif text-[28px] leading-tight text-text-primary">Set a new password</h1>
       </div>
 
       <div>
@@ -48,7 +48,7 @@ export function UpdatePasswordForm() {
 
       <FieldError>{error}</FieldError>
 
-      <Button type="submit" disabled={loading} className="mt-1 w-full">
+      <Button type="submit" disabled={loading} className="mt-1 w-full py-3">
         {loading ? "Saving…" : "Save password"}
       </Button>
     </form>

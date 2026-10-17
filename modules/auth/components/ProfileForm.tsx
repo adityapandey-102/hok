@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { updateOwnProfileSchema, type Profile } from "../../../lib/domain";
+import { Panel } from "../../../components/ui/Panel";
 import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
 import { useToast } from "../../../components/ui/Toast";
@@ -38,30 +39,48 @@ export function ProfileForm({ profile }: { profile: Profile }) {
     }
   }
 
+  const initials = profile.fullName
+    .split(" ")
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
   return (
-    <form onSubmit={handleSubmit} className="max-w-md rounded-app-lg border border-border bg-card p-5 shadow-app">
-      <div className="flex flex-col gap-4">
-        <div>
-          <FieldLabel htmlFor="pf-name">Full name</FieldLabel>
-          <Input id="pf-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+    <Panel icon="user" title="Your details" subtitle="Shown to your team">
+      <form onSubmit={handleSubmit} className="px-5 pb-5">
+        <div className="mb-5 flex items-center gap-3.5 rounded-app-lg bg-accent-bg p-3.5 ring-1 ring-border-light ring-inset">
+          <span aria-hidden className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink font-serif text-base text-on-ink">
+            {initials}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-medium text-text-primary">{profile.fullName}</p>
+            <p className="truncate text-xs text-text-muted">{profile.email}</p>
+          </div>
         </div>
-        <div>
-          <FieldLabel htmlFor="pf-email">Email</FieldLabel>
-          <Input id="pf-email" value={profile.email} disabled readOnly />
+        <div className="flex flex-col gap-4">
+          <div>
+            <FieldLabel htmlFor="pf-name">Full name</FieldLabel>
+            <Input id="pf-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="pf-email">Email</FieldLabel>
+            <Input id="pf-email" value={profile.email} disabled readOnly />
+          </div>
+          <div>
+            <FieldLabel htmlFor="pf-phone">Phone</FieldLabel>
+            <Input id="pf-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="pf-tz">Time zone</FieldLabel>
+            <TimeZoneInput id="pf-tz" value={timeZone} onChange={setTimeZone} />
+          </div>
         </div>
-        <div>
-          <FieldLabel htmlFor="pf-phone">Phone</FieldLabel>
-          <Input id="pf-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-        </div>
-        <div>
-          <FieldLabel htmlFor="pf-tz">Time zone</FieldLabel>
-          <TimeZoneInput id="pf-tz" value={timeZone} onChange={setTimeZone} />
-        </div>
-      </div>
-      <FieldError>{error}</FieldError>
-      <Button type="submit" disabled={saving} className="mt-4">
-        {saving ? "Saving…" : "Save profile"}
-      </Button>
-    </form>
+        <FieldError>{error}</FieldError>
+        <Button type="submit" disabled={saving} className="mt-5 max-sm:w-full">
+          {saving ? "Saving…" : "Save profile"}
+        </Button>
+      </form>
+    </Panel>
   );
 }

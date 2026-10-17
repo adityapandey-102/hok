@@ -35,7 +35,7 @@ export function RadioGroup<T extends string>({
               checked={selected}
               disabled={disabled}
               onChange={() => onChange(option.value)}
-              className="accent-[var(--color-primary)]"
+              className="accent-[var(--color-ink)]"
             />
             {option.icon && <Icon name={option.icon} size={15} className={selected ? "text-primary" : "text-text-muted"} />}
             {option.label}

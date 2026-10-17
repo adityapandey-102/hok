@@ -102,7 +102,7 @@ export function EventForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5 rounded-app-lg border border-border bg-card p-5 shadow-app">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5 rounded-app-lg border border-border bg-card p-4 shadow-app sm:p-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <FieldLabel required htmlFor="ev-title">
@@ -168,7 +168,7 @@ export function EventForm({
           {team.length > 0 && (
             <ul className="mb-2 flex flex-wrap gap-2">
               {team.map((id) => (
-                <li key={id} className="inline-flex items-center gap-1 rounded-full bg-primary-bg py-1 pl-3 pr-1.5 text-sm text-text-primary">
+                <li key={id} className="inline-flex items-center gap-1 rounded-full bg-accent-bg py-1 pl-3 pr-1.5 text-sm text-text-primary">
                   {teamNames[id] ?? "Team member"}
                   <button
                     type="button"

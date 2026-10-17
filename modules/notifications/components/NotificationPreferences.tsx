@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardHeader } from "../../../components/ui/Card";
-import { Icon } from "../../../components/ui/Icon";
+import { Panel } from "../../../components/ui/Panel";
+import { Loader } from "../../../components/ui/Loader";
 import { useToast } from "../../../components/ui/Toast";
 import {
   notificationsApi,
@@ -50,18 +50,15 @@ export function NotificationPreferences() {
   }
 
   return (
-    <Card regionLabel="Notification preferences">
-      <CardHeader
-        icon={<Icon name="bell" size={17} />}
-        title="Notifications"
-        subtitle="Choose what reaches you, in the bell and as push."
-      />
-      <div className="space-y-4 p-5">
+    <Panel icon="bell" title="Notifications" subtitle="Choose what reaches you, in the bell and as push.">
+      <div className="space-y-4 px-5 pb-5">
         <PushPrompt />
         {error ? (
           <p className="text-sm text-error">{error}</p>
         ) : !prefs ? (
-          <p className="text-sm text-text-muted">Loading…</p>
+          <div className="flex justify-center py-4">
+            <Loader label="Loading preferences" />
+          </div>
         ) : prefs.length === 0 ? (
           <p className="text-sm text-text-muted">No notification types yet.</p>
         ) : (
@@ -69,7 +66,7 @@ export function NotificationPreferences() {
             {prefs.map((p) => (
               <li
                 key={p.type}
-                className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-2.5 py-3.5 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-text-primary">
@@ -77,9 +74,10 @@ export function NotificationPreferences() {
                   </p>
                   <p className="text-xs text-text-muted">{p.description}</p>
                 </div>
-                <div className="flex shrink-0 gap-4 text-sm text-text-secondary">
-                  <label className="inline-flex items-center gap-2">
+                <div className="flex shrink-0 gap-2 text-sm text-text-secondary">
+                  <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-app px-3 ring-1 ring-border ring-inset transition-colors hover:bg-accent-bg">
                     <input
+                      className="h-4 w-4"
                       type="checkbox"
                       checked={p.inApp}
                       disabled={saving}
@@ -93,8 +91,9 @@ export function NotificationPreferences() {
                     />
                     In-app
                   </label>
-                  <label className="inline-flex items-center gap-2">
+                  <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-app px-3 ring-1 ring-border ring-inset transition-colors hover:bg-accent-bg">
                     <input
+                      className="h-4 w-4"
                       type="checkbox"
                       checked={p.push}
                       disabled={saving || !p.inApp}
@@ -111,6 +110,6 @@ export function NotificationPreferences() {
           </ul>
         )}
       </div>
-    </Card>
+    </Panel>
   );
 }

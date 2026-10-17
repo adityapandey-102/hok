@@ -51,3 +51,21 @@ export function barPercents(counts: number[]): number[] {
 export function totalTasks(c: { todo: number; in_progress: number; blocked: number; done: number }): number {
   return c.todo + c.in_progress + c.blocked + c.done;
 }
+
+/** "Good morning" / "Good afternoon" / "Good evening" for the hour it is in the viewer's zone. */
+export function greeting(zone: string, now: number = Date.now()): string {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hourCycle: "h23", timeZone: zone }).format(now));
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+/** "Saturday, 17 October" in the viewer's zone. */
+export function longDate(zone: string, now: number = Date.now()): string {
+  return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: zone }).format(now);
+}
+
+/** Whole-number percent of `part` in `total` (0 when total is 0). */
+export function percentOf(part: number, total: number): number {
+  return total > 0 ? Math.round((part / total) * 100) : 0;
+}

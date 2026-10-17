@@ -25,7 +25,9 @@ test("admin creates a stage template", async ({ page }) => {
   await page.getByLabel("Move stage 3 up").click();
   await page.getByRole("button", { name: "Create template" }).click();
   await page.getByLabel("Search templates").fill(name);
-  await expect(page.getByText("Brief → Review → Done")).toBeVisible({ timeout: 15_000 });
+  // The template's stages show as an ordered chain.
+  const chain = page.getByRole("list", { name: `${name} stages` });
+  await expect(chain.getByRole("listitem")).toHaveText([/Brief/, /Review/, /Done/], { timeout: 15_000 });
 });
 
 test("a manager creates an event from a template and moves its stage with a client-visible note", async ({ page }) => {

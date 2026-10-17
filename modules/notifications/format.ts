@@ -34,3 +34,20 @@ export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
   return out;
 }
+
+/** The icon that says what kind of notification this is. */
+export function notificationIcon(type: string): "message" | "clipboard" | "refresh" | "users" | "bell" {
+  switch (type) {
+    case "client_comment":
+    case "task_commented":
+      return "message";
+    case "task_assigned":
+      return "clipboard";
+    case "task_status_changed":
+      return "refresh";
+    case "client_reassigned":
+      return "users";
+    default:
+      return "bell";
+  }
+}

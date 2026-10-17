@@ -1,6 +1,9 @@
 import {
   Ban,
   Bell,
+  LogOut,
+  Moon,
+  Sun,
   BriefcaseBusiness,
   CalendarClock,
   CalendarDays,
@@ -145,6 +148,9 @@ const ICONS = {
   "external-link": ExternalLink,
   tag: Tag,
   trash: Trash2,
+  sun: Sun,
+  moon: Moon,
+  "log-out": LogOut,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

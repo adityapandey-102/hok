@@ -13,7 +13,8 @@ import { isApiErrorCode } from "../../../lib/api/client";
 import { eventsApi } from "../api/eventsApi";
 import { Button, ButtonLink } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
-import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
+import { Card } from "../../../components/ui/Card";
+import { Panel } from "../../../components/ui/Panel";
 import { FieldLabel } from "../../../components/ui/Field";
 import { Select, Textarea } from "../../../components/ui/Select";
 import { StatusPill } from "../../../components/ui/StatusPill";
@@ -144,28 +145,43 @@ export function EventDetailClient({
     }
   }
 
+  const share = event.stages.length > 0 ? Math.round((currentPos / event.stages.length) * 100) : 0;
+  const manageable = !editing && !readOnly;
+
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="page-title">{event.title}</h1>
-            <StatusPill label={EVENT_STATE_LABELS[event.state]} tone={EVENT_STATE_TONES[event.state]} />
+    <div className="mx-auto flex max-w-5xl flex-col gap-5">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-72">
+          <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+            <h1 className="page-title break-words">{event.title}</h1>
+            <span className="mt-2.5 lg:mt-3.5"><StatusPill label={EVENT_STATE_LABELS[event.state]} tone={EVENT_STATE_TONES[event.state]} /></span>
           </div>
-          <p className="text-sm text-text-muted">
-            <Link href={`/app/clients/${event.clientId}`} className="underline">
-              {event.clientName}
-            </Link>{" "}
-            · {EVENT_TYPE_LABELS[event.type]} · template {event.templateName}
-          </p>
+          <ul className="flex flex-wrap gap-x-5 gap-y-1.5 text-[13px] text-text-secondary">
+            <li className="flex min-w-0 items-center gap-1.5">
+              <Icon name="briefcase" size={14} className="shrink-0 text-text-muted" />
+              <Link href={`/app/clients/${event.clientId}`} className="truncate font-medium text-primary underline-offset-2 hover:underline">
+                {event.clientName}
+              </Link>
+            </li>
+            <li className="flex items-center gap-1.5">
+              <Icon name="tag" size={14} className="shrink-0 text-text-muted" />
+              {EVENT_TYPE_LABELS[event.type]}
+            </li>
+            <li className="flex min-w-0 items-center gap-1.5">
+              <Icon name="layers" size={14} className="shrink-0 text-text-muted" />
+              <span className="truncate">Template {event.templateName}</span>
+            </li>
+          </ul>
         </div>
-        <ButtonLink href={`/app/clients/${event.clientId}`} variant="outline">
-          <Icon name="chevron-right" size={15} className="rotate-180" /> Back to client
-        </ButtonLink>
-      </div>
+        <div className="page-actions">
+          <ButtonLink href={`/app/clients/${event.clientId}`} variant="outline">
+            <Icon name="chevron-right" size={15} className="rotate-180" /> Back to client
+          </ButtonLink>
+        </div>
+      </header>
 
       {conflict && (
-        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-app border border-error/30 bg-error-bg p-3 text-sm text-error">
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-app border border-error/30 bg-error-bg p-3 text-sm text-error">
           <span>Someone else changed this event.</span>
           <Button variant="outline" onClick={reload}>
             Reload latest
@@ -173,8 +189,8 @@ export function EventDetailClient({
         </div>
       )}
       {readOnly && (
-        <div className="mb-4 rounded-app border border-border bg-gray-pill-bg p-3 text-sm text-text-secondary">
-          This client is archived, so the event is read-only.
+        <div className="flex items-center gap-2 rounded-app border border-border bg-gray-pill-bg p-3 text-sm text-text-secondary">
+          <Icon name="lock" size={15} className="shrink-0" /> This client is archived, so the event is read-only.
         </div>
       )}
 
@@ -188,29 +204,43 @@ export function EventDetailClient({
           onCancel={() => setEditing(false)}
         />
       ) : (
-        <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader icon="🗂" iconTone="purple" title="Progress" subtitle={`Stage ${currentPos} of ${event.stages.length}: ${currentName}`} />
-            <CardBody>
+        <>
+          <Card accent className="overflow-hidden">
+            <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 px-5 pt-5 pb-4 sm:px-6">
+              <div className="min-w-0">
+                <p className="text-xs text-text-muted">
+                  Stage {currentPos} of {event.stages.length}
+                </p>
+                <h2 className="mt-1 font-serif text-2xl leading-tight break-words text-text-primary sm:text-[28px]">{currentName}</h2>
+              </div>
+              <div className="w-full sm:w-56">
+                <div className="mb-1.5 flex justify-between text-xs text-text-muted">
+                  <span>Progress</span>
+                  <span className="figure text-text-primary">{share}%</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-border-light">
+                  <div className="grow-x h-full rounded-full bg-primary" style={{ width: `${Math.max(share, 3)}%` }} />
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-border-light bg-accent-bg/40 px-5 py-5 sm:px-6 sm:py-6">
               <StageTracker stages={event.stages} currentStageId={event.currentStageId} />
-            </CardBody>
+            </div>
           </Card>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader icon="📅" iconTone="amber" title="When and where" subtitle={`Viewed in ${viewerTimeZone}`} />
-              <CardBody className="flex flex-col gap-2.5">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+            <Panel icon="calendar" title="When and where" subtitle={`Viewed in ${viewerTimeZone}`} className="lg:col-span-7">
+              <dl className="divide-y divide-border-light border-t border-border-light">
                 <Row label="Starts" value={start.primary} extra={start.secondary} />
                 <Row label="Ends" value={end.primary} extra={end.secondary} />
                 <Row label="Location" value={event.location} />
                 <Row label="Team" value={event.team.length ? event.team.map((t) => t.fullName).join(", ") : null} />
                 <Row label="Description" value={event.description} />
-              </CardBody>
-            </Card>
+              </dl>
+            </Panel>
 
-            <Card>
-              <CardHeader icon="📌" iconTone="purple" title="Move stage" subtitle="Forward or back, with a note" />
-              <CardBody>
+            <Panel icon="send" title="Move stage" subtitle="Forward or back, with a note" className="lg:col-span-5">
+              <div className="border-t border-border-light p-5">
                 {canMove ? (
                   <form onSubmit={handleMove} className="flex flex-col gap-3">
                     <div>
@@ -230,8 +260,8 @@ export function EventDetailClient({
                       <FieldLabel htmlFor="mv-note">Note (optional)</FieldLabel>
                       <Textarea id="mv-note" rows={2} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
                     </div>
-                    <label className="flex items-center gap-2 text-sm text-text-primary">
-                      <input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} />
+                    <label className="flex min-h-10 items-center gap-2 text-sm text-text-primary">
+                      <input type="checkbox" className="h-4 w-4 accent-primary" checked={visible} onChange={(e) => setVisible(e.target.checked)} />
                       Visible to the client
                     </label>
                     <Button type="submit" disabled={busy || !targetStageId}>
@@ -243,52 +273,62 @@ export function EventDetailClient({
                     {readOnly ? "Read-only while the client is archived." : "Reactivate the event to move its stage."}
                   </p>
                 )}
-              </CardBody>
-            </Card>
+              </div>
+            </Panel>
           </div>
 
-          <Card>
-            <CardHeader icon="🕓" iconTone="amber" title="History" subtitle="Newest first" />
-            <CardBody>
-              <ol className="flex flex-col gap-3" aria-label="Stage history">
-                {event.history.map((h) => (
-                  <li key={h.id} className="border-l-2 border-border pl-3">
-                    <p className="text-sm text-text-primary">
+          <Panel icon="history" title="History" subtitle="Every stage change, newest first">
+            <ol className="border-t border-border-light px-5 py-5 sm:px-6" aria-label="Stage history">
+              {event.history.map((h, i) => (
+                <li key={h.id} className="relative flex gap-4 pb-6 last:pb-0">
+                  {i < event.history.length - 1 && <span aria-hidden className="absolute top-7 bottom-0 left-[11px] w-px bg-border" />}
+                  <span
+                    aria-hidden
+                    className={`relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-4 ring-card ${i === 0 ? "bg-primary text-white" : "bg-accent-bg text-text-secondary"}`}
+                  >
+                    <Icon name={i === 0 ? "check" : "layers"} size={12} strokeWidth={2.5} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium break-words text-text-primary">
                       {h.fromStageId ? `${stageNames.get(h.fromStageId) ?? "Stage"} → ${stageNames.get(h.toStageId) ?? "Stage"}` : `Created at ${stageNames.get(h.toStageId) ?? "first stage"}`}
                     </p>
                     <p className="text-xs text-text-muted">
                       {h.changedByName ?? "Unknown"} · {formatDate(h.createdAt)}
                       {h.visibleToClient && " · visible to client"}
                     </p>
-                    {h.note && <p className="mt-1 whitespace-pre-wrap text-sm text-text-secondary">{h.note}</p>}
-                  </li>
-                ))}
-              </ol>
-            </CardBody>
-          </Card>
-        </div>
+                    {h.note && (
+                      <p className="mt-2 rounded-app bg-accent-bg px-3 py-2 text-sm break-words whitespace-pre-wrap text-text-secondary">{h.note}</p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </Panel>
+        </>
       )}
 
-      {!editing && !readOnly && (
-        <div className="mt-5 flex flex-wrap gap-2">
-          <Button disabled={busy} onClick={() => setEditing(true)}>
-            <Icon name="edit" size={16} /> Edit or reschedule
-          </Button>
-          {event.state === "active" ? (
-            <>
-              <Button variant="outline" disabled={busy} onClick={() => changeState("postponed")}>
-                Postpone
-              </Button>
-              <Button variant="danger" disabled={busy} onClick={() => changeState("cancelled")}>
-                <Icon name="ban" size={16} /> Cancel event
-              </Button>
-            </>
-          ) : (
-            <Button variant="outline" disabled={busy} onClick={() => changeState("active")}>
-              <Icon name="refresh" size={16} /> Reactivate
+      {manageable && (
+        <Panel icon="settings" title="Manage event" subtitle="Reschedule, pause or cancel">
+          <div className="flex flex-col gap-2 border-t border-border-light p-5 sm:flex-row sm:flex-wrap">
+            <Button disabled={busy} onClick={() => setEditing(true)}>
+              <Icon name="edit" size={16} /> Edit or reschedule
             </Button>
-          )}
-        </div>
+            {event.state === "active" ? (
+              <>
+                <Button variant="outline" disabled={busy} onClick={() => changeState("postponed")}>
+                  Postpone
+                </Button>
+                <Button variant="danger" disabled={busy} onClick={() => changeState("cancelled")}>
+                  <Icon name="ban" size={16} /> Cancel event
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" disabled={busy} onClick={() => changeState("active")}>
+                <Icon name="refresh" size={16} /> Reactivate
+              </Button>
+            )}
+          </div>
+        </Panel>
       )}
     </div>
   );
@@ -296,12 +336,12 @@ export function EventDetailClient({
 
 function Row({ label, value, extra }: { label: string; value: string | null; extra?: string | null }) {
   return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-text-muted">{label}</span>
-      <span className="break-words text-right text-sm text-text-primary">
-        {value || "—"}
+    <div className="flex items-baseline justify-between gap-4 px-5 py-3 transition-colors hover:bg-accent-bg/60">
+      <dt className="shrink-0 text-xs text-text-muted">{label}</dt>
+      <dd className="min-w-0 text-right text-sm break-words text-text-primary">
+        {value || <span className="text-text-muted">—</span>}
         {extra && <span className="block text-xs text-text-muted">{extra}</span>}
-      </span>
+      </dd>
     </div>
   );
 }

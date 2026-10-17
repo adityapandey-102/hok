@@ -128,7 +128,7 @@ export function ClientForm({
   );
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6 rounded-app-lg border border-border bg-card p-5 shadow-app">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-6 rounded-app-lg border border-border bg-card p-4 shadow-app sm:p-6">
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <FieldLabel required htmlFor="cf-name">

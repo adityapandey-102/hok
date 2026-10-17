@@ -62,14 +62,14 @@ export function TagInput({
       {value.length > 0 && (
         <ul className="mb-2 flex flex-wrap gap-1.5" aria-label="Tags">
           {value.map((t) => (
-            <li key={t} className="inline-flex items-center gap-1 rounded-app-sm bg-primary-bg px-2 py-0.5 text-xs font-medium text-primary">
+            <li key={t} className="inline-flex items-center gap-1 rounded-app-sm bg-accent-bg px-2 py-0.5 text-xs font-medium text-text-secondary">
               {t}
               <button
                 type="button"
                 aria-label={`Remove tag ${t}`}
                 disabled={disabled}
                 onClick={() => onChange(value.filter((x) => x !== t))}
-                className="rounded-full p-0.5 hover:bg-primary/10"
+                className="rounded-full p-0.5 hover:bg-accent-light"
               >
                 <Icon name="x" size={12} />
               </button>
@@ -110,7 +110,7 @@ export function TagInput({
               // mousedown so the suggestion is taken before the input's blur fires.
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => add(s.name)}
-              className="rounded-app-sm border border-border bg-card px-2 py-0.5 text-xs text-text-secondary hover:border-primary/40 hover:bg-primary-bg"
+              className="rounded-app-sm border border-border bg-card px-2 py-0.5 text-xs text-text-secondary hover:bg-accent-bg"
             >
               + {s.name}
             </button>

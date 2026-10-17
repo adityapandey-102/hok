@@ -17,9 +17,9 @@ interface ToastContextValue {
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const TONE_CLASSES: Record<ToastType, string> = {
-  success: "bg-success text-white",
-  error: "bg-error text-white",
-  info: "bg-primary text-white",
+  success: "bg-success text-on-ink",
+  error: "bg-error text-on-ink",
+  info: "bg-ink text-on-ink",
 };
 
 let nextToastId = 0;

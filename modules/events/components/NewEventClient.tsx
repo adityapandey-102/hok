@@ -14,6 +14,8 @@ import { useToast } from "../../../components/ui/Toast";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { FieldLabel } from "../../../components/ui/Field";
 import { EventForm, type EventFormValues } from "./EventForm";
+import { Card } from "../../../components/ui/Card";
+import { EmptyState } from "../../../components/ui/EmptyState";
 
 /** New event for one client, from an active stage template. */
 function NewEventForClient({ clientId, isAdmin, date }: { clientId: string; isAdmin: boolean; date?: string }) {
@@ -70,26 +72,28 @@ function NewEventForClient({ clientId, isAdmin, date }: { clientId: string; isAd
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto flex max-w-4xl flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="page-title">New event</h1>
-          {client && <p className="text-sm text-text-muted">for {client.businessName}</p>}
+          <p className="text-sm text-text-muted">{client ? `For ${client.businessName}. Pick a stage template and a time.` : "Pick a stage template and a time."}</p>
         </div>
-        <ButtonLink href={`/app/clients/${clientId}`} variant="outline">
-          <Icon name="chevron-right" size={15} className="rotate-180" /> Back to client
-        </ButtonLink>
-      </div>
+        <div className="page-actions">
+          <ButtonLink href={`/app/clients/${clientId}`} variant="outline">
+            <Icon name="chevron-right" size={15} className="rotate-180" /> Back to client
+          </ButtonLink>
+        </div>
+      </header>
       {error ? (
         <p className="text-sm text-error">{error}</p>
       ) : !client ? (
-        <p className="text-sm text-text-muted">Loading…</p>
+        <div className="skeleton h-80 rounded-app-lg" aria-busy="true" aria-label="Loading" />
       ) : client.status === "archived" ? (
-        <p className="text-sm text-text-muted">This client is archived and read-only.</p>
+        <Card><EmptyState icon="lock" compact title="This client is archived and read-only." /></Card>
       ) : !templates ? (
-        <p className="text-sm text-text-muted">Loading…</p>
+        <div className="skeleton h-80 rounded-app-lg" aria-busy="true" aria-label="Loading" />
       ) : templates.total === 0 ? (
-        <p className="text-sm text-text-muted">There is no active stage template yet. Ask an Admin to create one.</p>
+        <Card><EmptyState icon="layers" title="There is no active stage template yet." description="Ask an Admin to create one." /></Card>
       ) : (
         <EventForm defaultDate={date} clientTimeZone={client.timeZone} defaultTemplate={templates.first ?? undefined} canPickTeam={isAdmin} submitLabel="Create event" onSubmit={handleCreate} />
       )}
@@ -107,8 +111,11 @@ export function NewEventClient({ clientId, isAdmin, date }: { clientId?: string;
 
   if (picked) return <NewEventForClient clientId={picked} isAdmin={isAdmin} date={date} />;
   return (
-    <div className="mx-auto max-w-md">
-      <h1 className="page-title mb-4">New event</h1>
+    <div className="mx-auto flex max-w-md flex-col gap-5">
+      <div>
+        <h1 className="page-title">New event</h1>
+        <p className="text-sm text-text-muted">Start by choosing the client.</p>
+      </div>
       <div className="rounded-app-lg border border-border bg-card p-5 shadow-app">
         <FieldLabel htmlFor="ne-client">Which client is it for?</FieldLabel>
         <SearchSelect

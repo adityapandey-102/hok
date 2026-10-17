@@ -11,8 +11,8 @@ import {
 import { isApiErrorCode } from "../../../lib/api/client";
 import { clientsApi, type CreateClientPayload, type UpdateClientPayload } from "../api/clientsApi";
 import { Button, ButtonLink } from "../../../components/ui/Button";
-import { Icon } from "../../../components/ui/Icon";
-import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
+import { Icon, type IconName } from "../../../components/ui/Icon";
+import { Panel } from "../../../components/ui/Panel";
 import { FieldLabel } from "../../../components/ui/Field";
 import { Modal } from "../../../components/ui/Modal";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
@@ -25,6 +25,15 @@ import { CalendarView } from "../../calendar/components/CalendarView";
 import { AssetsPanel } from "../../assets/components/AssetsPanel";
 import { PortalTab } from "../../portal/components/PortalTab";
 import { STATUS_TONES } from "./ClientsListClient";
+import { ClientAvatar } from "./ClientAvatar";
+
+const TABS = [
+  { id: "overview", icon: "home" },
+  { id: "events", icon: "layers" },
+  { id: "calendar", icon: "calendar" },
+  { id: "assets", icon: "image" },
+  { id: "portal", icon: "share" },
+] as const satisfies readonly { id: string; icon: IconName }[];
 
 /**
  * The client workspace (FR-CLI-06). Only the Overview tab exists in M3; the
@@ -119,25 +128,41 @@ export function ClientWorkspaceClient({
     }
   }
 
+  const facts = [
+    client.industry ? { icon: "briefcase" as IconName, text: client.industry } : null,
+    { icon: "user" as IconName, text: `Owner: ${client.ownerName}` },
+    { icon: "clock" as IconName, text: client.timeZone },
+    client.contractEnd ? { icon: "calendar" as IconName, text: `Contract ends ${formatDateOnly(client.contractEnd)}` } : null,
+  ].filter((x): x is { icon: IconName; text: string } => x !== null);
+
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="page-title">{client.businessName}</h1>
-            <StatusPill label={CLIENT_STATUS_LABELS[client.status]} tone={STATUS_TONES[client.status]} />
+    <div className="mx-auto flex max-w-5xl flex-col gap-5">
+      <section aria-label="Client" className="relative overflow-hidden rounded-app-xl border border-border bg-card shadow-app">
+        <div aria-hidden className="h-1.5 bg-ink" />
+        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:gap-5 sm:p-6">
+          <ClientAvatar name={client.businessName} logoUrl={client.logoUrl} size="lg" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+              <h1 className="page-title break-words">{client.businessName}</h1>
+              <span className="mt-2.5 lg:mt-3.5"><StatusPill label={CLIENT_STATUS_LABELS[client.status]} tone={STATUS_TONES[client.status]} /></span>
+            </div>
+            <ul className="mt-1 flex flex-wrap gap-x-5 gap-y-1.5 text-[13px] text-text-secondary">
+              {facts.map((f) => (
+                <li key={f.text} className="flex min-w-0 items-center gap-1.5">
+                  <Icon name={f.icon} size={14} className="shrink-0 text-text-muted" />
+                  <span className="truncate">{f.text}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-          <p className="text-sm text-text-muted">
-            {[client.industry, `Owner: ${client.ownerName}`, client.timeZone].filter(Boolean).join(" · ")}
-          </p>
+          <ButtonLink href="/app/clients" variant="outline" className="self-start max-sm:w-full">
+            <Icon name="chevron-right" size={15} className="rotate-180" /> All clients
+          </ButtonLink>
         </div>
-        <ButtonLink href="/app/clients" variant="outline">
-          <Icon name="chevron-right" size={15} className="rotate-180" /> All clients
-        </ButtonLink>
-      </div>
+      </section>
 
       {conflict && (
-        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-app border border-error/30 bg-error-bg p-3 text-sm text-error">
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-app border border-error/30 bg-error-bg p-3 text-sm text-error">
           <span>Someone else changed this client while you were editing.</span>
           <Button variant="outline" onClick={reload}>
             Reload latest
@@ -146,98 +171,94 @@ export function ClientWorkspaceClient({
       )}
 
       {archived && (
-        <div className="mb-4 rounded-app border border-border bg-gray-pill-bg p-3 text-sm text-text-secondary">
-          This client is archived and read-only. Unarchive it to make changes.
+        <div className="flex items-center gap-2 rounded-app border border-border bg-gray-pill-bg p-3 text-sm text-text-secondary">
+          <Icon name="lock" size={15} className="shrink-0" /> This client is archived and read-only. Unarchive it to make changes.
         </div>
       )}
 
-      <div role="tablist" aria-label="Client workspace" className="mb-4 flex gap-1 overflow-x-auto border-b border-border [scrollbar-width:none]">
-        {(["overview", "events", "calendar", "assets", "portal"] as const).map((t) => (
+      <div role="tablist" aria-label="Client workspace" className="-mb-1 flex max-w-full gap-1 overflow-x-auto border-b border-border [scrollbar-width:none]">
+        {TABS.map(({ id, icon }) => (
           <button
-            key={t}
+            key={id}
             role="tab"
-            aria-selected={tab === t}
-            onClick={() => setTab(t)}
-            className={`-mb-px shrink-0 border-b-2 px-3 py-2 whitespace-nowrap sm:px-4 text-sm font-medium capitalize ${tab === t ? "border-primary text-primary" : "border-transparent text-text-muted hover:text-text-primary"}`}
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            className={`-mb-px flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-medium whitespace-nowrap capitalize transition-colors sm:px-4 ${tab === id ? "border-primary text-text-primary" : "border-transparent text-text-muted hover:text-text-primary"}`}
           >
-            {t}
+            <Icon name={icon} size={15} className={tab === id ? "text-primary" : ""} />
+            {id}
           </button>
         ))}
       </div>
 
-      {tab === "events" && <EventsTab clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
+      <div key={tab} className="animate-fade-in">
+        {tab === "events" && <EventsTab clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
+        {tab === "calendar" && <CalendarView clientId={client.id} viewerTimeZone={viewerTimeZone} isAdmin={isAdmin} readOnly={archived} />}
+        {tab === "portal" && <PortalTab clientId={client.id} archived={archived} viewerTimeZone={viewerTimeZone} />}
+        {tab === "assets" && <AssetsPanel clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
 
-      {tab === "calendar" && <CalendarView clientId={client.id} viewerTimeZone={viewerTimeZone} isAdmin={isAdmin} readOnly={archived} />}
-      {tab === "portal" && <PortalTab clientId={client.id} archived={archived} viewerTimeZone={viewerTimeZone} />}
-      {tab === "assets" && <AssetsPanel clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
+        {tab !== "overview" ? null : editing && !archived ? (
+          <ClientForm client={client} submitLabel="Save changes" onSubmit={handleSave} onCancel={() => setEditing(false)} />
+        ) : (
+          <div className="flex flex-col gap-5">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <Panel icon="user" title="Contact" subtitle="Who to talk to">
+                <dl className="divide-y divide-border-light border-t border-border-light">
+                  <Row label="Contact person" value={client.contactPerson} />
+                  <Row label="Phone" value={client.phone} href={client.phone ? `tel:${client.phone}` : undefined} />
+                  <Row label="Email" value={client.email} href={client.email ? `mailto:${client.email}` : undefined} />
+                  <Row label="Website" value={client.website} />
+                  <Row label="Address" value={client.address} />
+                </dl>
+              </Panel>
 
-      {tab !== "overview" ? null : editing && !archived ? (
-        <ClientForm client={client} submitLabel="Save changes" onSubmit={handleSave} onCancel={() => setEditing(false)} />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader icon="🧑‍💼" iconTone="purple" title="Contact" subtitle="Who to talk to" />
-            <CardBody className="flex flex-col gap-2.5">
-              <Row label="Contact person" value={client.contactPerson} />
-              <Row label="Phone" value={client.phone} />
-              <Row label="Email" value={client.email} />
-              <Row label="Website" value={client.website} />
-              <Row label="Address" value={client.address} />
-            </CardBody>
-          </Card>
+              <Panel icon="clipboard" title="Contract" subtitle="Services and dates">
+                <dl className="divide-y divide-border-light border-t border-border-light">
+                  <Row label="Services" value={client.services.length ? client.services.join(", ") : null} />
+                  <Row label="Contract start" value={client.contractStart ? formatDateOnly(client.contractStart) : null} />
+                  <Row label="Contract end" value={client.contractEnd ? formatDateOnly(client.contractEnd) : null} />
+                  <Row label="Time zone" value={client.timeZone} />
+                </dl>
+              </Panel>
 
-          <Card>
-            <CardHeader icon="📋" iconTone="amber" title="Contract" subtitle="Services and dates" />
-            <CardBody className="flex flex-col gap-2.5">
-              <Row label="Services" value={client.services.length ? client.services.join(", ") : null} />
-              <Row label="Contract start" value={client.contractStart ? formatDateOnly(client.contractStart) : null} />
-              <Row label="Contract end" value={client.contractEnd ? formatDateOnly(client.contractEnd) : null} />
-              <Row label="Time zone" value={client.timeZone} />
-            </CardBody>
-          </Card>
+              <Panel icon="share" title="Social media" subtitle="Handles">
+                <dl className="divide-y divide-border-light border-t border-border-light">
+                  {SOCIAL_PLATFORMS.filter((p) => client.socialHandles[p]).map((p) => (
+                    <Row key={p} label={SOCIAL_PLATFORM_LABELS[p]} value={client.socialHandles[p] ?? null} />
+                  ))}
+                </dl>
+                {Object.keys(client.socialHandles).length === 0 && <p className="border-t border-border-light px-5 py-4 text-sm text-text-muted">None added.</p>}
+              </Panel>
 
-          <Card>
-            <CardHeader icon="📱" iconTone="purple" title="Social media" subtitle="Handles" />
-            <CardBody className="flex flex-col gap-2.5">
-              {SOCIAL_PLATFORMS.filter((p) => client.socialHandles[p]).map((p) => (
-                <Row key={p} label={SOCIAL_PLATFORM_LABELS[p]} value={client.socialHandles[p] ?? null} />
-              ))}
-              {Object.keys(client.socialHandles).length === 0 && <p className="text-sm text-text-muted">None added.</p>}
-            </CardBody>
-          </Card>
+              <Panel icon="edit" title="Notes" subtitle="Internal only">
+                <p className="border-t border-border-light px-5 py-4 text-sm break-words whitespace-pre-wrap text-text-primary">{client.notes || "No notes."}</p>
+              </Panel>
+            </div>
 
-          <Card>
-            <CardHeader icon="📝" iconTone="amber" title="Notes" subtitle="Internal only" />
-            <CardBody>
-              <p className="whitespace-pre-wrap text-sm text-text-primary">{client.notes || "No notes."}</p>
-            </CardBody>
-          </Card>
-        </div>
-      )}
-
-      {tab === "overview" && !editing && (
-        <div className="mt-5 flex flex-wrap gap-2">
-          {archived ? (
-            <Button disabled={busy} onClick={handleUnarchive}>
-              <Icon name="refresh" size={16} /> Unarchive
-            </Button>
-          ) : (
-            <>
-              <Button onClick={() => setEditing(true)} disabled={busy}>
-                <Icon name="edit" size={16} /> Edit client
-              </Button>
-              {isAdmin && (
-                <Button variant="outline" disabled={busy} onClick={() => setReassignOpen(true)}>
-                  <Icon name="users" size={16} /> Reassign owner
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              {archived ? (
+                <Button disabled={busy} onClick={handleUnarchive}>
+                  <Icon name="refresh" size={16} /> Unarchive
                 </Button>
+              ) : (
+                <>
+                  <Button onClick={() => setEditing(true)} disabled={busy}>
+                    <Icon name="edit" size={16} /> Edit client
+                  </Button>
+                  {isAdmin && (
+                    <Button variant="outline" disabled={busy} onClick={() => setReassignOpen(true)}>
+                      <Icon name="users" size={16} /> Reassign owner
+                    </Button>
+                  )}
+                  <Button variant="danger" disabled={busy} onClick={handleArchive}>
+                    <Icon name="ban" size={16} /> Archive
+                  </Button>
+                </>
               )}
-              <Button variant="danger" disabled={busy} onClick={handleArchive}>
-                <Icon name="ban" size={16} /> Archive
-              </Button>
-            </>
-          )}
-        </div>
-      )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {reassignOpen && (
         <ReassignModal
@@ -255,11 +276,19 @@ export function ClientWorkspaceClient({
   );
 }
 
-function Row({ label, value }: { label: string; value: string | null }) {
+function Row({ label, value, href }: { label: string; value: string | null; href?: string }) {
   return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-text-muted">{label}</span>
-      <span className="break-words text-right text-sm text-text-primary">{value || "—"}</span>
+    <div className="flex items-baseline justify-between gap-4 px-5 py-3 transition-colors hover:bg-accent-bg/60">
+      <dt className="shrink-0 text-xs text-text-muted">{label}</dt>
+      <dd className="min-w-0 text-right text-sm break-words text-text-primary">
+        {value && href ? (
+          <a href={href} className="underline-offset-2 hover:text-primary hover:underline">
+            {value}
+          </a>
+        ) : (
+          value || <span className="text-text-muted">—</span>
+        )}
+      </dd>
     </div>
   );
 }

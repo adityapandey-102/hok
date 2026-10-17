@@ -12,6 +12,7 @@ import { Pager } from "../../../components/ui/Pager";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import { useToast } from "../../../components/ui/Toast";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
+import { EmptyState } from "../../../components/ui/EmptyState";
 
 const PAGE_SIZE = 20;
 const MAX_STAGES = 20;
@@ -78,17 +79,19 @@ export function TemplatesClient() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="page-title">Stage templates</h1>
           <p className="text-sm text-text-muted">The stages an event moves through. Managers pick one when they create an event.</p>
         </div>
         {!editing && (
-          <Button className="max-sm:w-full" onClick={() => setEditing("new")}>
-            <Icon name="plus" size={16} /> New template
-          </Button>
+          <div className="page-actions">
+            <Button onClick={() => setEditing("new")}>
+              <Icon name="plus" size={16} /> New template
+            </Button>
+          </div>
         )}
-      </div>
+      </header>
 
       {editing && (
         <TemplateEditor
@@ -102,9 +105,10 @@ export function TemplatesClient() {
         />
       )}
 
-      <div className="mb-3">
+      <div className="relative mb-4 sm:max-w-sm">
+        <Icon name="search" size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-text-muted" />
         <Input
-          className="max-w-sm"
+          className="pl-9"
           aria-label="Search templates"
           placeholder="Search by name"
           value={search}
@@ -117,7 +121,14 @@ export function TemplatesClient() {
 
       <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app">
         {loading ? (
-          <div className="p-6 text-sm text-text-muted">Loading…</div>
+          <ul className="divide-y divide-border-light" aria-busy="true" aria-label="Loading templates">
+            {Array.from({ length: 4 }, (_, i) => (
+              <li key={i} className="space-y-2.5 px-5 py-4">
+                <div className="skeleton h-4 w-40 rounded-app-sm" />
+                <div className="skeleton h-5 w-3/4 rounded-app-sm" />
+              </li>
+            ))}
+          </ul>
         ) : error ? (
           <div className="flex items-center justify-between gap-3 p-6 text-sm text-error">
             <span>{error}</span>
@@ -126,23 +137,34 @@ export function TemplatesClient() {
             </button>
           </div>
         ) : templates.length === 0 ? (
-          <div className="p-6 text-sm text-text-muted">{search.trim() ? "No templates match your search." : "No templates yet."}</div>
+          <EmptyState icon="layers" title={search.trim() ? "No templates match your search." : "No templates yet."} description={search.trim() ? undefined : "Create a template to give events their stages."} />
         ) : (
           <ul className="divide-y divide-border-light">
             {templates.map((t) => (
-              <li key={t.id} className="flex flex-wrap items-center gap-3 p-4">
+              <li key={t.id} className={`flex flex-col gap-3 px-5 py-4 transition-colors hover:bg-accent-bg lg:flex-row lg:items-center lg:gap-4 ${t.active ? "" : "opacity-75"}`}>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-text-primary">{t.name}</span>
+                    <span className="font-serif text-[16px] text-text-primary">{t.name}</span>
                     <StatusPill label={t.active ? "Active" : "Inactive"} tone={t.active ? "green" : "gray"} />
+                    <span className="text-xs text-text-muted">{t.stages.length} stages</span>
                   </div>
-                  <p className="mt-1 text-xs text-text-muted">{t.stages.map((s) => s.name).join(" → ")}</p>
+                  <ol className="mt-2.5 flex flex-wrap items-center gap-1.5" aria-label={`${t.name} stages`}>
+                    {t.stages.map((s, i) => (
+                      <li key={i} className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-bg px-2.5 py-1 text-xs text-text-secondary ring-1 ring-border ring-inset">
+                          <span className="figure text-[10.5px] text-text-muted">{i + 1}</span>
+                          {s.name}
+                        </span>
+                        {i < t.stages.length - 1 && <Icon name="chevron-right" size={12} className="text-border" />}
+                      </li>
+                    ))}
+                  </ol>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" className="px-3 py-1.5 text-xs" onClick={() => setEditing(t)}>
-                    Edit
+                  <Button variant="outline" className="px-3 py-1.5 text-xs max-sm:flex-1" onClick={() => setEditing(t)}>
+                    <Icon name="edit" size={13} /> Edit
                   </Button>
-                  <Button variant="outline" className="px-3 py-1.5 text-xs" onClick={() => toggleActive(t)}>
+                  <Button variant="outline" className="px-3 py-1.5 text-xs max-sm:flex-1" onClick={() => toggleActive(t)}>
                     {t.active ? "Deactivate" : "Reactivate"}
                   </Button>
                 </div>
@@ -207,8 +229,13 @@ function TemplateEditor({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mb-6 rounded-app-lg border border-border bg-card p-5 shadow-app">
-      <h2 className="mb-3 font-serif text-lg font-bold text-text-primary">{template ? `Edit ${template.name}` : "New template"}</h2>
+    <form onSubmit={handleSubmit} className="animate-rise mb-6 rounded-app-lg border border-border bg-card p-5 shadow-app-md sm:p-6">
+      <h2 className="mb-4 flex items-center gap-3 font-serif text-lg text-text-primary">
+        <span className="flex h-9 w-9 items-center justify-center rounded-app bg-accent-bg text-text-secondary ring-1 ring-border ring-inset">
+          <Icon name="layers" size={17} />
+        </span>
+        {template ? `Edit ${template.name}` : "New template"}
+      </h2>
       <div className="max-w-md">
         <FieldLabel required htmlFor="tpl-name">
           Template name
@@ -221,8 +248,8 @@ function TemplateEditor({
         <ol className="flex flex-col gap-2">
           {stages.map((stage, i) => (
             <li key={i} className="flex items-center gap-2">
-              <span className="w-6 shrink-0 text-right text-xs text-text-muted">{i + 1}.</span>
-              <Input aria-label={`Stage ${i + 1} name`} value={stage} maxLength={60} onChange={(e) => setStage(i, e.target.value)} />
+              <span className="figure flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-bg text-[11px] text-text-secondary ring-1 ring-border ring-inset">{i + 1}</span>
+              <Input className="min-w-0" aria-label={`Stage ${i + 1} name`} value={stage} maxLength={60} onChange={(e) => setStage(i, e.target.value)} />
               <Button type="button" variant="outline" className="px-2.5 py-2" aria-label={`Move stage ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)}>
                 <Icon name="chevron-right" size={14} className="-rotate-90" />
               </Button>

@@ -3,7 +3,7 @@ import type { PillTone } from "../../../components/ui/StatusPill";
 export type CommentStatus = "received" | "in_progress" | "solved";
 
 export const STATUS_TONES: Record<CommentStatus, PillTone> = {
-  received: "amber",
+  received: "red",
   in_progress: "blue",
   solved: "green",
 };

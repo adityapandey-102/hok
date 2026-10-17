@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DashboardEvent } from "./api/dashboardApi";
-import { barPercents, dayDiff, dueText, stagePercent, stageProgress, totalTasks, weekStrip } from "./format";
+import { barPercents, dayDiff, dueText, greeting, longDate, percentOf, stagePercent, stageProgress, totalTasks, weekStrip } from "./format";
 
 const NOW = Date.parse("2026-10-16T09:00:00Z");
 const ev = (startsAt: string, endsAt: string): DashboardEvent => ({
@@ -48,5 +48,26 @@ describe("dashboard format", () => {
 
   it("totalTasks sums statuses", () => {
     expect(totalTasks({ todo: 1, in_progress: 2, blocked: 3, done: 4 })).toBe(10);
+  });
+});
+
+describe("greeting, longDate", () => {
+  it("greets by the hour in the viewer's zone", () => {
+    // 03:00 UTC = 08:30 in Kolkata, 23:00 the day before in New York.
+    const t = Date.parse("2026-10-17T03:00:00Z");
+    expect(greeting("Asia/Kolkata", t)).toBe("Good morning");
+    expect(greeting("America/New_York", t)).toBe("Good evening");
+    expect(greeting("UTC", Date.parse("2026-10-17T13:00:00Z"))).toBe("Good afternoon");
+  });
+
+  it("formats the viewer's date", () => {
+    expect(longDate("Asia/Kolkata", Date.parse("2026-10-16T20:00:00Z"))).toBe("Saturday 17 October");
+  });
+});
+
+describe("percentOf", () => {
+  it("rounds percentages and survives a zero total", () => {
+    expect(percentOf(1, 3)).toBe(33);
+    expect(percentOf(2, 0)).toBe(0);
   });
 });

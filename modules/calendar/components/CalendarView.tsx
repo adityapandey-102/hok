@@ -33,6 +33,7 @@ import { Icon } from "../../../components/ui/Icon";
 import { Select } from "../../../components/ui/Select";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { fromFeedItem, TYPE_CHIP_CLASSES, type CalendarItem } from "../calendarItems";
+import { EmptyState } from "../../../components/ui/EmptyState";
 
 type View = "month" | "week" | "list";
 const VIEWS: { id: View; label: string }[] = [
@@ -138,8 +139,8 @@ export function CalendarView({
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button variant="outline" className="px-2.5 py-2" aria-label="Previous" onClick={() => step(-1)}>
             <Icon name="chevron-right" size={15} className="rotate-180" />
           </Button>
@@ -149,18 +150,18 @@ export function CalendarView({
           <Button variant="outline" onClick={() => setCursor(today)}>
             Today
           </Button>
-          <h2 className="ml-1 font-serif text-lg font-bold text-text-primary" aria-live="polite" data-testid="calendar-title">
+          <h2 className="ml-1 font-serif text-xl text-text-primary sm:text-2xl" aria-live="polite" data-testid="calendar-title">
             {title}
           </h2>
         </div>
-        <div role="group" aria-label="Calendar view" className="inline-flex overflow-hidden rounded-app border border-border">
+        <div role="group" aria-label="Calendar view" className="inline-flex rounded-app border border-border bg-card p-0.5 shadow-app max-sm:w-full">
           {VIEWS.map((v) => (
             <button
               key={v.id}
               type="button"
               aria-pressed={view === v.id}
               onClick={() => setChosenView(v.id)}
-              className={`px-3.5 py-2 text-sm font-medium ${view === v.id ? "bg-primary text-white" : "bg-card text-text-secondary hover:bg-primary-bg"}`}
+              className={`min-h-9 rounded-[calc(var(--radius-app)-2px)] px-3.5 py-1.5 text-sm font-medium transition-colors max-sm:flex-1 ${view === v.id ? "bg-ink text-on-ink" : "text-text-secondary hover:bg-accent-bg"}`}
             >
               {v.label}
             </button>
@@ -168,7 +169,7 @@ export function CalendarView({
         </div>
       </div>
 
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="mb-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
         {!clientId && (
           <SearchSelect
             className="sm:w-56"
@@ -180,7 +181,7 @@ export function CalendarView({
             onChange={(id) => setClientFilter(id ?? "")}
           />
         )}
-        <Select className="w-auto" aria-label="Filter by type" value={type} onChange={(e) => setType(e.target.value as EventType | "")}>
+        <Select className="sm:w-auto" aria-label="Filter by type" value={type} onChange={(e) => setType(e.target.value as EventType | "")}>
           <option value="">All types</option>
           {EVENT_TYPES.map((t) => (
             <option key={t} value={t}>
@@ -188,7 +189,7 @@ export function CalendarView({
             </option>
           ))}
         </Select>
-        <Select className="w-auto" aria-label="Filter by stage" value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+        <Select className="sm:w-auto" aria-label="Filter by stage" value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
           <option value="">All stages</option>
           {stageOptions.map((s) => (
             <option key={s} value={s}>
@@ -209,13 +210,22 @@ export function CalendarView({
         )}
       </div>
 
-      <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-muted" aria-hidden="true">
-        {EVENT_TYPES.map((t) => (
-          <span key={t} className="inline-flex items-center gap-1">
-            <span className={`inline-block h-2.5 w-2.5 rounded-sm border ${TYPE_CHIP_CLASSES[t]}`} />
-            {EVENT_TYPE_LABELS[t]}
-          </span>
-        ))}
+      <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted" aria-hidden="true">
+        <span className="inline-flex items-center gap-1.5">
+          <span className={`inline-block h-3 w-4 rounded-sm border ${TYPE_CHIP_CLASSES.shoot}`} />
+          Client event
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className={`inline-block h-3 w-4 rounded-sm border ${TYPE_CHIP_CLASSES.personal}`} />
+          Personal
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="text-text-muted line-through">Cancelled</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-primary" />
+          Today
+        </span>
       </div>
 
       {error && (
@@ -271,7 +281,7 @@ export function CalendarView({
   );
 }
 
-function Chip({ item, zone, compact, onOpenPersonal }: { item: CalendarItem; zone: string; compact?: boolean; onOpenPersonal?: (id: string) => void }) {
+function Chip({ item, zone, compact, dot, onOpenPersonal }: { item: CalendarItem; zone: string; compact?: boolean; dot?: boolean; onOpenPersonal?: (id: string) => void }) {
   const inactive = item.state !== "active";
   const same = formatTimeInZone(item.startsAt, zone) === formatTimeInZone(item.startsAt, item.timeZone);
   const tip = `${item.title}${item.clientName ? ` · ${item.clientName}` : ""}\n${formatInZone(item.startsAt, zone, true)}${same ? "" : `\n${formatInZone(item.startsAt, item.timeZone, true)} (event time)`}${inactive ? `\n${item.state}` : ""}`;
@@ -285,10 +295,10 @@ function Chip({ item, zone, compact, onOpenPersonal }: { item: CalendarItem; zon
           onOpenPersonal?.(item.id);
         }}
         data-testid="calendar-item"
-        className={`block w-full truncate rounded-[6px] border px-1.5 py-0.5 text-left text-[11px] leading-tight hover:brightness-95 ${TYPE_CHIP_CLASSES.personal}`}
+        className={`block w-full truncate rounded-app-sm border px-1.5 py-[3px] text-left text-[11.5px] leading-tight transition-colors hover:border-text-secondary ${dot ? "max-sm:min-h-2 max-sm:px-0 max-sm:py-0" : ""} ${TYPE_CHIP_CLASSES.personal} ${inactive ? "line-through opacity-60" : ""}`}
       >
         {!compact && <span className="mr-1 font-semibold">{formatTimeInZone(item.startsAt, zone)}</span>}
-        {item.title}
+        <span className={dot ? "max-sm:sr-only" : ""}>{item.title}</span>
       </button>
     );
   }
@@ -298,10 +308,10 @@ function Chip({ item, zone, compact, onOpenPersonal }: { item: CalendarItem; zon
       title={tip}
       onClick={(e) => e.stopPropagation()}
       data-testid="calendar-item"
-      className={`block truncate rounded-[6px] border px-1.5 py-0.5 text-[11px] leading-tight hover:brightness-95 ${TYPE_CHIP_CLASSES[item.type]} ${inactive ? "line-through opacity-70" : ""}`}
+      className={`block truncate rounded-app-sm border px-1.5 py-[3px] text-[11.5px] leading-tight transition-colors hover:border-text-secondary hover:bg-accent-light/40 ${dot ? "max-sm:min-h-2 max-sm:px-0 max-sm:py-0" : ""} ${TYPE_CHIP_CLASSES[item.type]} ${inactive ? "line-through opacity-60" : ""}`}
     >
       {!compact && <span className="mr-1 font-semibold">{formatTimeInZone(item.startsAt, zone)}</span>}
-      {item.title}
+      <span className={dot ? "max-sm:sr-only" : ""}>{item.title}</span>
     </Link>
   );
 }
@@ -330,10 +340,11 @@ function MonthGrid({
   const weeks = monthGrid(cursor);
   return (
     <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app" role="grid" aria-label="Month">
-      <div className="grid grid-cols-7 border-b border-border bg-primary-bg/60 text-center text-[11px] font-semibold text-primary/85" role="row">
-        {WEEKDAYS.map((d) => (
-          <div key={d} className="py-2" role="columnheader">
-            {d}
+      <div className="grid grid-cols-7 border-b border-border bg-accent-bg text-center text-xs font-medium text-text-muted" role="row">
+        {WEEKDAYS.map((d, i) => (
+          <div key={d} className={`py-2.5 ${i >= 5 ? "text-text-muted/80" : "text-text-secondary"}`} role="columnheader">
+            <span className="sm:hidden">{d[0]}</span>
+            <span className="max-sm:hidden">{d}</span>
           </div>
         ))}
       </div>
@@ -348,10 +359,10 @@ function MonthGrid({
                 role="gridcell"
                 data-day={day}
                 onClick={readOnly ? undefined : (e) => e.target === e.currentTarget && onPick(day)}
-                className={`min-h-[84px] border-r border-border-light p-1 last:border-r-0 ${inMonth ? "" : "bg-app-bg/50"} ${readOnly ? "" : "cursor-pointer hover:bg-primary-bg/20"}`}
+                className={`min-h-14 border-r border-border-light p-1 transition-colors last:border-r-0 sm:min-h-[104px] sm:p-1.5 ${day === today ? "bg-primary-bg/60" : inMonth ? "" : "bg-app-bg/60"} ${readOnly ? "" : "cursor-pointer hover:bg-accent-bg/70"}`}
               >
                 <div className="mb-1 flex items-center justify-between">
-                  <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] ${day === today ? "bg-primary font-bold text-white" : inMonth ? "text-text-primary" : "text-text-muted"}`}>
+                  <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs ${day === today ? "bg-primary font-bold text-white shadow-app" : inMonth ? "font-medium text-text-primary" : "text-text-muted/70"}`}>
                     {Number(day.slice(8))}
                   </span>
                   {!readOnly &&
@@ -363,21 +374,21 @@ function MonthGrid({
                           e.stopPropagation();
                           onPick(day);
                         }}
-                        className="text-text-muted hover:text-primary"
+                        className="rounded p-0.5 text-text-muted opacity-60 transition-opacity hover:text-primary hover:opacity-100 max-sm:hidden"
                       >
-                        <Icon name="plus" size={12} />
+                        <Icon name="plus" size={13} />
                       </button>
                     ) : (
-                      <Link href={newEventHref(day)} aria-label={`Add an event on ${formatDayLabel(day)}`} onClick={(e) => e.stopPropagation()} className="text-text-muted hover:text-primary">
-                        <Icon name="plus" size={12} />
+                      <Link href={newEventHref(day)} aria-label={`Add an event on ${formatDayLabel(day)}`} onClick={(e) => e.stopPropagation()} className="rounded p-0.5 text-text-muted opacity-60 transition-opacity hover:text-primary hover:opacity-100 max-sm:hidden">
+                        <Icon name="plus" size={13} />
                       </Link>
                     ))}
                 </div>
-                <div className="flex flex-col gap-0.5">
+                <div className="flex flex-col gap-1">
                   {dayItems.slice(0, 3).map((it) => (
-                    <Chip key={it.id} item={it} zone={zone} compact onOpenPersonal={onOpenPersonal} />
+                    <Chip key={it.id} item={it} zone={zone} compact dot onOpenPersonal={onOpenPersonal} />
                   ))}
-                  {dayItems.length > 3 && <span className="px-1 text-[10px] text-text-muted">+{dayItems.length - 3} more</span>}
+                  {dayItems.length > 3 && <span className="px-1 text-[10.5px] font-medium text-text-muted">+{dayItems.length - 3} more</span>}
                 </div>
               </div>
             );
@@ -414,9 +425,12 @@ function WeekGrid({
       {weekDays(cursor).map((day) => {
         const dayItems = itemsOnDay(items, day, zone);
         return (
-          <section key={day} data-day={day} className={`min-h-[120px] rounded-app border bg-card p-2 shadow-app ${day === today ? "border-primary" : "border-border"}`}>
+          <section key={day} data-day={day} className={`min-h-[120px] rounded-app-lg border bg-card p-3 shadow-app md:p-2 ${day === today ? "border-primary bg-primary-bg/40 ring-1 ring-primary" : "border-border"}`}>
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-text-primary">{formatDayLabel(day)}</h3>
+              <h3 className={`text-xs font-semibold ${day === today ? "text-primary" : "text-text-primary"}`}>
+                {formatDayLabel(day)}
+                {day === today && <span className="ml-1.5 rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-white">Today</span>}
+              </h3>
               {!readOnly &&
                 (canPersonal ? (
                   <button type="button" aria-label={`Add an event on ${formatDayLabel(day)}`} onClick={() => onPick(day)} className="text-text-muted hover:text-primary">
@@ -429,7 +443,7 @@ function WeekGrid({
                 ))}
             </div>
             <div className="flex flex-col gap-1">
-              {dayItems.length === 0 && <span className="text-[11px] text-text-muted">Nothing</span>}
+              {dayItems.length === 0 && <span className="text-xs text-text-muted/80">Nothing</span>}
               {dayItems.map((it) => (
                 <Chip key={it.id} item={it} zone={zone} onOpenPersonal={onOpenPersonal} />
               ))}
@@ -448,21 +462,35 @@ function ListView({ range, items, zone, loading, onOpenPersonal }: { range: { fi
   return (
     <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app" aria-label="Agenda">
       {groups.length === 0 ? (
-        <div className="p-6 text-sm text-text-muted">{loading ? "Loading…" : "No events in this period."}</div>
+        loading ? (
+        <div className="space-y-4 p-5" aria-busy="true" aria-label="Loading calendar">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-2">
+              <div className="skeleton h-3 w-24 rounded" />
+              <div className="skeleton h-6 w-full rounded-app-sm" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState compact icon="calendar" title="No events in this period." description="Try another range or clear the filters." />
+      )
       ) : (
         groups.map((g) => (
-          <section key={g.day} data-day={g.day} className="border-b border-border-light p-3 last:border-0">
-            <h3 className="mb-2 text-xs font-semibold text-text-secondary">{formatDayLabel(g.day)}</h3>
+          <section key={g.day} data-day={g.day} className="border-b border-border-light px-4 py-3.5 last:border-0 sm:px-5">
+            <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold text-text-secondary">
+              {formatDayLabel(g.day)}
+              {g.day === todayKey(zone) && <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-white">Today</span>}
+            </h3>
             <div className="flex flex-col gap-1.5">
               {g.list.map((it) => (
-                <div key={it.id} className="flex flex-wrap items-center gap-2">
+                <div key={it.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="w-28 shrink-0 text-xs text-text-muted">
                     {formatTimeInZone(it.startsAt, zone)} – {formatTimeInZone(it.endsAt, zone)}
                   </span>
                   <div className="min-w-0 flex-1">
                     <Chip item={it} zone={zone} compact onOpenPersonal={onOpenPersonal} />
                   </div>
-                  {it.clientName && <span className="text-xs text-text-muted">{it.clientName}</span>}
+                  {it.clientName && <span className="max-w-full truncate text-xs text-text-muted max-sm:basis-full max-sm:pl-[7.75rem]">{it.clientName}</span>}
                 </div>
               ))}
             </div>
