@@ -6,6 +6,7 @@ import { ROLE_LABELS, type Profile } from "../../lib/domain";
 import { visibleNavSections } from "./nav-config";
 import { BrandMark } from "./BrandMark";
 import { Icon } from "../ui/Icon";
+import { CommentsBadge } from "../../modules/client-comments/components/CommentsBadge";
 import { authApi } from "../../modules/auth/api/authApi";
 
 function initials(name: string) {
@@ -96,6 +97,7 @@ export function Sidebar({
                       className={isActive ? "text-gold-light" : "text-white/45 group-hover:text-white/80"}
                     />
                     {item.label}
+                    {item.badge === "comments" && <CommentsBadge className="ml-auto" />}
                   </Link>
                 );
               })}

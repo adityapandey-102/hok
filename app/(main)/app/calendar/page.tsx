@@ -11,7 +11,7 @@ export default async function CalendarPage() {
     <div className="mx-auto max-w-6xl">
       <h1 className="page-title">{isAdmin ? "Calendar" : "My calendar"}</h1>
       <p className="mb-5 text-sm text-text-muted">
-        {isAdmin ? "Every client event in the agency." : "Your clients events."} Times are shown in {profile.timeZone}.
+        {isAdmin ? "Every client event in the agency." : "Your clients events and personal entries."} Times are shown in {profile.timeZone}.
       </p>
       <CalendarView viewerTimeZone={profile.timeZone} isAdmin={isAdmin} />
     </div>

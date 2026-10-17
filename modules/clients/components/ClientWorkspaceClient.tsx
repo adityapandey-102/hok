@@ -24,6 +24,7 @@ import { ClientForm } from "./ClientForm";
 import { EventsTab } from "../../events/components/EventsTab";
 import { CalendarView } from "../../calendar/components/CalendarView";
 import { AssetsPanel } from "../../assets/components/AssetsPanel";
+import { PortalTab } from "../../portal/components/PortalTab";
 import { STATUS_TONES } from "./ClientsListClient";
 
 /**
@@ -40,7 +41,7 @@ export function ClientWorkspaceClient({
   isAdmin: boolean;
   viewerTimeZone?: string;
 }) {
-  const [tab, setTab] = useState<"overview" | "events" | "calendar" | "assets">("overview");
+  const [tab, setTab] = useState<"overview" | "events" | "calendar" | "assets" | "portal">("overview");
   const { showToast } = useToast();
   const confirm = useConfirm();
   const [client, setClient] = useState<Client>(initialClient);
@@ -152,7 +153,7 @@ export function ClientWorkspaceClient({
       )}
 
       <div role="tablist" aria-label="Client workspace" className="mb-4 flex gap-1 border-b border-border">
-        {(["overview", "events", "calendar", "assets"] as const).map((t) => (
+        {(["overview", "events", "calendar", "assets", "portal"] as const).map((t) => (
           <button
             key={t}
             role="tab"
@@ -168,6 +169,7 @@ export function ClientWorkspaceClient({
       {tab === "events" && <EventsTab clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
 
       {tab === "calendar" && <CalendarView clientId={client.id} viewerTimeZone={viewerTimeZone} isAdmin={isAdmin} readOnly={archived} />}
+      {tab === "portal" && <PortalTab clientId={client.id} archived={archived} viewerTimeZone={viewerTimeZone} />}
       {tab === "assets" && <AssetsPanel clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
 
       {tab !== "overview" ? null : editing && !archived ? (

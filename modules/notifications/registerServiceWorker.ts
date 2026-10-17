@@ -9,11 +9,17 @@ import { SERVICE_WORKER_URL } from "./config";
  * or a failed registration, just means no push on this device.
  */
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null;
+  if (typeof window === "undefined" || !("serviceWorker" in navigator))
+    return null;
   try {
-    return await navigator.serviceWorker.register(SERVICE_WORKER_URL, { scope: "/", updateViaCache: "none" });
+    return await navigator.serviceWorker.register(SERVICE_WORKER_URL, {
+      scope: "/",
+      updateViaCache: "none",
+    });
   } catch (err) {
-    logger.warn("Service worker registration failed", { error: err instanceof Error ? err.message : String(err) });
+    logger.warn("Service worker registration failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }

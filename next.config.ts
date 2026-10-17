@@ -43,6 +43,18 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self'" },
         ],
       },
+      {
+        // The client portal (M8): the URL itself is the credential. Never send
+        // it to other sites in a Referer, never let search engines index it,
+        // never cache it in shared caches, and never allow it in a frame.
+        source: "/p/:token*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Cache-Control", value: "private, no-store" },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
     ];
   },
   experimental: {

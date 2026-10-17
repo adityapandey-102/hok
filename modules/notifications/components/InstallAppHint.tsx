@@ -34,7 +34,9 @@ function readDismissed(): boolean {
  */
 export function InstallAppHint() {
   const [mode, setMode] = useState<InstallMode | null>(null);
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
+  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(
+    null,
+  );
   const [hidden, setHidden] = useState(true);
 
   useEffect(() => {
@@ -43,7 +45,13 @@ export function InstallAppHint() {
       (navigator as Navigator & { standalone?: boolean }).standalone === true;
     // Reading the device happens once, after mount (the server can't know it).
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMode(installMode({ userAgent: navigator.userAgent, maxTouchPoints: navigator.maxTouchPoints, standalone }));
+    setMode(
+      installMode({
+        userAgent: navigator.userAgent,
+        maxTouchPoints: navigator.maxTouchPoints,
+        standalone,
+      }),
+    );
     setHidden(readDismissed());
 
     function onBeforeInstall(event: Event) {
@@ -90,11 +98,20 @@ export function InstallAppHint() {
         <p className="font-semibold text-text-primary">Install the HOK app</p>
         {mode === "ios" ? (
           <p className="mt-0.5 text-text-secondary">
-            Tap <Icon name="share" size={15} className="inline-block align-[-2px]" /> Share, then{" "}
-            <span className="font-semibold">Add to Home Screen</span>, to open HOK like an app and get notifications.
+            Tap{" "}
+            <Icon
+              name="share"
+              size={15}
+              className="inline-block align-[-2px]"
+            />{" "}
+            Share, then{" "}
+            <span className="font-semibold">Add to Home Screen</span>, to open
+            HOK like an app and get notifications.
           </p>
         ) : (
-          <p className="mt-0.5 text-text-secondary">Open HOK like an app from your home screen or desktop.</p>
+          <p className="mt-0.5 text-text-secondary">
+            Open HOK like an app from your home screen or desktop.
+          </p>
         )}
       </div>
       <div className="flex items-center gap-2">
@@ -103,7 +120,12 @@ export function InstallAppHint() {
             Install
           </Button>
         )}
-        <Button type="button" variant="ghost" onClick={dismiss} aria-label="Dismiss install hint">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={dismiss}
+          aria-label="Dismiss install hint"
+        >
           Not now
         </Button>
       </div>

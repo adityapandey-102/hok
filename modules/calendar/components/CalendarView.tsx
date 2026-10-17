@@ -23,13 +23,16 @@ import {
   type EventType,
 } from "../../../lib/domain";
 import { useMediaQuery } from "../../../lib/hooks/useMediaQuery";
-import { eventsApi } from "../../events/api/eventsApi";
+import { calendarApi } from "../calendarApi";
+import { PersonalEventModal } from "../../personal-events/components/PersonalEventModal";
+import { Modal } from "../../../components/ui/Modal";
+import { ButtonLink } from "../../../components/ui/Button";
 import { clientsApi } from "../../clients/api/clientsApi";
 import type { UserAccount } from "../../admin-users/api/usersApi";
 import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Select } from "../../../components/ui/Select";
-import { fromEvent, TYPE_CHIP_CLASSES, type CalendarItem } from "../calendarItems";
+import { fromFeedItem, TYPE_CHIP_CLASSES, type CalendarItem } from "../calendarItems";
 
 type View = "month" | "week" | "list";
 const VIEWS: { id: View; label: string }[] = [
@@ -37,13 +40,13 @@ const VIEWS: { id: View; label: string }[] = [
   { id: "week", label: "Week" },
   { id: "list", label: "List" },
 ];
-const PAGE = 200;
-const MAX_PAGES = 5;
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /**
  * Staff calendar, built from plain CSS grids (no calendar library). Loads only the
- * visible range from GET /events?from&to, in the viewer time zone. Month, week and
+ * visible range from the merged GET /calendar feed (client events + the caller's
+ * personal events), in the viewer time zone. Personal events are managed in a modal and
+ * never shown on a client tab (`clientId` set). Month, week and
  * list views; list is the default on phones. `clientId` scopes it to one client
  * (the client workspace tab); otherwise it is the manager own calendar, or the
  * Admin global one (owner filter).
@@ -73,6 +76,9 @@ export function CalendarView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const canPersonal = !clientId && !readOnly;
+  const [slotDay, setSlotDay] = useState<DayKey | null>(null);
+  const [personal, setPersonal] = useState<{ id: string | null; day?: string } | null>(null);
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [owners, setOwners] = useState<UserAccount[]>([]);
 
@@ -111,22 +117,16 @@ export function CalendarView({
       setLoading(true);
       try {
         const { from, to } = dayRange(range.first, range.last, viewerTimeZone);
-        const all: CalendarItem[] = [];
-        let more = false;
-        for (let page = 0; page < MAX_PAGES; page++) {
-          const res = await eventsApi.list({
-            from,
-            to,
-            clientId: clientId || clientFilter || undefined,
-            type: type || undefined,
-            ...(isAdmin && ownerFilter ? { ownerId: ownerFilter } : {}),
-            limit: PAGE,
-            offset: page * PAGE,
-          } as Parameters<typeof eventsApi.list>[0]);
-          all.push(...res.events.map(fromEvent));
-          if (all.length >= res.total) break;
-          if (page === MAX_PAGES - 1) more = true;
-        }
+        const res = await calendarApi.feed({
+          from,
+          to,
+          include: clientId ? "events" : "all",
+          clientId: clientId || clientFilter || undefined,
+          eventType: type || undefined,
+          ...(isAdmin && ownerFilter ? { ownerId: ownerFilter } : {}),
+        });
+        const all: CalendarItem[] = res.items.map(fromFeedItem);
+        const more = res.truncated;
         if (cancelled) return;
         setItems(all);
         setTruncated(more);
@@ -148,6 +148,11 @@ export function CalendarView({
 
   function step(delta: number) {
     setCursor((c) => (view === "week" ? addDays(c, delta * 7) : shiftMonth(c, delta)));
+  }
+
+  function pickDay(day: DayKey) {
+    if (canPersonal) setSlotDay(day);
+    else router.push(newEventHref(day));
   }
 
   function newEventHref(day: DayKey): string {
@@ -247,23 +252,73 @@ export function CalendarView({
           </button>
         </div>
       )}
-      {truncated && <p className="mb-3 text-xs text-text-muted">Showing the first {PAGE * MAX_PAGES} events in this range. Narrow the filters to see the rest.</p>}
+      {truncated && <p className="mb-3 text-xs text-text-muted">Showing the first events in this range. Narrow the filters to see the rest.</p>}
 
       <div className={`transition-opacity ${loading ? "opacity-60" : ""}`} aria-busy={loading}>
         {view === "month" && (
-          <MonthGrid cursor={cursor} items={visible} zone={viewerTimeZone} today={today} readOnly={readOnly} newEventHref={newEventHref} onEmptyClick={(d) => router.push(newEventHref(d))} />
+          <MonthGrid cursor={cursor} items={visible} zone={viewerTimeZone} today={today} readOnly={readOnly} newEventHref={newEventHref} onPick={pickDay} canPersonal={canPersonal} onOpenPersonal={(id) => setPersonal({ id })} />
         )}
-        {view === "week" && <WeekGrid cursor={cursor} items={visible} zone={viewerTimeZone} today={today} readOnly={readOnly} newEventHref={newEventHref} />}
-        {view === "list" && <ListView range={range} items={visible} zone={viewerTimeZone} loading={loading} />}
+        {view === "week" && <WeekGrid cursor={cursor} items={visible} zone={viewerTimeZone} today={today} readOnly={readOnly} newEventHref={newEventHref} onPick={pickDay} canPersonal={canPersonal} onOpenPersonal={(id) => setPersonal({ id })} />}
+        {view === "list" && <ListView range={range} items={visible} zone={viewerTimeZone} loading={loading} onOpenPersonal={(id) => setPersonal({ id })} />}
       </div>
+
+      {slotDay && (
+        <Modal open onClose={() => setSlotDay(null)} labelledBy="slot-h" panelClassName="max-w-sm">
+          <div className="flex flex-col gap-3 p-5">
+            <h2 id="slot-h" className="font-serif text-lg font-bold text-text-primary">
+              Add to {formatDayLabel(slotDay)}
+            </h2>
+            <ButtonLink href={newEventHref(slotDay)}>Client event</ButtonLink>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPersonal({ id: null, day: slotDay });
+                setSlotDay(null);
+              }}
+            >
+              Personal event
+            </Button>
+            <Button variant="ghost" onClick={() => setSlotDay(null)}>
+              Cancel
+            </Button>
+          </div>
+        </Modal>
+      )}
+      {personal && (
+        <PersonalEventModal
+          eventId={personal.id}
+          day={personal.day}
+          zone={viewerTimeZone}
+          clients={clients}
+          onClose={() => setPersonal(null)}
+          onChanged={() => setReloadKey((k) => k + 1)}
+        />
+      )}
     </div>
   );
 }
 
-function Chip({ item, zone, compact }: { item: CalendarItem; zone: string; compact?: boolean }) {
+function Chip({ item, zone, compact, onOpenPersonal }: { item: CalendarItem; zone: string; compact?: boolean; onOpenPersonal?: (id: string) => void }) {
   const inactive = item.state !== "active";
   const same = formatTimeInZone(item.startsAt, zone) === formatTimeInZone(item.startsAt, item.timeZone);
   const tip = `${item.title}${item.clientName ? ` · ${item.clientName}` : ""}\n${formatInZone(item.startsAt, zone, true)}${same ? "" : `\n${formatInZone(item.startsAt, item.timeZone, true)} (event time)`}${inactive ? `\n${item.state}` : ""}`;
+  if (item.kind === "personal") {
+    return (
+      <button
+        type="button"
+        title={tip}
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenPersonal?.(item.id);
+        }}
+        data-testid="calendar-item"
+        className={`block w-full truncate rounded-[6px] border px-1.5 py-0.5 text-left text-[11px] leading-tight hover:brightness-95 ${TYPE_CHIP_CLASSES.personal}`}
+      >
+        {!compact && <span className="mr-1 font-semibold">{formatTimeInZone(item.startsAt, zone)}</span>}
+        {item.title}
+      </button>
+    );
+  }
   return (
     <Link
       href={item.href}
@@ -285,7 +340,9 @@ function MonthGrid({
   today,
   readOnly,
   newEventHref,
-  onEmptyClick,
+  onPick,
+  canPersonal,
+  onOpenPersonal,
 }: {
   cursor: DayKey;
   items: CalendarItem[];
@@ -293,7 +350,9 @@ function MonthGrid({
   today: DayKey;
   readOnly: boolean;
   newEventHref: (d: DayKey) => string;
-  onEmptyClick: (d: DayKey) => void;
+  onPick: (d: DayKey) => void;
+  canPersonal: boolean;
+  onOpenPersonal: (id: string) => void;
 }) {
   const weeks = monthGrid(cursor);
   return (
@@ -315,22 +374,35 @@ function MonthGrid({
                 key={day}
                 role="gridcell"
                 data-day={day}
-                onClick={readOnly ? undefined : (e) => e.target === e.currentTarget && onEmptyClick(day)}
+                onClick={readOnly ? undefined : (e) => e.target === e.currentTarget && onPick(day)}
                 className={`min-h-[84px] border-r border-border-light p-1 last:border-r-0 ${inMonth ? "" : "bg-app-bg/50"} ${readOnly ? "" : "cursor-pointer hover:bg-primary-bg/20"}`}
               >
                 <div className="mb-1 flex items-center justify-between">
                   <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] ${day === today ? "bg-primary font-bold text-white" : inMonth ? "text-text-primary" : "text-text-muted"}`}>
                     {Number(day.slice(8))}
                   </span>
-                  {!readOnly && (
-                    <Link href={newEventHref(day)} aria-label={`Add an event on ${formatDayLabel(day)}`} onClick={(e) => e.stopPropagation()} className="text-text-muted hover:text-primary">
-                      <Icon name="plus" size={12} />
-                    </Link>
-                  )}
+                  {!readOnly &&
+                    (canPersonal ? (
+                      <button
+                        type="button"
+                        aria-label={`Add an event on ${formatDayLabel(day)}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPick(day);
+                        }}
+                        className="text-text-muted hover:text-primary"
+                      >
+                        <Icon name="plus" size={12} />
+                      </button>
+                    ) : (
+                      <Link href={newEventHref(day)} aria-label={`Add an event on ${formatDayLabel(day)}`} onClick={(e) => e.stopPropagation()} className="text-text-muted hover:text-primary">
+                        <Icon name="plus" size={12} />
+                      </Link>
+                    ))}
                 </div>
                 <div className="flex flex-col gap-0.5">
                   {dayItems.slice(0, 3).map((it) => (
-                    <Chip key={it.id} item={it} zone={zone} compact />
+                    <Chip key={it.id} item={it} zone={zone} compact onOpenPersonal={onOpenPersonal} />
                   ))}
                   {dayItems.length > 3 && <span className="px-1 text-[10px] text-text-muted">+{dayItems.length - 3} more</span>}
                 </div>
@@ -350,6 +422,9 @@ function WeekGrid({
   today,
   readOnly,
   newEventHref,
+  onPick,
+  canPersonal,
+  onOpenPersonal,
 }: {
   cursor: DayKey;
   items: CalendarItem[];
@@ -357,6 +432,9 @@ function WeekGrid({
   today: DayKey;
   readOnly: boolean;
   newEventHref: (d: DayKey) => string;
+  onPick: (d: DayKey) => void;
+  canPersonal: boolean;
+  onOpenPersonal: (id: string) => void;
 }) {
   return (
     <div className="grid grid-cols-1 gap-2 md:grid-cols-7" aria-label="Week">
@@ -366,16 +444,21 @@ function WeekGrid({
           <section key={day} data-day={day} className={`min-h-[120px] rounded-app border bg-card p-2 shadow-app ${day === today ? "border-primary" : "border-border"}`}>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-xs font-semibold text-text-primary">{formatDayLabel(day)}</h3>
-              {!readOnly && (
-                <Link href={newEventHref(day)} aria-label={`Add an event on ${formatDayLabel(day)}`} className="text-text-muted hover:text-primary">
-                  <Icon name="plus" size={13} />
-                </Link>
-              )}
+              {!readOnly &&
+                (canPersonal ? (
+                  <button type="button" aria-label={`Add an event on ${formatDayLabel(day)}`} onClick={() => onPick(day)} className="text-text-muted hover:text-primary">
+                    <Icon name="plus" size={13} />
+                  </button>
+                ) : (
+                  <Link href={newEventHref(day)} aria-label={`Add an event on ${formatDayLabel(day)}`} className="text-text-muted hover:text-primary">
+                    <Icon name="plus" size={13} />
+                  </Link>
+                ))}
             </div>
             <div className="flex flex-col gap-1">
               {dayItems.length === 0 && <span className="text-[11px] text-text-muted">Nothing</span>}
               {dayItems.map((it) => (
-                <Chip key={it.id} item={it} zone={zone} />
+                <Chip key={it.id} item={it} zone={zone} onOpenPersonal={onOpenPersonal} />
               ))}
             </div>
           </section>
@@ -385,7 +468,7 @@ function WeekGrid({
   );
 }
 
-function ListView({ range, items, zone, loading }: { range: { first: DayKey; last: DayKey }; items: CalendarItem[]; zone: string; loading: boolean }) {
+function ListView({ range, items, zone, loading, onOpenPersonal }: { range: { first: DayKey; last: DayKey }; items: CalendarItem[]; zone: string; loading: boolean; onOpenPersonal: (id: string) => void }) {
   const days: DayKey[] = [];
   for (let d = range.first; d <= range.last; d = addDays(d, 1)) days.push(d);
   const groups = days.map((d) => ({ day: d, list: itemsOnDay(items, d, zone) })).filter((g) => g.list.length > 0);
@@ -404,7 +487,7 @@ function ListView({ range, items, zone, loading }: { range: { first: DayKey; las
                     {formatTimeInZone(it.startsAt, zone)} – {formatTimeInZone(it.endsAt, zone)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <Chip item={it} zone={zone} compact />
+                    <Chip item={it} zone={zone} compact onOpenPersonal={onOpenPersonal} />
                   </div>
                   {it.clientName && <span className="text-xs text-text-muted">{it.clientName}</span>}
                 </div>

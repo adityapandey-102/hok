@@ -47,3 +47,44 @@ export const TYPE_CHIP_CLASSES: Record<CalendarItem["type"], string> = {
   other: "bg-gray-pill-bg text-text-secondary border-border",
   personal: "bg-card text-text-secondary border-dashed border-text-muted",
 };
+
+/** One item of GET /calendar (client events and personal entries merged). */
+export interface FeedItem {
+  kind: "event" | "personal";
+  id: string;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  timeZone: string;
+  clientId: string | null;
+  clientName: string | null;
+  ownerId: string;
+  eventType?: EventType;
+  state?: EventState;
+  currentStageName?: string;
+}
+
+export interface FeedResult {
+  from: string;
+  to: string;
+  truncated: boolean;
+  items: FeedItem[];
+}
+
+export function fromFeedItem(f: FeedItem): CalendarItem {
+  const personal = f.kind === "personal";
+  return {
+    id: f.id,
+    kind: f.kind,
+    title: f.title,
+    startsAt: f.startsAt,
+    endsAt: f.endsAt,
+    timeZone: f.timeZone,
+    href: personal ? "" : `/app/events/${f.id}`,
+    type: personal ? "personal" : (f.eventType ?? "other"),
+    state: f.state ?? "active",
+    clientId: f.clientId,
+    clientName: f.clientName,
+    stageName: personal ? null : (f.currentStageName ?? null),
+  };
+}

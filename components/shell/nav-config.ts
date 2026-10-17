@@ -5,6 +5,8 @@ interface NavItem {
   href: string;
   icon: string;
   requires?: Capability;
+  /** A live count next to the label (see Sidebar). */
+  badge?: "comments";
 }
 
 interface NavSection {
@@ -27,6 +29,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Assets", href: "/app/assets", icon: "tag", requires: "assets:read" },
       { label: "Calendar", href: "/app/calendar", icon: "calendar", requires: "events:read" },
       { label: "Tasks", href: "/app/tasks", icon: "clipboard", requires: "staff_tasks:read" },
+      { label: "Client comments", href: "/app/comments", icon: "message", requires: "comments:read", badge: "comments" },
+      { label: "Notifications", href: "/app/notifications", icon: "bell" },
       { label: "My profile", href: "/app/profile", icon: "user" },
     ],
   },

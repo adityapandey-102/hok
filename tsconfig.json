@@ -44,7 +44,9 @@
     ".next-tasks/dev/types/**/*.ts",
     "**/*.mts",
     ".next-screens-build/types/**/*.ts",
-    ".next-screens-build/dev/types/**/*.ts"
+    ".next-screens-build/dev/types/**/*.ts",
+    ".next-helper/types/**/*.ts",
+    ".next-helper/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

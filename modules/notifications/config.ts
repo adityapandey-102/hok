@@ -4,7 +4,7 @@
  * needleye's rule is no "coming soon" placeholders in the UI. M9 flips this
  * and gives the bell its unread count and list.
  */
-export const NOTIFICATIONS_ENABLED = false;
+export const NOTIFICATIONS_ENABLED = true;
 
 /** The service worker file (public/sw.js), registered for the whole origin. */
 export const SERVICE_WORKER_URL = "/sw.js";

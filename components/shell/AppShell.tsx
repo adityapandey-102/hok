@@ -9,10 +9,13 @@ import { Icon } from "../ui/Icon";
 import { InstallAppHint } from "../../modules/notifications/components/InstallAppHint";
 import { NotificationBell } from "../../modules/notifications/components/NotificationBell";
 import { ServiceWorkerRegistrar } from "../../modules/notifications/components/ServiceWorkerRegistrar";
+import { useMediaQuery } from "../../lib/hooks/useMediaQuery";
 
 export function AppShell({ profile, children }: { profile: Profile; children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+  // One bell only (each bell polls): in the phone/tablet header below xl, in a slim top bar from xl.
+  const isDesktop = useMediaQuery("(min-width: 1280px)");
 
   return (
     <div className="flex min-h-screen">
@@ -37,9 +40,14 @@ export function AppShell({ profile, children }: { profile: Profile; children: Re
             <span className="font-serif text-[18px] text-text-primary">HOK</span>
           </div>
 
-          {/* Notifications (M9): renders nothing until notifications are enabled. */}
-          <NotificationBell className="ml-auto" />
+          {!isDesktop && <NotificationBell className="ml-auto" />}
         </header>
+
+        {isDesktop && (
+          <div className="sticky top-0 z-30 hidden justify-end px-10 pt-4 xl:flex print:hidden">
+            <NotificationBell />
+          </div>
+        )}
 
         <main className="flex-1 bg-app-bg px-4 py-5 sm:px-6 lg:px-10 lg:py-9 print:bg-white print:p-0">
           {/* key on pathname so each route change replays the entrance animation */}
