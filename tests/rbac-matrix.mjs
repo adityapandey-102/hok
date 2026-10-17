@@ -454,9 +454,16 @@ async function main() {
   for (const [role, token] of everyone) {
     const r = await req("/dashboard", {}, token);
     check(`GET /dashboard as ${role} -> 200`, r.status, 200);
-    const managesClients = ["admin", "social_media_manager", "marketing_manager"].includes(role);
+    // The Admin's overview is the firm alone; their own clients are on view=mine.
+    const managesClients = ["social_media_manager", "marketing_manager"].includes(role);
     check(`  ${role}: clients section ${managesClients ? "present" : "absent"}`, r.body?.clients != null, managesClients);
     check(`  ${role}: firm section ${role === "admin" ? "present" : "absent"}`, r.body?.firm != null, role === "admin");
+    if (role === "admin") {
+      const mine = await req("/dashboard?view=mine", {}, token);
+      check("GET /dashboard?view=mine as admin -> own clients, no firm", mine.status === 200 && mine.body?.clients != null && mine.body?.firm == null, true);
+    }
+    const t = await req("/dashboard/team", {}, token);
+    check(`GET /dashboard/team as ${role} -> ${role === "admin" ? 200 : 403}`, t.status, role === "admin" ? 200 : 403);
   }
 
   console.log("\n--- users:manage (admin only) ---");

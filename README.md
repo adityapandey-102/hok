@@ -486,7 +486,11 @@ REQUIREMENTS §5.7–5.8. Migration `20261014400001_portal_comments.sql` (`porta
 
 ### Dashboards (M10)
 
-REQUIREMENTS §5.11. `GET /api/v1/dashboard`, every staff role; the module owns no table. One response, shaped by role: `tasks` (the caller's own staff tasks) for everyone, `clients` (the caller's **own** clients) for Admin / SMM / MM, `firm` for the Admin only. Figures are `count(*) filter (…)` aggregates and every list is capped, so the query count is **fixed per role** (task-only staff 3, managers 7, Admin 12, plus the auth lookup), whatever the data size (query-budget test). "Today" and "this week" are the caller's own time zone (`src/domain/zoned-day.ts`, DST-safe).
+REQUIREMENTS §5.11. The module owns no table.
+- `GET /api/v1/dashboard?view=overview|mine`, every staff role. `overview` (default): everyone gets their own work (`tasks`, plus `clients` for SMM / MM), except the **Admin, whose overview is the firm alone** (`firm`: totals incl. overdue, this week's events and team size; tasks by status; the 5 most overdue tasks; this week's events; the 5 newest unresolved comments; the 5 busiest people). `mine`: the caller's own clients and tasks -- the Admin's "My clients" page; the same as `overview` for other roles.
+- Every list is a **preview of at most 5** with a total, so the web links "View all N" to the full, paged page.
+- `GET /api/v1/dashboard/team` (`dashboard:global`): the whole team's workload, busiest first; name `search`, `role` (never admin), paged (≤ 50). Two queries.
+- Figures are `count(*) filter (…)` aggregates; the query count is **fixed per role and view** (task-only staff 3, managers 7, the Admin's overview 5 and "My clients" 7, plus the auth lookup), whatever the data size (query-budget test). "Today" and "this week" are the caller's own time zone (`src/domain/zoned-day.ts`, DST-safe).
 
 ### Dependency injection
 

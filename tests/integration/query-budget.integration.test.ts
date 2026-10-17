@@ -137,6 +137,8 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     ["client comments search", (l) => `/api/v1/client-comments?search=QB&limit=${l}`],
     ["notifications", (l) => `/api/v1/notifications?limit=${l}`],
     ["notifications unread", (l) => `/api/v1/notifications?unread=true&limit=${l}`],
+    ["dashboard team workload", (l) => `/api/v1/dashboard/team?limit=${l}`],
+    ["dashboard team workload search + role", (l) => `/api/v1/dashboard/team?search=a&role=editor&limit=${l}`],
     ["staff tasks", (l) => `/api/v1/staff-tasks?limit=${l}`],
     ["staff tasks by assignee + search + priority", (l) => `/api/v1/staff-tasks?assigneeId=${admin.id}&search=QB&priority=high&limit=${l}`],
     ["staff tasks by role + overdue", (l) => `/api/v1/staff-tasks?role=admin&overdue=true&limit=${l}`],
@@ -165,10 +167,12 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
   });
 
   // M10: the dashboard is aggregates + capped lists. The fixture Admin owns 12 clients, events and
-  // comments, yet the count is fixed: auth profile + 12 reads (3 own tasks, 4 own clients, 5 firm).
+  // comments, yet the count is fixed: auth profile + 5 firm reads on the overview, auth profile +
+  // 7 reads (3 own tasks, 4 own clients) on "My clients".
   it("dashboard: a fixed number of queries, whatever the data", async (ctx) => {
     if (!staffTasksReady) ctx.skip();
-    expect(await queriesFor("/api/v1/dashboard")).toBe(13);
+    expect(await queriesFor("/api/v1/dashboard")).toBe(6);
+    expect(await queriesFor("/api/v1/dashboard?view=mine")).toBe(8);
   });
 
   it("list page sizes are capped (an over-large limit is clamped, never honoured)", async () => {

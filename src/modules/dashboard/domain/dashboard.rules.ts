@@ -1,5 +1,5 @@
 import { addDays, dayKeyInZone, hasCapability, zonedMidnight, type Role } from "../../../domain";
-import { DASHBOARD_LIST_LIMIT, DASHBOARD_WEEK_DAYS, type DashboardEvent, type DashboardWindow } from "./dashboard.entity";
+import { DASHBOARD_LIST_LIMIT, DASHBOARD_WEEK_DAYS, type DashboardEvent, type DashboardView, type DashboardWindow } from "./dashboard.entity";
 
 /** The viewer's "today" and "this week" (today + 6 days) as UTC instants. */
 export function dashboardWindow(now: Date, timeZone: string): DashboardWindow {
@@ -13,9 +13,15 @@ export function dashboardWindow(now: Date, timeZone: string): DashboardWindow {
   };
 }
 
-/** Which sections a role's dashboard has (FR-DSH-01..03). */
-export function dashboardSections(role: Role): { clients: boolean; firm: boolean } {
-  return { clients: hasCapability(role, "clients:read"), firm: hasCapability(role, "dashboard:global") };
+/**
+ * Which sections a dashboard has (FR-DSH-01..03). The Admin's overview is the
+ * firm alone; their own clients and tasks live on "My clients" (`mine`).
+ * Every other role gets the same own-work dashboard for either view.
+ */
+export function dashboardSections(role: Role, view: DashboardView = "overview"): { tasks: boolean; clients: boolean; firm: boolean } {
+  const global = hasCapability(role, "dashboard:global");
+  if (global && view === "overview") return { tasks: false, clients: false, firm: true };
+  return { tasks: true, clients: hasCapability(role, "clients:read"), firm: false };
 }
 
 /**

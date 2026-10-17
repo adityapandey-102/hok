@@ -17,17 +17,17 @@ describe("dashboardWindow", () => {
   });
 });
 
-describe("dashboardSections", () => {
-  it("gives clients to client managers and the firm to Admin only", () => {
-    const got = Object.fromEntries(ROLES.map((r) => [r, dashboardSections(r)]));
-    expect(got).toEqual({
-      admin: { clients: true, firm: true },
-      social_media_manager: { clients: true, firm: false },
-      marketing_manager: { clients: true, firm: false },
-      marketing_agent: { clients: false, firm: false },
-      developer: { clients: false, firm: false },
-      editor: { clients: false, firm: false },
-    });
+describe("dashboardSections (overview, mine)", () => {
+  it("gives the Admin the firm alone on the overview and their own work on mine", () => {
+    expect(dashboardSections("admin", "overview")).toEqual({ tasks: false, clients: false, firm: true });
+    expect(dashboardSections("admin", "mine")).toEqual({ tasks: true, clients: true, firm: false });
+  });
+
+  it("gives everyone else the same own-work dashboard for either view", () => {
+    for (const role of ROLES.filter((r) => r !== "admin")) {
+      const manager = role === "social_media_manager" || role === "marketing_manager";
+      for (const view of ["overview", "mine"] as const) expect(dashboardSections(role, view)).toEqual({ tasks: true, clients: manager, firm: false });
+    }
   });
 });
 

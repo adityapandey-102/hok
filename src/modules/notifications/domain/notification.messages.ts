@@ -30,10 +30,14 @@ export function taskAssignedPayload(input: { taskId: string; title: string; acto
 }
 
 /** task_status_changed -> the other side of the task (M7). `to` is the new status's label, e.g. "In progress". */
+/** People read "In progress", not the stored `in_progress`. Unknown values pass through. */
+const TASK_STATUS_WORDS: Record<string, string> = { todo: "To do", in_progress: "In progress", blocked: "Blocked", done: "Done" };
+
 export function taskStatusChangedPayload(input: { taskId: string; title: string; to: string; actorName?: string | null }): NotificationPayload {
+  const to = TASK_STATUS_WORDS[input.to] ?? input.to;
   return {
-    title: `${input.title}: ${input.to}`,
-    body: input.actorName ? `${input.actorName} moved this task to ${input.to}.` : `This task moved to ${input.to}.`,
+    title: `${input.title}: ${to}`,
+    body: input.actorName ? `${input.actorName} moved this task to ${to}.` : `This task moved to ${to}.`,
     url: `/app/tasks/${input.taskId}`,
     data: { taskId: input.taskId },
   };

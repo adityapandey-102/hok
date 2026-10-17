@@ -1104,20 +1104,58 @@ paths:
       summary: The caller's role dashboard
       description: |
         Every staff role (FR-DSH-01..03). `tasks` (the caller's own staff
-        tasks) is always present; `clients` (the caller's OWN clients) for
+        tasks) is present except on the Admin's overview; `clients` (the caller's OWN clients) for
         Admin, Social Media and Marketing Managers, else null; `firm` for the
         Admin only, else null. Figures are SQL aggregates and every list is
-        capped (8; events 20 before the today/upcoming split; team 50), so
+        capped (5; events 20 before the today/upcoming split; team 5, the full list is /dashboard/team), so
         the query count is fixed per role. "Today" and "this week" (today + 6
         days) are the caller's own time zone; instants are UTC.
       security: [{ bearerAuth: [] }]
+      parameters:
+        - name: view
+          in: query
+          description: "overview (default): for the Admin the firm alone. mine: the caller's own clients and tasks (the Admin's My clients page; same as overview for other roles)."
+          schema: { type: string, enum: [overview, mine], default: overview }
       responses:
         "200":
           description: The dashboard.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Dashboard" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/dashboard/team:
+    get:
+      tags: [Dashboard]
+      summary: The whole team's workload (Admin)
+      description: |
+        `dashboard:global` (Admin). Every active non-admin staff member with
+        their open, overdue and done-this-week task counts, busiest first
+        (overdue, then open). Name search, role filter, paged (≤ 50); two
+        queries whatever the page size.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: search, in: query, description: Name, case-insensitive (max 80)., schema: { type: string, maxLength: 80 } }
+        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, marketing_agent, developer, editor] } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: One page of the team.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members, total, limit, offset]
+                properties:
+                  members: { type: array, items: { $ref: "#/components/schemas/WorkloadRow" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   # ------------------------------------------------- Team members (M4+) --
   /api/v1/team-members:
@@ -2022,11 +2060,22 @@ components:
         excerpt: { type: string, description: First 160 characters. }
         status: { $ref: "#/components/schemas/CommentStatus" }
         createdAt: { type: string, format: date-time }
+    WorkloadRow:
+      type: object
+      required: [userId, name, role, open, overdue, doneThisWeek]
+      properties:
+        userId: { type: string, format: uuid }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        open: { type: integer }
+        overdue: { type: integer }
+        doneThisWeek: { type: integer, description: Closed in the last 7 days. }
     Dashboard:
       type: object
-      required: [role, window, tasks, clients, firm]
+      required: [role, view, window, tasks, clients, firm]
       properties:
         role: { $ref: "#/components/schemas/Role" }
+        view: { type: string, enum: [overview, mine] }
         window:
           type: object
           required: [timeZone, today, todayStart, tomorrowStart, weekEnd]
@@ -2038,6 +2087,8 @@ components:
             weekEnd: { type: string, format: date-time }
         tasks:
           type: object
+          nullable: true
+          description: Null only on the Admin's overview.
           required: [counts, dueToday, overdue, open, recentComments]
           properties:
             counts: { $ref: "#/components/schemas/TaskStatusCounts" }
@@ -2048,9 +2099,10 @@ components:
         clients:
           type: object
           nullable: true
-          required: [clientCount, today, upcoming, byStage, unresolvedComments, latestComments]
+          required: [clientCount, weekEventCount, today, upcoming, byStage, unresolvedComments, latestComments]
           properties:
             clientCount: { type: integer }
+            weekEventCount: { type: integer, description: Events overlapping today .. the week's end (the lists are capped at 5). }
             today: { type: array, items: { $ref: "#/components/schemas/DashboardEvent" } }
             upcoming: { type: array, items: { $ref: "#/components/schemas/DashboardEvent" } }
             byStage:
@@ -2068,28 +2120,20 @@ components:
           properties:
             totals:
               type: object
-              required: [clients, activeEvents, openTasks, unresolvedComments]
+              required: [clients, activeEvents, openTasks, overdueTasks, unresolvedComments, weekEvents, teamSize]
               properties:
                 clients: { type: integer }
                 activeEvents: { type: integer }
                 openTasks: { type: integer }
+                overdueTasks: { type: integer }
                 unresolvedComments: { type: integer }
+                weekEvents: { type: integer }
+                teamSize: { type: integer, description: Active non-admin staff. }
             tasksByStatus: { $ref: "#/components/schemas/TaskStatusCounts" }
             week: { type: array, items: { $ref: "#/components/schemas/DashboardEvent" } }
             overdueTasks: { type: array, items: { $ref: "#/components/schemas/DashboardTask" } }
             latestComments: { type: array, items: { $ref: "#/components/schemas/DashboardComment" } }
-            team:
-              type: array
-              items:
-                type: object
-                required: [userId, name, role, open, overdue, doneThisWeek]
-                properties:
-                  userId: { type: string, format: uuid }
-                  name: { type: string }
-                  role: { $ref: "#/components/schemas/Role" }
-                  open: { type: integer }
-                  overdue: { type: integer }
-                  doneThisWeek: { type: integer }
+            team: { type: array, description: The busiest 5; the full list is /api/v1/dashboard/team., items: { $ref: "#/components/schemas/WorkloadRow" } }
     CommentStatus:
       type: string
       enum: [received, in_progress, solved]

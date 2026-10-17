@@ -28,8 +28,8 @@ let auth: Record<Who, string>;
 const templateIds: string[] = [];
 let clientId: string;
 
-const dashboard = async (who: Who): Promise<Dashboard> => {
-  const res = await request(app).get("/api/v1/dashboard").set("Authorization", auth[who]);
+const dashboard = async (who: Who, view?: "mine"): Promise<Dashboard> => {
+  const res = await request(app).get(`/api/v1/dashboard${view ? "?view=mine" : ""}`).set("Authorization", auth[who]);
   expect(res.status).toBe(200);
   return res.body as Dashboard;
 };
@@ -108,19 +108,20 @@ describe("GET /api/v1/dashboard", () => {
     expect(d.clients).toBeNull();
     expect(d.firm).toBeNull();
     expect(d.window.timeZone).toBe("Asia/Kolkata");
-    expect(d.tasks.counts).toEqual({ todo: 2, in_progress: 0, blocked: 0, done: 1 });
-    expect(d.tasks.overdue).toBe(1);
-    expect(d.tasks.dueToday).toBe(1);
+    expect(d.tasks!.counts).toEqual({ todo: 2, in_progress: 0, blocked: 0, done: 1 });
+    expect(d.tasks!.overdue).toBe(1);
+    expect(d.tasks!.dueToday).toBe(1);
     // Overdue first, then soonest due; the done task is not listed.
-    expect(d.tasks.open.map((t) => t.title)).toEqual(["Dash overdue", "Dash due today"]);
+    expect(d.tasks!.open.map((t) => t.title)).toEqual(["Dash overdue", "Dash due today"]);
     // Only other people's comments.
-    expect(d.tasks.recentComments.map((c) => [c.comment, c.authorName])).toEqual([["Please hurry", "Dash Admin"]]);
+    expect(d.tasks!.recentComments.map((c) => [c.comment, c.authorName])).toEqual([["Please hurry", "Dash Admin"]]);
   });
 
   it("gives a manager their own clients' figures and no firm section", async () => {
     const d = await dashboard("manager");
     expect(d.firm).toBeNull();
     expect(d.clients!.clientCount).toBe(1);
+    expect(d.clients!.weekEventCount).toBe(2);
     expect(d.clients!.today.map((e) => e.title)).toEqual(["Dash now"]);
     expect(d.clients!.upcoming.map((e) => e.title)).toEqual(["Dash later"]);
     expect(d.clients!.today[0]).toMatchObject({ clientName: "Dash Test Studio", currentStageName: "Brief", currentStagePosition: 1, stageCount: 2 });
@@ -141,11 +142,56 @@ describe("GET /api/v1/dashboard", () => {
     expect(d.firm!.totals.clients).toBeGreaterThanOrEqual(1);
     expect(d.firm!.totals.unresolvedComments).toBeGreaterThanOrEqual(1);
     expect(d.firm!.totals.openTasks).toBe(d.firm!.tasksByStatus.todo + d.firm!.tasksByStatus.in_progress + d.firm!.tasksByStatus.blocked);
-    const row = d.firm!.team.find((r) => r.userId === editor.id);
-    expect(row).toMatchObject({ name: "Dash Editor", role: "editor", open: 2, overdue: 1, doneThisWeek: 1 });
+    expect(d.firm!.totals.overdueTasks).toBeGreaterThanOrEqual(1);
+    expect(d.firm!.totals.weekEvents).toBeGreaterThanOrEqual(2);
+    expect(d.firm!.totals.teamSize).toBeGreaterThanOrEqual(3);
+    // The dashboard shows only the busiest few; the full list is /dashboard/team.
+    expect(d.firm!.team.length).toBeLessThanOrEqual(5);
     expect(d.firm!.team.some((r) => r.role === "admin")).toBe(false);
     expect(d.firm!.week.some((e) => e.title === "Dash now")).toBe(true);
-    // Admin's own-clients block is their own (none) — not the firm's.
+    // The overview is the firm alone: the Admin's own work is on "My clients".
+    expect(d.view).toBe("overview");
+    expect(d.clients).toBeNull();
+    expect(d.tasks).toBeNull();
+  });
+
+  it("gives Admin their own clients and tasks on view=mine, without the firm", async () => {
+    const d = await dashboard("admin", "mine");
+    expect(d.view).toBe("mine");
+    expect(d.firm).toBeNull();
     expect(d.clients!.clientCount).toBe(0);
+    expect(d.tasks!.counts).toEqual({ todo: 0, in_progress: 0, blocked: 0, done: 0 });
+  });
+
+  it("refuses an unknown view", async () => {
+    expect((await request(app).get("/api/v1/dashboard?view=everything").set("Authorization", auth.admin)).status).toBe(400);
+  });
+});
+
+describe("GET /api/v1/dashboard/team", () => {
+  const team = (who: Who, query: string) => request(app).get(`/api/v1/dashboard/team?${query}`).set("Authorization", auth[who]);
+
+  it("is the Admin's only", async () => {
+    expect((await team("manager", "")).status).toBe(403);
+    expect((await team("editor", "")).status).toBe(403);
+  });
+
+  it("finds a member by name with their workload, and pages", async () => {
+    const res = await team("admin", "search=dash%20editor");
+    expect(res.status).toBe(200);
+    const body = res.body as { members: Record<string, unknown>[]; total: number };
+    expect(body.total).toBe(1);
+    expect(body.members[0]).toMatchObject({ userId: editor.id, name: "Dash Editor", role: "editor", open: 2, overdue: 1, doneThisWeek: 1 });
+    const paged = await team("admin", "limit=1&offset=0");
+    expect((paged.body as { members: unknown[] }).members).toHaveLength(1);
+    expect((paged.body as { limit: number }).limit).toBe(1);
+  });
+
+  it("filters by role and refuses bad input", async () => {
+    const res = await team("admin", "role=editor&search=dash");
+    expect((res.body as { members: { role: string }[] }).members.every((m) => m.role === "editor")).toBe(true);
+    expect((await team("admin", "role=admin")).status).toBe(400);
+    expect((await team("admin", "limit=abc")).status).toBe(400);
+    expect((await team("admin", "limit=1000")).body).toMatchObject({ limit: 50 });
   });
 });

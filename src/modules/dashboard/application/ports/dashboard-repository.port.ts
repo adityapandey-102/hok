@@ -8,6 +8,13 @@ import type {
   TaskStatusCounts,
   WorkloadRow,
 } from "../../domain/dashboard.entity";
+import type { Role } from "../../../../domain";
+
+export interface TeamFilter {
+  /** Name, case-insensitive. */
+  search?: string;
+  role?: Role;
+}
 
 export interface Window {
   now: Date;
@@ -28,8 +35,8 @@ export interface DashboardRepositoryPort {
   openTasks(filter: { assigneeId?: string; overdueOnly?: boolean }, now: Date, limit: number): Promise<DashboardTask[]>;
   /** Latest comments left by OTHER people on the assignee's tasks. */
   recentTaskComments(assigneeId: string, limit: number): Promise<DashboardTaskComment[]>;
-  /** The owner's non-archived client count + their unresolved comment counts. */
-  clientSummary(ownerId: string): Promise<{ clientCount: number; received: number; inProgress: number }>;
+  /** The owner's non-archived client count, their unresolved comment counts and this week's event count. */
+  clientSummary(ownerId: string, w: Window): Promise<{ clientCount: number; received: number; inProgress: number; weekEventCount: number }>;
   /** Events overlapping [from, to), earliest first, capped. */
   events(range: { from: Date; to: Date }, ownerId: string | undefined, limit: number): Promise<DashboardEvent[]>;
   /** Active, not-yet-ended events grouped by current stage name, biggest first. */
@@ -37,7 +44,9 @@ export interface DashboardRepositoryPort {
   /** Newest unresolved client comments. */
   latestComments(ownerId: string | undefined, limit: number): Promise<DashboardComment[]>;
   /** Firm totals + firm task counts by status. */
-  firmTotals(now: Date): Promise<Pick<FirmSection, "totals" | "tasksByStatus">>;
-  /** Active non-admin staff with their open / overdue / done-this-week task counts. */
-  team(now: Date, limit: number): Promise<WorkloadRow[]>;
+  firmTotals(w: Window): Promise<Pick<FirmSection, "totals" | "tasksByStatus">>;
+  /** Active non-admin staff with their open / overdue / done-this-week task counts, busiest first. */
+  team(now: Date, filter: TeamFilter, limit: number, offset: number): Promise<WorkloadRow[]>;
+  /** How many active non-admin staff match the filter. */
+  teamCount(filter: TeamFilter): Promise<number>;
 }

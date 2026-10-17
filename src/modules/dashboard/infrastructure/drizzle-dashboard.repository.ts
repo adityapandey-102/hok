@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, gt, gte, lt, ne, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, ilike, lt, ne, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../common/database/drizzle-client";
+import { containsPattern } from "../../../common/database/like-pattern";
 import { AppError, InternalError } from "../../../common/errors/app-error";
 import { scanLowerBound } from "../../../domain";
 // The Dashboard module owns no table: read-only aggregates over the Clients,
@@ -12,7 +13,7 @@ import { eventStages, events } from "../../events/infrastructure/events.schema";
 import { staffTaskUpdates, staffTasks } from "../../staff-tasks/infrastructure/staff-tasks.schema";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import type { DashboardComment, DashboardEvent, DashboardTask, StageGroup, WorkloadRow } from "../domain/dashboard.entity";
-import type { DashboardRepositoryPort, Window } from "../application/ports/dashboard-repository.port";
+import type { DashboardRepositoryPort, TeamFilter, Window } from "../application/ports/dashboard-repository.port";
 
 const currentStage = alias(eventStages, "current_stage");
 const assignees = alias(profiles, "assignees");
@@ -25,6 +26,21 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const countWhere = (cond: SQL) => sql<number>`(count(*) filter (where ${cond}))::int`;
 const notDone = ne(staffTasks.status, "done");
 const unresolved = ne(clientComments.status, "solved");
+
+/** Events overlapping [todayStart, weekEnd), bounded below on starts_at (index-friendly), optionally one owner's. */
+const weekEventCount = (w: Window, ownerId?: string) =>
+  sql<number>`(select count(*)::int from ${events}${
+    ownerId ? sql` join ${clients} on ${clients.id} = ${events.clientId} and ${clients.ownerId} = ${ownerId}` : sql``
+  } where ${events.startsAt} < ${w.weekEnd} and ${events.endsAt} > ${w.todayStart} and ${events.startsAt} >= ${scanLowerBound(w.todayStart.toISOString())})`;
+
+/** Active non-admin staff, optionally by name and role. */
+const teamWhere = (f: TeamFilter) =>
+  and(
+    eq(profiles.active, true),
+    ne(profiles.role, "admin"),
+    f.search ? ilike(profiles.fullName, containsPattern(f.search)) : undefined,
+    f.role ? eq(profiles.role, f.role) : undefined,
+  );
 
 async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
   try {
@@ -113,13 +129,14 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
     });
   }
 
-  clientSummary(ownerId: string) {
+  clientSummary(ownerId: string, w: Window) {
     return guarded("load client summary", async () => {
       const [r] = await db
         .select({
           clientCount: sql<number>`(select count(*)::int from ${clients} where ${clients.ownerId} = ${ownerId} and ${clients.archivedAt} is null)`,
           received: countWhere(eq(clientComments.status, "received")),
           inProgress: countWhere(eq(clientComments.status, "in_progress")),
+          weekEventCount: weekEventCount(w, ownerId),
         })
         .from(clientComments)
         .innerJoin(clients, eq(clients.id, clientComments.clientId))
@@ -200,7 +217,8 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
     });
   }
 
-  firmTotals(now: Date) {
+  firmTotals(w: Window) {
+    const now = w.now;
     return guarded("load firm totals", async () => {
       const [r] = await db
         .select({
@@ -208,18 +226,24 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
           in_progress: countWhere(eq(staffTasks.status, "in_progress")),
           blocked: countWhere(eq(staffTasks.status, "blocked")),
           done: countWhere(eq(staffTasks.status, "done")),
+          overdueTasks: countWhere(and(notDone, lt(staffTasks.dueAt, now))!),
+          weekEvents: weekEventCount(w),
+          teamSize: sql<number>`(select count(*)::int from ${profiles} where ${profiles.active} and ${profiles.role} <> 'admin')`,
           clients: sql<number>`(select count(*)::int from ${clients} where ${clients.archivedAt} is null)`,
           activeEvents: sql<number>`(select count(*)::int from ${events} where ${events.state} = 'active' and ${events.endsAt} > ${now})`,
           unresolvedComments: sql<number>`(select count(*)::int from ${clientComments} where ${clientComments.status} <> 'solved')`,
         })
         .from(staffTasks);
-      const { clients: clientCount, activeEvents, unresolvedComments, ...tasksByStatus } = r!;
+      const { clients: clientCount, activeEvents, unresolvedComments, overdueTasks, weekEvents, teamSize, ...tasksByStatus } = r!;
       const openTasks = tasksByStatus.todo + tasksByStatus.in_progress + tasksByStatus.blocked;
-      return { totals: { clients: clientCount, activeEvents, openTasks, unresolvedComments }, tasksByStatus };
+      return {
+        totals: { clients: clientCount, activeEvents, openTasks, overdueTasks, unresolvedComments, weekEvents, teamSize },
+        tasksByStatus,
+      };
     });
   }
 
-  team(now: Date, limit: number) {
+  team(now: Date, filter: TeamFilter, limit: number, offset: number) {
     return guarded("load team workload", async () => {
       const weekAgo = new Date(now.getTime() - WEEK_MS);
       const open = countWhere(notDone);
@@ -236,11 +260,19 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
         .from(profiles)
         // Only open tasks and ones closed this week: the join never scans old history.
         .leftJoin(staffTasks, and(eq(staffTasks.assigneeId, profiles.id), sql`(${notDone} or ${staffTasks.completedAt} >= ${weekAgo})`))
-        .where(and(eq(profiles.active, true), ne(profiles.role, "admin")))
+        .where(teamWhere(filter))
         .groupBy(profiles.id)
-        .orderBy(desc(overdue), desc(open), asc(profiles.fullName))
-        .limit(limit);
+        .orderBy(desc(overdue), desc(open), asc(profiles.fullName), asc(profiles.id))
+        .limit(limit)
+        .offset(offset);
       return rows satisfies WorkloadRow[];
+    });
+  }
+
+  teamCount(filter: TeamFilter) {
+    return guarded("count team", async () => {
+      const [r] = await db.select({ n: count() }).from(profiles).where(teamWhere(filter));
+      return r?.n ?? 0;
     });
   }
 }
