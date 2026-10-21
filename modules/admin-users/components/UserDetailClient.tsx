@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatDate, isValidTimeZone, ROLE_LABELS, ROLES, type Role } from "../../../lib/domain";
+import { formatDate, isValidTimeZone, ROLE_LABELS, ROLES, type Role, lastSeen } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { usersApi, type UserAccount } from "../api/usersApi";
 import Link from "next/link";
@@ -162,6 +162,7 @@ export function UserDetailClient({ initialUser, currentUserId }: { initialUser: 
               </div>
               <InfoRow label="Created" value={formatDate(user.createdAt)} />
               <InfoRow label="Last login" value={user.lastLoginAt ? formatDate(user.lastLoginAt) : "Never"} />
+              <InfoRow label="Last seen" value={lastSeen(user.lastSeenAt).text} />
             </form>
           </div>
         </Panel>

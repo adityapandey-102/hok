@@ -6,6 +6,7 @@ import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { Input } from "../../../components/ui/Field";
+import { LastSeen } from "../../../components/ui/LastSeen";
 import { Pager } from "../../../components/ui/Pager";
 import { Select } from "../../../components/ui/Select";
 import { ROLES, ROLE_LABELS, type Role } from "../../../lib/domain";
@@ -125,7 +126,9 @@ export function TeamWorkloadClient() {
                       <Link href={`/app/tasks?assigneeId=${m.userId}&assignee=${encodeURIComponent(m.name)}`} className="font-medium text-text-primary hover:text-primary">
                         {m.name}
                       </Link>
-                      <span className="block text-xs text-text-muted">{ROLE_LABELS[m.role]}</span>
+                      <span className="flex flex-wrap items-center gap-x-2 text-xs text-text-muted">
+                        {ROLE_LABELS[m.role]} <LastSeen at={m.lastSeenAt} />
+                      </span>
                     </td>
                     <td className="w-[30%] px-3 py-3">
                       <WorkloadBar row={m} max={max} />
@@ -145,6 +148,9 @@ export function TeamWorkloadClient() {
                     <span className="flex items-baseline justify-between gap-3">
                       <span className="truncate font-medium text-text-primary">{m.name}</span>
                       <span className="shrink-0 text-xs text-text-muted">{ROLE_LABELS[m.role]}</span>
+                    </span>
+                    <span className="mt-1 block">
+                      <LastSeen at={m.lastSeenAt} />
                     </span>
                     <span className="mt-2 flex items-center gap-3">
                       <WorkloadBar row={m} max={max} />

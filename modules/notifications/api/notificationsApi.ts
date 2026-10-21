@@ -58,7 +58,8 @@ export const notificationsApi = {
     return apiFetch(`/notifications?${q.toString()}`);
   },
 
-  unreadCount(): Promise<{ count: number }> {
+  /** Unread total, and how many are reminders (the bell's alert animation). */
+  unreadCount(): Promise<{ count: number; reminders: number }> {
     return apiFetch("/notifications/unread-count");
   },
 

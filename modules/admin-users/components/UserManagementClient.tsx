@@ -14,6 +14,7 @@ import { useToast } from "../../../components/ui/Toast";
 import { TimeZoneInput } from "./TimeZoneInput";
 import { CredentialRevealOverlay, type RevealModal } from "./CredentialRevealOverlay";
 import { StatusPill } from "../../../components/ui/StatusPill";
+import { LastSeen } from "../../../components/ui/LastSeen";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { Select } from "../../../components/ui/Select";
 
@@ -261,6 +262,7 @@ export default function UserManagementClient() {
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold text-text-primary">{u.fullName}</div>
                       <div className="truncate text-xs text-text-muted">{u.email}</div>
+                      <LastSeen at={u.lastSeenAt} className="mt-0.5" />
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         <StatusPill label={ROLE_LABELS[u.role]} tone="pink" />
                         <StatusPill label={u.active ? "Active" : "Deactivated"} tone={u.active ? "green" : "gray"} />
@@ -293,7 +295,10 @@ export default function UserManagementClient() {
                       <td className="px-5 py-3 font-medium text-text-primary">
                         <span className="flex items-center gap-3">
                           <Avatar name={u.fullName} />
-                          {u.fullName}
+                          <span className="flex flex-col">
+                            {u.fullName}
+                            <LastSeen at={u.lastSeenAt} />
+                          </span>
                         </span>
                       </td>
                       <td className="px-4 py-3 text-text-secondary">{u.email}</td>

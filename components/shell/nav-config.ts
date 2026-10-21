@@ -39,6 +39,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Administration",
     items: [
       { label: "Team workload", href: "/app/team", icon: "bar-chart", requires: "dashboard:global" },
+      { label: "Reports", href: "/app/reports", icon: "trending-up", requires: "dashboard:global" },
       { label: "Users", href: "/app/admin/users", icon: "users", requires: "users:manage" },
       { label: "Stage templates", href: "/app/templates", icon: "layers", requires: "stage_templates:manage" },
     ],

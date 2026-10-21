@@ -269,8 +269,12 @@ export function AssetsPanel({
           {assets.map((a) => (
             <li key={a.id} className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-accent-bg sm:flex-row sm:items-start sm:gap-4 sm:px-5">
               <div className="flex min-w-0 flex-1 gap-3">
-                <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-app bg-accent-bg text-text-secondary ring-1 ring-border ring-inset">
+                <span aria-hidden className="relative flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden rounded-app bg-accent-bg text-text-secondary ring-1 ring-border ring-inset">
                   <Icon name={TYPE_ICONS[a.type]} size={17} />
+                  {a.preview?.imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element -- a thumbnail from any site; on error the type icon underneath shows
+                    <img src={a.preview.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => e.currentTarget.remove()} className="absolute inset-0 h-full w-full object-cover" />
+                  )}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -284,7 +288,10 @@ export function AssetsPanel({
                     </a>
                     <StatusPill label={ASSET_TYPE_LABELS[a.type]} tone={TYPE_TONES[a.type]} />
                   </div>
-                  <p className="mt-0.5 text-xs break-all text-text-muted">{hostOf(a.url)}</p>
+                  <p className="mt-0.5 truncate text-xs text-text-muted" title={a.preview?.title ?? undefined}>
+                    {a.preview?.siteName ?? hostOf(a.url)}
+                    {a.preview?.title && a.preview.title !== a.title ? ` · ${a.preview.title}` : ""}
+                  </p>
                   {a.comment && <p className="mt-1 text-sm break-words whitespace-pre-wrap text-text-secondary">{a.comment}</p>}
                   {a.tags.length > 0 && (
                     <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Tags">

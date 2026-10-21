@@ -1,10 +1,18 @@
 import { notFound, redirect } from "next/navigation";
 import { hasCapability } from "../../../../../lib/domain";
 import { apiFetchServer, ApiError } from "../../../../../lib/api/server";
-import { ClientWorkspaceClient } from "../../../../../modules/clients/components/ClientWorkspaceClient";
+import { ClientWorkspaceClient, isWorkspaceTab } from "../../../../../modules/clients/components/ClientWorkspaceClient";
 
-export default async function ClientWorkspacePage({ params }: { params: Promise<{ clientId: string }> }) {
+/** A client's workspace. `?tab=events|calendar|todos|assets|portal` opens that tab (links from search and the dashboard). */
+export default async function ClientWorkspacePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ clientId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { clientId } = await params;
+  const { tab } = await searchParams;
   const { profile } = await apiFetchServer("/auth/me");
   if (!hasCapability(profile.role, "clients:read")) redirect("/app");
 
@@ -14,5 +22,12 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
     throw err;
   });
 
-  return <ClientWorkspaceClient initialClient={result.client} isAdmin={profile.role === "admin"} viewerTimeZone={profile.timeZone} />;
+  return (
+    <ClientWorkspaceClient
+      initialClient={result.client}
+      isAdmin={profile.role === "admin"}
+      viewerTimeZone={profile.timeZone}
+      initialTab={typeof tab === "string" && isWorkspaceTab(tab) ? tab : undefined}
+    />
+  );
 }

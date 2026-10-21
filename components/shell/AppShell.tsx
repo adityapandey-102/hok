@@ -7,6 +7,8 @@ import { Sidebar } from "./Sidebar";
 import { BrandLockup } from "./BrandMark";
 import { Icon } from "../ui/Icon";
 import { ThemeToggle } from "../ui/ThemeToggle";
+import { GlobalSearch } from "./GlobalSearch";
+import { GuideMe } from "./GuideMe";
 import { InstallAppHint } from "../../modules/notifications/components/InstallAppHint";
 import { NotificationBell } from "../../modules/notifications/components/NotificationBell";
 import { ServiceWorkerRegistrar } from "../../modules/notifications/components/ServiceWorkerRegistrar";
@@ -36,7 +38,12 @@ export function AppShell({ profile, children }: { profile: Profile; children: Re
           </button>
           <BrandLockup size={26} className="lg:hidden" />
 
-          <div className="ml-auto flex items-center gap-1">
+          <div className="flex min-w-0 flex-1 justify-end md:justify-start md:pl-4 lg:pl-0">
+            <GlobalSearch />
+          </div>
+
+          <div className="flex items-center gap-1">
+            <GuideMe role={profile.role} />
             <ThemeToggle />
             <NotificationBell />
           </div>

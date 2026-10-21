@@ -15,6 +15,8 @@ import { badgeLabel, notificationIcon, safeAppPath, timeAgo } from "../format";
 import { PushPrompt } from "./PushPrompt";
 
 const POLL_MS = 60_000;
+/** Notification types that are reminders (the bell's alert animation). */
+const REMINDER_TYPES: readonly string[] = ["event_reminder", "task_due_reminder"];
 
 /**
  * The header bell: an unread badge (polled every 60s, paused while the tab is
@@ -24,6 +26,8 @@ const POLL_MS = 60_000;
 export function NotificationBell({ className = "" }: { className?: string }) {
   const router = useRouter();
   const [count, setCount] = useState(0);
+  // Unread reminders: while > 0 the bell swings and its badge pings (FR-NTF-06).
+  const [reminders, setReminders] = useState(0);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<AppNotification[] | null>(null);
   const [error, setError] = useState(false);
@@ -31,7 +35,9 @@ export function NotificationBell({ className = "" }: { className?: string }) {
 
   const refreshCount = useCallback(async () => {
     try {
-      setCount((await notificationsApi.unreadCount()).count);
+      const unread = await notificationsApi.unreadCount();
+      setCount(unread.count);
+      setReminders(unread.reminders ?? 0);
     } catch {
       /* a failed poll keeps the last badge */
     }
@@ -102,6 +108,7 @@ export function NotificationBell({ className = "" }: { className?: string }) {
           ) ?? prev,
       );
       setCount((c) => Math.max(0, c - 1));
+      if (REMINDER_TYPES.includes(n.type)) setReminders((r) => Math.max(0, r - 1));
       try {
         await notificationsApi.markRead(n.id);
       } catch {
@@ -116,6 +123,7 @@ export function NotificationBell({ className = "" }: { className?: string }) {
     try {
       await notificationsApi.markAllRead();
       setCount(0);
+      setReminders(0);
       setItems(
         (prev) =>
           prev?.map((x) => ({
@@ -136,13 +144,16 @@ export function NotificationBell({ className = "" }: { className?: string }) {
         type="button"
         className="relative rounded-app p-2.5 text-text-secondary transition-colors hover:bg-accent-bg hover:text-text-primary"
         aria-label={
-          count > 0 ? `Notifications, ${count} unread` : "Notifications"
+          count > 0 ? `Notifications, ${count} unread${reminders > 0 ? ", including reminders" : ""}` : "Notifications"
         }
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        <Icon name="bell" size={20} />
+        <span className={`block ${reminders > 0 ? "bell-alert text-primary" : ""}`}>
+          <Icon name="bell" size={20} />
+        </span>
+        {label && reminders > 0 && <span aria-hidden className="absolute -top-0.5 -right-0.5 h-4 w-4 animate-ping rounded-full bg-error/60" />}
         {label && (
           <span
             data-testid="bell-badge"

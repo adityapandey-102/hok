@@ -23,33 +23,45 @@ import { ClientForm } from "./ClientForm";
 import { EventsTab } from "../../events/components/EventsTab";
 import { CalendarView } from "../../calendar/components/CalendarView";
 import { AssetsPanel } from "../../assets/components/AssetsPanel";
+import { ClientTodosPanel } from "../../client-todos/components/ClientTodosPanel";
 import { PortalTab } from "../../portal/components/PortalTab";
 import { STATUS_TONES } from "./ClientsListClient";
 import { ClientAvatar } from "./ClientAvatar";
 
+/** A tab's text is its id (capitalised by CSS) unless it has a `label` (shown as written). */
 const TABS = [
   { id: "overview", icon: "home" },
   { id: "events", icon: "layers" },
   { id: "calendar", icon: "calendar" },
+  { id: "todos", icon: "check-circle", label: "To-dos" },
   { id: "assets", icon: "image" },
   { id: "portal", icon: "share" },
-] as const satisfies readonly { id: string; icon: IconName }[];
+] as const satisfies readonly { id: string; icon: IconName; label?: string }[];
+type TabId = (typeof TABS)[number]["id"];
+
+/** True for a tab id this page has (the `?tab=` link parameter). */
+export function isWorkspaceTab(value: string): value is TabId {
+  return TABS.some((t) => t.id === value);
+}
 
 /**
- * The client workspace (FR-CLI-06). Only the Overview tab exists in M3; the
- * Events / Calendar / Assets / Comments / Portal tabs are added by the
- * milestones that build them (no placeholder tabs).
+ * The client workspace (FR-CLI-06): Overview, Events, Calendar, To-dos
+ * (Phase 2, FR-CTSK), Assets and Portal -- each tab added by the milestone
+ * that built it (no placeholder tabs).
  */
 export function ClientWorkspaceClient({
   initialClient,
   isAdmin,
   viewerTimeZone = "Asia/Kolkata",
+  initialTab = "overview",
 }: {
   initialClient: Client;
   isAdmin: boolean;
   viewerTimeZone?: string;
+  /** From the `?tab=` link parameter. */
+  initialTab?: TabId;
 }) {
-  const [tab, setTab] = useState<"overview" | "events" | "calendar" | "assets" | "portal">("overview");
+  const [tab, setTab] = useState<TabId>(initialTab);
   const { showToast } = useToast();
   const confirm = useConfirm();
   const [client, setClient] = useState<Client>(initialClient);
@@ -177,7 +189,10 @@ export function ClientWorkspaceClient({
       )}
 
       <div role="tablist" aria-label="Client workspace" className="-mb-1 flex max-w-full gap-1 overflow-x-auto border-b border-border [scrollbar-width:none]">
-        {TABS.map(({ id, icon }) => (
+        {TABS.map((t) => {
+          const { id, icon } = t;
+          const label = "label" in t ? t.label : undefined;
+          return (
           <button
             key={id}
             role="tab"
@@ -186,9 +201,10 @@ export function ClientWorkspaceClient({
             className={`-mb-px flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-medium whitespace-nowrap capitalize transition-colors sm:px-4 ${tab === id ? "border-primary text-text-primary" : "border-transparent text-text-muted hover:text-text-primary"}`}
           >
             <Icon name={icon} size={15} className={tab === id ? "text-primary" : ""} />
-            {id}
+            {label ? <span className="normal-case">{label}</span> : id}
           </button>
-        ))}
+          );
+        })}
       </div>
 
       <div key={tab} className="animate-fade-in">
@@ -196,6 +212,7 @@ export function ClientWorkspaceClient({
         {tab === "calendar" && <CalendarView clientId={client.id} viewerTimeZone={viewerTimeZone} isAdmin={isAdmin} readOnly={archived} />}
         {tab === "portal" && <PortalTab clientId={client.id} archived={archived} viewerTimeZone={viewerTimeZone} />}
         {tab === "assets" && <AssetsPanel clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
+        {tab === "todos" && <ClientTodosPanel clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
 
         {tab !== "overview" ? null : editing && !archived ? (
           <ClientForm client={client} submitLabel="Save changes" onSubmit={handleSave} onCancel={() => setEditing(false)} />

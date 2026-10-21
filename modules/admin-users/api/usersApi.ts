@@ -14,6 +14,8 @@ export interface UserAccount {
   active: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+  /** Last time they used HOK; null = never (FR-SYS-03). */
+  lastSeenAt: string | null;
 }
 
 export interface CreateUserPayload {

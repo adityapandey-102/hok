@@ -75,6 +75,8 @@ export interface WorkloadRow {
   open: number;
   overdue: number;
   doneThisWeek: number;
+  /** Last time they used HOK; null = never. */
+  lastSeenAt: string | null;
 }
 
 export interface TasksSection {

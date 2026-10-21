@@ -24,6 +24,8 @@ export interface Asset {
   url: string;
   type: AssetType;
   comment: string | null;
+  /** What the link points to, fetched by the API after a save; null until then or when the page has none. */
+  preview: { title: string | null; description: string | null; imageUrl: string | null; siteName: string | null } | null;
   tags: string[];
   createdBy: string | null;
   createdByName: string | null;
