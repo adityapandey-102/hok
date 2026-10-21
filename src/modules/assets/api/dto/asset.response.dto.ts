@@ -12,6 +12,8 @@ export interface AssetResponseDto {
   url: string;
   type: AssetType;
   comment: string | null;
+  /** Link preview (title, description, image, site), or null. */
+  preview: { title: string | null; description: string | null; imageUrl: string | null; siteName: string | null } | null;
   tags: string[];
   createdBy: string | null;
   createdByName: string | null;

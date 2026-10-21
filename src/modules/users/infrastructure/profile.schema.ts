@@ -26,4 +26,6 @@ export const profiles = pgTable("profiles", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  /** Last authenticated API call, throttled (FR-SYS-03). */
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 });

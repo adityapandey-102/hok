@@ -19,6 +19,7 @@
  *       migration 20261013000004. Its template is deactivated at the end.
  *   M6: /assets (create incl. URL validation, list, tag suggest, get, edit + stale
  *       version, soft delete) for all six roles. Needs migration 20261014100001.
+ *   Phase 2: /clients/:id/todos + /client-todos/:id (create, list, edit + stale version, delete, scope, archive)
  *   M7: /staff-tasks (list, create incl. the editor brief rule, get, status +
  *       stale version, comments, edit, done -> reopen, delete): Admin manages;
  *       everyone else only the tasks assigned to them (others' are 404).
@@ -390,6 +391,36 @@ async function main() {
   // Leave the fixtures inert: archive the client (its assets become read-only).
   if (astClient) await req(`/clients/${astClient.id}/archive`, { method: "POST", body: "{}" }, admin.token);
 
+  console.log("\n--- client to-dos (admin: all; SMM / MM: their clients' to-dos, others' are 404; task-only: 403) ---");
+  const tdClient = (await req("/clients", { method: "POST", body: newClient("todos-client") }, smm.token)).body?.client;
+  const tdBody = JSON.stringify({ title: `RBAC todo ${stamp}`, priority: "high", dueAt: "2031-01-01T10:00:00Z" });
+  const tdCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  let todo = null;
+  for (const [role, token] of everyone) {
+    const r = await req(`/clients/${tdClient?.id}/todos`, { method: "POST", body: tdBody }, token);
+    check(`POST /clients/:id/todos (SMM's client) as ${role} -> ${tdCreateExpect[role]}`, r.status, tdCreateExpect[role]);
+    if (role === "social_media_manager" && r.status === 201) todo = r.body.todo;
+  }
+  check("POST /clients/:id/todos with an empty title as SMM -> 400", (await req(`/clients/${tdClient?.id}/todos`, { method: "POST", body: JSON.stringify({ title: " " }) }, smm.token)).status, 400);
+  for (const [role, token] of everyone) {
+    check(`GET /clients/:id/todos (SMM's client) as ${role} -> ${readExpect[role]}`, (await req(`/clients/${tdClient?.id}/todos`, {}, token)).status, readExpect[role]);
+  }
+  check("GET /clients/:id/todos as SMM includes the SMM's own to-do", (await req(`/clients/${tdClient?.id}/todos?limit=100`, {}, smm.token)).body?.todos?.some((t) => t.id === todo?.id), true);
+  for (const [role, token] of everyone.filter(([r]) => r !== "admin" && r !== "social_media_manager")) {
+    const expected = readExpect[role];
+    check(`PATCH /client-todos/:id (SMM's) as ${role} -> ${expected}`, (await req(`/client-todos/${todo?.id}`, { method: "PATCH", body: JSON.stringify({ title: "nope", version: 1 }) }, token)).status, expected);
+    check(`DELETE /client-todos/:id (SMM's) as ${role} -> ${expected}`, (await req(`/client-todos/${todo?.id}`, { method: "DELETE" }, token)).status, expected);
+  }
+  check("PATCH /client-todos/:id (own) as SMM -> 200", (await req(`/client-todos/${todo?.id}`, { method: "PATCH", body: JSON.stringify({ status: "done", version: 1 }) }, smm.token)).status, 200);
+  check("PATCH /client-todos/:id with the stale version -> 409", (await req(`/client-todos/${todo?.id}`, { method: "PATCH", body: JSON.stringify({ title: "again", version: 1 }) }, smm.token)).status, 409);
+  check("PATCH /client-todos/:id (SMM's) as admin -> 200", (await req(`/client-todos/${todo?.id}`, { method: "PATCH", body: JSON.stringify({ status: "todo", version: 2 }) }, admin.token)).status, 200);
+  check("DELETE /client-todos/:id (own) as SMM -> 204", (await req(`/client-todos/${todo?.id}`, { method: "DELETE" }, smm.token)).status, 204);
+  check("... a deleted to-do is 404 for the admin", (await req(`/client-todos/${todo?.id}`, { method: "PATCH", body: JSON.stringify({ title: "x", version: 1 }) }, admin.token)).status, 404);
+  // Leave the fixtures inert: archive the client (its to-dos become read-only).
+  if (tdClient) {
+    check("POST /clients/:id/todos on an archived client as SMM -> 409", (await req(`/clients/${tdClient.id}/archive`, { method: "POST", body: "{}" }, admin.token)).status === 200 && (await req(`/clients/${tdClient.id}/todos`, { method: "POST", body: tdBody }, smm.token)).status, 409);
+  }
+
   console.log("\n--- staff tasks (admin: all + manages; everyone else: only tasks assigned to them, others' are 404) ---");
   // Runs before the users section: that section regenerates the editor's password, revoking its token.
   const NON_ADMIN = everyone.filter(([r]) => r !== "admin");
@@ -464,6 +495,48 @@ async function main() {
     }
     const t = await req("/dashboard/team", {}, token);
     check(`GET /dashboard/team as ${role} -> ${role === "admin" ? 200 : 403}`, t.status, role === "admin" ? 200 : 403);
+  }
+
+  console.log("\n--- global search (every role; groups scoped by capability) ---");
+  check("GET /search without a token -> 401", (await req("/search?q=ab")).status, 401);
+  for (const [role, token] of everyone) {
+    const s = await req("/search?q=ab", {}, token);
+    check(`GET /search as ${role} -> 200`, s.status, 200);
+    const taskOnly = ["marketing_agent", "developer", "editor"].includes(role);
+    check(`  ${role}: clients group ${taskOnly ? "hidden" : "present"}`, s.body?.groups?.clients === null, taskOnly);
+  }
+
+  console.log("\n--- activity log (dashboard:global: admin only) ---");
+  check("GET /activity without a token -> 401", (await req("/activity")).status, 401);
+  for (const [role, token] of everyone) {
+    const expected = role === "admin" ? 200 : 403;
+    check(`GET /activity as ${role} -> ${expected}`, (await req("/activity", {}, token)).status, expected);
+  }
+  check("GET /activity span over 31 days -> 400", (await req("/activity?from=2020-01-01T00:00:00Z&to=2020-03-01T00:00:00Z", {}, admin.token)).status, 400);
+  check("GET /activity bad kind -> 400", (await req("/activity?kind=bogus", {}, admin.token)).status, 400);
+
+  console.log("\n--- reports (Phase 2: dashboard:global, Admin only; all six roles) ---");
+  {
+    const now = new Date();
+    now.setUTCDate(1);
+    now.setUTCMonth(now.getUTCMonth() - 1); // last month: allowed in every zone
+    const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const reportPaths = [
+      ["GET /reports/team-status", "/reports/team-status"],
+      ["GET /reports/staff", `/reports/staff?userId=${target.id}&month=${month}`],
+      ["GET /reports/client", `/reports/client?clientId=${cid}&month=${month}`],
+    ];
+    for (const [label, path] of reportPaths) {
+      check(`${label} without a token -> 401`, (await req(path)).status, 401);
+      for (const [role, token] of everyone) {
+        const expected = role === "admin" ? 200 : 403;
+        check(`${label} as ${role} -> ${expected}`, (await req(path, {}, token)).status, expected);
+      }
+    }
+    check("GET /reports/staff with a month older than 6 -> 400", (await req(`/reports/staff?userId=${target.id}&month=2000-01`, {}, admin.token)).status, 400);
+    check("GET /reports/client with a future month -> 400", (await req(`/reports/client?clientId=${cid}&month=2999-01`, {}, admin.token)).status, 400);
+    check("GET /reports/team-status?status=busy -> 400", (await req("/reports/team-status?status=busy", {}, admin.token)).status, 400);
+    check("GET /reports/staff for an unknown person -> 404", (await req(`/reports/staff?userId=00000000-0000-4000-8000-000000000000&month=${month}`, {}, admin.token)).status, 404);
   }
 
   console.log("\n--- users:manage (admin only) ---");

@@ -300,7 +300,8 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
           .update(events)
           .set({
             ...rest,
-            ...(startsAt !== undefined ? { startsAt: new Date(startsAt) } : {}),
+            // A new start time gets its own 2-hour reminder (Phase 2 reminders).
+            ...(startsAt !== undefined ? { startsAt: new Date(startsAt), remindedAt: null } : {}),
             ...(endsAt !== undefined ? { endsAt: new Date(endsAt) } : {}),
             version: sql`${events.version} + 1`,
           })

@@ -14,6 +14,7 @@ export function toAssetResponseDto(a: AssetEntity): AssetResponseDto {
     url: a.url,
     type: a.type,
     comment: a.comment,
+    preview: a.preview,
     tags: a.tags,
     createdBy: a.createdBy,
     createdByName: a.createdByName,

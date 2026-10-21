@@ -6,6 +6,7 @@ import { AppError, InternalError } from "../../../common/errors/app-error";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { notificationPreferences, notifications, pushSubscriptions } from "./notifications.schema";
 import type { NotificationEntity, NotificationPreferences, PushSubscriptionEntity } from "../domain/notification.entity";
+import { REMINDER_TYPES } from "../domain/notification.entity";
 import type {
   NewNotificationRecord,
   NewPushSubscription,
@@ -117,7 +118,17 @@ export class DrizzleNotificationsRepository implements NotificationsRepositoryPo
   }
 
   countUnread(userId: string) {
-    return this.countForUser(userId, true);
+    return guarded("count unread notifications", async () => {
+      // One pass over the user's unread rows (partial index notifications_user_unread_idx).
+      const [row] = await db
+        .select({
+          count: sql<number>`count(*)::int`,
+          reminders: sql<number>`(count(*) filter (where ${inArray(notifications.type, [...REMINDER_TYPES])}))::int`,
+        })
+        .from(notifications)
+        .where(this.listConditions(userId, true));
+      return { count: row?.count ?? 0, reminders: row?.reminders ?? 0 };
+    });
   }
 
   markRead(userId: string, id: string) {

@@ -42,7 +42,7 @@ export class NotificationsService {
   }
 
   async unreadCount(userId: string): Promise<UnreadCountResponseDto> {
-    return { count: await this.repo.countUnread(userId) };
+    return this.repo.countUnread(userId);
   }
 
   async markRead(userId: string, id: string): Promise<void> {

@@ -16,6 +16,7 @@ import {
 import type { AssetFields } from "../domain/asset.entity";
 import { toAssetResponseDto } from "../api/asset.presenter";
 import type { AssetChanges, AssetsRepositoryPort } from "./ports/assets-repository.port";
+import type { LinkPreviewerPort } from "./ports/link-previewer.port";
 import type { AssetListResponseDto, AssetResponseDto, TagListResponseDto } from "../api/dto/asset.response.dto";
 import type { AssetQueryDto, CreateAssetDto, DeleteAssetQuery, TagQueryDto, UpdateAssetDto } from "../api/dto/asset.dto";
 
@@ -36,6 +37,8 @@ export class AssetsService {
   constructor(
     private readonly repo: AssetsRepositoryPort,
     private readonly audit: AuditLogger = defaultAuditLogger,
+    /** Background link previews (FR-AST-08); a no-op unless the composition root passes the real one. */
+    private readonly previewer: LinkPreviewerPort = { refresh: () => undefined },
   ) {}
 
   private scopeOf(caller: AssetsCaller): AssetScope {
@@ -110,6 +113,7 @@ export class AssetsService {
       entityId: id,
       metadata: { clientId: client.id },
     });
+    this.previewer.refresh(id, dto.url);
     return this.getOrThrow(id);
   }
 
@@ -137,6 +141,7 @@ export class AssetsService {
       return changes;
     });
     await this.audit.record({ action: AUDIT_ACTIONS.ASSET_UPDATED, entityType: AUDIT_ENTITIES.ASSET, entityId: id, metadata: { fields: changed } });
+    if (fields.url !== undefined) this.previewer.refresh(id, asset.url);
     return toAssetResponseDto(asset);
   }
 

@@ -148,6 +148,24 @@ export const ERROR_CODES = {
   /** Reopening a task that isn't done (409). */
   STAFF_TASK_NOT_DONE: "STAFF_TASK_NOT_DONE",
 
+  // -- Client to-dos (Phase 2) --------------------------------------------------------
+  /** No such to-do, or it belongs to another manager's client -- the same 404 either way. */
+  CLIENT_TODO_NOT_FOUND: "CLIENT_TODO_NOT_FOUND",
+  /** Stale `version` on a to-do write (409). */
+  CLIENT_TODO_MODIFIED: "CLIENT_TODO_MODIFIED",
+  /** The linked event doesn't exist or belongs to a different client (400). */
+  CLIENT_TODO_EVENT_INVALID: "CLIENT_TODO_EVENT_INVALID",
+  /** `dueFrom` not before `dueTo` (400). */
+  CLIENT_TODO_RANGE_INVALID: "CLIENT_TODO_RANGE_INVALID",
+
+  // -- Reports (Phase 2) ------------------------------------------------------------
+  /** `month` is outside the last 6 months (a future month or an older one) (400). */
+  REPORT_MONTH_OUT_OF_RANGE: "REPORT_MONTH_OUT_OF_RANGE",
+
+  // -- Activity log (Phase 2) -------------------------------------------------------
+  /** `from` is after `to`, or the range is longer than 31 days (400). */
+  ACTIVITY_RANGE_INVALID: "ACTIVITY_RANGE_INVALID",
+
   // -- Notifications (M9) -----------------------------------------------------------
   /** No such notification, or someone else's (the same 404). */
   NOTIFICATION_NOT_FOUND: "NOTIFICATION_NOT_FOUND",

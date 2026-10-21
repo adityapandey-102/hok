@@ -45,12 +45,20 @@ tags:
     description: Asset link library -- links only, never files. Per client, with type, comment, reusable tags and an optional event. Scoped by the client's owner (`assets:read` / `assets:write`). Internal only; never on the portal.
   - name: Staff tasks
     description: Tasks the Admin assigns to staff (one assignee, any role). Admin creates, edits, reassigns, reopens and deletes (`staff_tasks:assign`); the assignee sees only their own tasks (others are 404) and changes the status with an optional comment (`staff_tasks:read` / `staff_tasks:update`). Every status change and comment is an append-only timeline entry.
+  - name: Client to-dos
+    description: A manager's internal to-do list per client (optionally about one of the client's events). Reads need `clients:read`, writes `clients:write`; scoped by the client's owner (others are 404). Read-only on archived clients. Internal only; never on the portal.
   - name: Notifications
     description: The caller's own bell (in-app notifications), per-trigger preferences and the devices that receive web push. Every role; always scoped to the caller (someone else's row is a 404).
   - name: Portal
     description: The client portal. Staff manage each client's link (portal:manage); the public endpoints take the link token as the only credential.
+  - name: Search
+    description: Global search (every staff role, scoped like each page).
   - name: Dashboard
     description: Role dashboards (FR-DSH-01..03) -- every staff role, sections by role.
+  - name: Reports
+    description: Admin reports (FR-RPT-01..04) -- team status, one person's month, one client's month. `dashboard:global` only.
+  - name: Activity
+    description: "The Admin activity log (FR-SYS-02, FR-RPT-05): who did what, newest first."
   - name: Client comments
     description: Comments clients post on their portal, worked by the owning manager (comments:read / comments:manage).
 paths:
@@ -1157,6 +1165,161 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  # -------------------------------------------------------- Activity (Phase 2) --
+  /api/v1/activity:
+    get:
+      tags: [Activity]
+      summary: The activity log, newest first (Admin)
+      description: |
+        `dashboard:global` (Admin only; every other role gets 403). Who did what
+        across the firm: audit entries (clients, events, tasks, comments, assets,
+        accounts) plus event stage moves, task updates and client comments, each as
+        a plain-English sentence. Names and titles only; never comment bodies,
+        tokens or contact details. One page query over a UNION ALL of the bounded,
+        filtered sources plus one count: two queries whatever the page size.
+        `from`/`to` default to the last 7 days; `from` after `to` or a span over
+        31 days is a 400 `ACTIVITY_RANGE_INVALID`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, description: "Start instant (ISO 8601 with offset). Default: 7 days before to.", schema: { type: string, format: date-time } }
+        - { name: to, in: query, description: "End instant (ISO 8601 with offset). Default: now.", schema: { type: string, format: date-time } }
+        - { name: kind, in: query, schema: { type: string, enum: [all, clients, events, tasks, comments, assets, accounts], default: all } }
+        - { name: actorId, in: query, description: Only what this person did., schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: One page of activity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, limit, offset]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ActivityItem" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # --------------------------------------------------------- Search (Phase 2) --
+  /api/v1/search:
+    get:
+      tags: [Search]
+      summary: Global search across clients, events, tasks, to-dos and asset links
+      description: |
+        Every staff role (FR-SYS-01). Up to 5 hits per group, best first
+        (titles that start with the term, then the most recent). Each group is
+        scoped exactly like its page: the Admin sees everything; managers only
+        their own clients (and everything under them) and their own tasks;
+        task-only staff only their own tasks. A group the caller's role can't
+        see is `null`. The term is matched literally (case-insensitive; `%`
+        and `_` are not wildcards). One indexed query per group, in parallel.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 80 } }
+      responses:
+        "200":
+          description: Grouped hits.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [query, groups]
+                properties:
+                  query: { type: string }
+                  groups:
+                    type: object
+                    required: [clients, events, tasks, todos, assets]
+                    properties:
+                      clients: { type: array, nullable: true, items: { $ref: "#/components/schemas/SearchHit" } }
+                      events: { type: array, nullable: true, items: { $ref: "#/components/schemas/SearchHit" } }
+                      tasks: { type: array, nullable: true, items: { $ref: "#/components/schemas/SearchHit" } }
+                      todos: { type: array, nullable: true, items: { $ref: "#/components/schemas/SearchHit" } }
+                      assets: { type: array, nullable: true, items: { $ref: "#/components/schemas/SearchHit" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ----------------------------------------------------- Reports (Phase 2) --
+  /api/v1/reports/team-status:
+    get:
+      tags: [Reports]
+      summary: Who is working or idle right now (Admin)
+      description: |
+        `dashboard:global` (Admin). Active non-admin staff, paged (default 20, max 50), busiest first
+        (overdue, then open). `working` = has open tasks AND (was seen OR acted in the last
+        `rule.windowHours` hours); everyone else is `idle`. `activityLast24h` counts the person's task
+        updates, stage moves and audit actions in that window. Server-side search, role and status filters.
+        Two queries whatever the page size.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: search, in: query, description: Name, case-insensitive (max 80)., schema: { type: string, maxLength: 80 } }
+        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, marketing_agent, developer, editor] } }
+        - { name: status, in: query, schema: { type: string, enum: [working, idle] } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: One page of the team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamStatusPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/reports/staff:
+    get:
+      tags: [Reports]
+      summary: One person's month (Admin)
+      description: |
+        `dashboard:global` (Admin). Tasks assigned and completed in the month, of the completed how many
+        were on time (no due date counts as on time) vs late, the average days from creation to completion,
+        open and overdue now, and a weekly series (Monday-start weeks clipped to the month). The month is
+        a calendar month in the CALLER's time zone. Only the current month and the 5 before it are allowed
+        (anything else is 400 `REPORT_MONTH_OUT_OF_RANGE`). Two queries.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: month, in: query, required: true, description: "YYYY-MM.", schema: { type: string, pattern: "^\\d{4}-(0[1-9]|1[0-2])$" } }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffReport" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+
+  /api/v1/reports/client:
+    get:
+      tags: [Reports]
+      summary: One client's month (Admin)
+      description: |
+        `dashboard:global` (Admin, so every client is visible). Events that started in the month (total, by
+        state, by type), stage moves made, client comments received / solved / replied with the average
+        first-reply hours, to-dos done in the month vs open now, and assets added. The month is a calendar
+        month in the CALLER's time zone, limited to the last 6 (else 400 `REPORT_MONTH_OUT_OF_RANGE`).
+        Six queries.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: clientId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: month, in: query, required: true, description: "YYYY-MM.", schema: { type: string, pattern: "^\\d{4}-(0[1-9]|1[0-2])$" } }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientReport" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+
   # ------------------------------------------------- Team members (M4+) --
   /api/v1/team-members:
     get:
@@ -1332,6 +1495,114 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/AssetNotFound" }
         "409": { $ref: "#/components/responses/AssetConflict" }
+  /api/v1/clients/{clientId}/todos:
+    parameters:
+      - { name: clientId, in: path, required: true, description: "A non-UUID is `404 CLIENT_NOT_FOUND`.", schema: { type: string, format: uuid } }
+    get:
+      tags: [Client to-dos]
+      summary: A client's to-dos (paginated)
+      description: |
+        `clients:read`. Admin: any client; SMM / MM: their own clients (another's is
+        `404 CLIENT_NOT_FOUND`). Without `status` the list is the **open** to-dos (not
+        done). Order: open before done, soonest due first (no due date last), newest;
+        with `status=done`, most recently completed first. `overdue=true`: past due and
+        not done. One page query + one count.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, description: "One status, or `all` for every status. Omitted = open (not done).", schema: { type: string, enum: [todo, in_progress, done, all] } }
+        - { name: priority, in: query, schema: { $ref: "#/components/schemas/ClientTodoPriority" } }
+        - { name: overdue, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: dueFrom, in: query, description: "Due on/after this instant (with offset).", schema: { type: string, format: date-time } }
+        - { name: dueTo, in: query, description: "Due before this instant; must be after dueFrom (`400 CLIENT_TODO_RANGE_INVALID`).", schema: { type: string, format: date-time } }
+        - { name: search, in: query, description: Title contains., schema: { type: string, maxLength: 80 } }
+        - { name: limit, in: query, description: Default 20; clamped to 1..100., schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [todos, total, limit, offset]
+                properties:
+                  todos: { type: array, items: { $ref: "#/components/schemas/ClientTodo" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+    post:
+      tags: [Client to-dos]
+      summary: Add a to-do
+      description: |
+        `clients:write`. Starts as `todo`, priority `medium` unless sent. An `eventId`
+        must be one of the client's events (`400 CLIENT_TODO_EVENT_INVALID`). An archived
+        client is `409 CLIENT_ARCHIVED`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ClientTodoFields"
+                - type: object
+                  required: [title]
+      responses:
+        "201": { description: Created., content: { application/json: { schema: { $ref: "#/components/schemas/ClientTodoEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+        "409": { $ref: "#/components/responses/ClientTodoConflict" }
+  /api/v1/client-todos/{id}:
+    parameters:
+      - { name: id, in: path, required: true, description: "A non-UUID is `404 CLIENT_TODO_NOT_FOUND`.", schema: { type: string, format: uuid } }
+    patch:
+      tags: [Client to-dos]
+      summary: Edit a to-do or change its status
+      description: |
+        `clients:write`. Send only the fields to change + `version` (required). `status: done`
+        stamps `completedAt`; reopening clears it. `eventId: null` unlinks. A stale version is
+        `409 CLIENT_TODO_MODIFIED`; an archived client `409 CLIENT_ARCHIVED`. Another manager's
+        to-do is `404`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ClientTodoFields"
+                - type: object
+                  required: [version]
+                  properties:
+                    status: { $ref: "#/components/schemas/ClientTodoStatus" }
+                    version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Saved., content: { application/json: { schema: { $ref: "#/components/schemas/ClientTodoEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientTodoNotFound" }
+        "409": { $ref: "#/components/responses/ClientTodoConflict" }
+    delete:
+      tags: [Client to-dos]
+      summary: Delete a to-do
+      description: "`clients:write`. Hard delete; the audit log keeps a `client_todo.deleted` entry. Optional `?version=` (stale: `409 CLIENT_TODO_MODIFIED`)."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: version, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientTodoNotFound" }
+        "409": { $ref: "#/components/responses/ClientTodoConflict" }
   /api/v1/staff-tasks:
     get:
       tags: [Staff tasks]
@@ -1973,6 +2244,16 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    ClientTodoNotFound:
+      description: "`CLIENT_TODO_NOT_FOUND` -- no such to-do, or one under another manager's client (the same answer)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ClientTodoConflict:
+      description: "`CLIENT_TODO_MODIFIED` (stale `version`: reload) or `CLIENT_ARCHIVED` (the client is archived, so its to-dos are read-only)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     StaffTaskNotFound:
       description: "`STAFF_TASK_NOT_FOUND` -- no such task, or one assigned to someone else (the same answer)."
       content:
@@ -2060,11 +2341,136 @@ components:
         excerpt: { type: string, description: First 160 characters. }
         status: { $ref: "#/components/schemas/CommentStatus" }
         createdAt: { type: string, format: date-time }
-    WorkloadRow:
+    ActivityItem:
       type: object
-      required: [userId, name, role, open, overdue, doneThisWeek]
+      required: [id, at, kind, actor, summary, url]
+      properties:
+        id: { type: string, description: "Source-prefixed id (a:, s:, t:, c:, h:)." }
+        at: { type: string, format: date-time }
+        kind: { type: string, enum: [clients, events, tasks, comments, assets, accounts] }
+        actor:
+          type: object
+          nullable: true
+          description: Null for a client posting a comment, or a removed person.
+          required: [id, name]
+          properties: { id: { type: string, format: uuid }, name: { type: string } }
+        summary: { type: string, description: A plain-English sentence (names and titles only). }
+        url: { type: string, nullable: true, description: The staff-app page to open. }
+    SearchHit:
+      type: object
+      required: [id, title, subtitle, url]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        subtitle: { type: string, nullable: true, description: One line of context (client, date, status). }
+        url: { type: string, description: The staff-app page to open. }
+    TeamStatusRow:
+      type: object
+      required: [userId, name, role, lastSeenAt, openTasks, overdue, activityLast24h, status]
       properties:
         userId: { type: string, format: uuid }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        lastSeenAt: { type: string, format: date-time, nullable: true }
+        openTasks: { type: integer }
+        overdue: { type: integer }
+        activityLast24h: { type: integer, description: Their task updates + stage moves + audit actions in the last 24 hours. }
+        status: { type: string, enum: [working, idle] }
+    TeamStatusPage:
+      type: object
+      required: [members, total, limit, offset, rule]
+      properties:
+        members: { type: array, items: { $ref: "#/components/schemas/TeamStatusRow" } }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+        rule:
+          type: object
+          required: [windowHours, asOf]
+          properties:
+            windowHours: { type: integer, description: "Working = open tasks AND seen or acted within this many hours." }
+            asOf: { type: string, format: date-time }
+    ReportMonth:
+      type: object
+      required: [month, timeZone, from, to]
+      properties:
+        month: { type: string, description: YYYY-MM. }
+        timeZone: { type: string, description: The viewer's zone the month is measured in. }
+        from: { type: string, format: date-time, description: Inclusive. }
+        to: { type: string, format: date-time, description: Exclusive. }
+    StaffReport:
+      type: object
+      required: [month, person, assigned, completed, onTime, late, avgDaysToComplete, openNow, overdueNow, weeks]
+      properties:
+        month: { $ref: "#/components/schemas/ReportMonth" }
+        person:
+          type: object
+          required: [userId, name, role, lastSeenAt]
+          properties:
+            userId: { type: string, format: uuid }
+            name: { type: string }
+            role: { $ref: "#/components/schemas/Role" }
+            lastSeenAt: { type: string, format: date-time, nullable: true }
+        assigned: { type: integer, description: Tasks created for them in the month. }
+        completed: { type: integer, description: Tasks they completed in the month. }
+        onTime: { type: integer, description: Of the completed, done by the due date (or with no due date). }
+        late: { type: integer }
+        avgDaysToComplete: { type: number, nullable: true, description: Mean days from creation to completion (completed in the month); null when none. }
+        openNow: { type: integer }
+        overdueNow: { type: integer }
+        weeks:
+          type: array
+          items:
+            type: object
+            required: [startDay, endDay, assigned, completed]
+            properties:
+              startDay: { type: string, format: date }
+              endDay: { type: string, format: date }
+              assigned: { type: integer }
+              completed: { type: integer }
+    ClientReport:
+      type: object
+      required: [month, client, events, stageMoves, comments, todos, assetsAdded]
+      properties:
+        month: { $ref: "#/components/schemas/ReportMonth" }
+        client:
+          type: object
+          required: [clientId, name, ownerId, ownerName]
+          properties:
+            clientId: { type: string, format: uuid }
+            name: { type: string }
+            ownerId: { type: string, format: uuid }
+            ownerName: { type: string }
+        events:
+          type: object
+          required: [total, byState, byType]
+          properties:
+            total: { type: integer, description: Events that started in the month. }
+            byState: { type: object, additionalProperties: { type: integer }, description: "active, cancelled, postponed." }
+            byType: { type: object, additionalProperties: { type: integer }, description: "shoot, campaign, meeting, content_posting, other." }
+        stageMoves: { type: integer, description: Stage moves made in the month on the client's events. }
+        comments:
+          type: object
+          required: [received, solved, replied, avgFirstReplyHours, byStatus]
+          properties:
+            received: { type: integer }
+            solved: { type: integer }
+            replied: { type: integer }
+            avgFirstReplyHours: { type: number, nullable: true }
+            byStatus: { type: object, additionalProperties: { type: integer } }
+        todos:
+          type: object
+          required: [done, open]
+          properties:
+            done: { type: integer, description: Finished in the month. }
+            open: { type: integer, description: Open now. }
+        assetsAdded: { type: integer }
+    WorkloadRow:
+      type: object
+      required: [userId, name, role, open, overdue, doneThisWeek, lastSeenAt]
+      properties:
+        userId: { type: string, format: uuid }
+        lastSeenAt: { type: string, format: date-time, nullable: true, description: Last time they used HOK; null = never. }
         name: { type: string }
         role: { $ref: "#/components/schemas/Role" }
         open: { type: integer }
@@ -2251,7 +2657,7 @@ components:
     UserAccount:
       type: object
       description: A staff account as the Admin sees it.
-      required: [id, fullName, email, role, timeZone, phone, avatarUrl, active, createdAt, lastLoginAt]
+      required: [id, fullName, email, role, timeZone, phone, avatarUrl, active, createdAt, lastLoginAt, lastSeenAt]
       properties:
         id: { type: string, format: uuid }
         fullName: { type: string }
@@ -2263,6 +2669,7 @@ components:
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
         lastLoginAt: { type: string, format: date-time, nullable: true, description: Last password sign-in; null until the first one. }
+        lastSeenAt: { type: string, format: date-time, nullable: true, description: "Last time they used HOK (any authenticated call; recorded at most every 5 minutes). Null = never. The web shows anything older than 45 days as not seen." }
     ClientStatus:
       type: string
       description: "active <-> paused by a normal edit; archived only through POST /clients/{id}/archive (and back to active through /unarchive)."
@@ -2524,7 +2931,7 @@ components:
       enum: [photo, video, document, design, audio, other]
     Asset:
       type: object
-      required: [id, clientId, clientName, clientStatus, eventId, eventTitle, title, url, type, comment, tags, createdBy, createdByName, version, createdAt, updatedAt]
+      required: [id, clientId, clientName, clientStatus, eventId, eventTitle, title, url, type, comment, preview, tags, createdBy, createdByName, version, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         clientId: { type: string, format: uuid }
@@ -2536,6 +2943,11 @@ components:
         url: { type: string, description: An http(s) link. The platform stores links only, never files. }
         type: { $ref: "#/components/schemas/AssetType" }
         comment: { type: string, nullable: true }
+        preview:
+          type: object
+          nullable: true
+          description: "What the link points to (FR-AST-08), fetched by the API in the background after a save: public http(s) pages only, 4 s / 512 KB limits; YouTube via oEmbed. Null until fetched, or when the page has none."
+          properties: { title: { type: string, nullable: true }, description: { type: string, nullable: true }, imageUrl: { type: string, nullable: true }, siteName: { type: string, nullable: true } }
         tags: { type: array, items: { type: string }, description: Sorted ignoring case. }
         createdBy: { type: string, format: uuid, nullable: true }
         createdByName: { type: string, nullable: true }
@@ -2569,6 +2981,44 @@ components:
         eventId: { type: string, format: uuid, nullable: true }
         tags: { type: array, maxItems: 10, items: { type: string, maxLength: 30 }, description: Replaces the whole set. }
         version: { type: integer, minimum: 1 }
+    ClientTodoStatus:
+      type: string
+      enum: [todo, in_progress, done]
+    ClientTodoPriority:
+      type: string
+      enum: [low, medium, high, urgent]
+    ClientTodoFields:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000, nullable: true }
+        dueAt: { type: string, format: date-time, nullable: true, description: "With an offset or Z." }
+        priority: { $ref: "#/components/schemas/ClientTodoPriority" }
+        eventId: { type: string, format: uuid, nullable: true, description: "One of the client's events." }
+    ClientTodo:
+      type: object
+      required: [id, clientId, eventId, eventTitle, title, description, dueAt, priority, status, completedAt, createdBy, createdByName, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        eventId: { type: string, format: uuid, nullable: true }
+        eventTitle: { type: string, nullable: true }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        dueAt: { type: string, format: date-time, nullable: true, description: UTC instant. }
+        priority: { $ref: "#/components/schemas/ClientTodoPriority" }
+        status: { $ref: "#/components/schemas/ClientTodoStatus" }
+        completedAt: { type: string, format: date-time, nullable: true }
+        createdBy: { type: string, format: uuid, nullable: true }
+        createdByName: { type: string, nullable: true }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ClientTodoEnvelope:
+      type: object
+      required: [todo]
+      properties:
+        todo: { $ref: "#/components/schemas/ClientTodo" }
     StaffTaskStatus:
       type: string
       description: "FR-TSK-03: To Do -> In Progress -> Done, plus Blocked."
@@ -2669,7 +3119,7 @@ components:
     NotificationType:
       type: string
       description: "The trigger (FR-NTF-03). Live today: client_reassigned. The task triggers go live with the M7 wiring, client_comment with M8."
-      enum: [client_reassigned, task_assigned, task_status_changed, task_commented, client_comment]
+      enum: [client_reassigned, task_assigned, task_status_changed, task_commented, client_comment, event_reminder, task_due_reminder]
     Notification:
       type: object
       required: [id, type, title, body, url, data, actorName, readAt, createdAt]
@@ -2693,9 +3143,10 @@ components:
         offset: { type: integer }
     UnreadCount:
       type: object
-      required: [count]
+      required: [count, reminders]
       properties:
         count: { type: integer }
+        reminders: { type: integer, description: Unread reminders among them (event_reminder, task_due_reminder); the bell plays its alert animation while > 0. }
     NotificationPreference:
       type: object
       required: [type, label, description, push, inApp]

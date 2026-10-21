@@ -2,12 +2,17 @@ import { env } from "./config/env";
 import { createApp } from "./app";
 import { db } from "./common/database/drizzle-client";
 import { logger } from "./common/logger/logger";
+import { createReminderRunner } from "./modules/reminders/reminders.module";
 
 const app = createApp();
 
 const server = app.listen(env.API_PORT, () => {
   logger.info(`HOK API listening on http://localhost:${env.API_PORT}`);
 });
+
+// Event and due-date reminders: a check every 10 minutes, inside this process (ARCHITECTURE §9).
+const reminders = createReminderRunner();
+reminders.start();
 
 /**
  * Graceful shutdown: on a container stop/redeploy (SIGTERM) or Ctrl-C
@@ -21,6 +26,7 @@ function shutdown(signal: string): void {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info(`${signal} received -- shutting down gracefully`);
+  reminders.stop();
 
   const forceExit = setTimeout(() => {
     logger.error("Graceful shutdown timed out -- forcing exit");

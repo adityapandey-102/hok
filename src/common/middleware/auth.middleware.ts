@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import type { Profile } from "../../domain";
 import { authProvider } from "../auth/supabase-auth-provider";
 import { fetchActiveProfile } from "../database/profiles";
+import { touchLastSeen } from "../database/last-seen";
 import { asyncHandler } from "../http/async-handler";
 import { UnauthorizedError } from "../errors/app-error";
 import { ERROR_CODES } from "../errors/error-codes";
@@ -38,6 +39,8 @@ export const requireAuth = asyncHandler(async (req: Request, _res: Response, nex
   req.authUserId = verified.userId;
   req.accessToken = token;
   req.profile = await fetchActiveProfile(verified.userId);
+  // "Last seen" for the team pages and reports; throttled, never awaited.
+  touchLastSeen(req.profile.id);
 
   // Make the authenticated identity available to request-scoped consumers
   // that don't have `req` (audit logger, slow-query logger).

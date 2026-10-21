@@ -22,6 +22,8 @@ export const staffTasks = pgTable("staff_tasks", {
   script: text("script"),
   referenceLinks: jsonb("reference_links").notNull().$type<ReferenceLink[]>().default([]),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  /** When the 2-hour due reminder went out; cleared when due_at changes or the task reopens. */
+  dueRemindedAt: timestamp("due_reminded_at", { withTimezone: true }),
   version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

@@ -13,6 +13,7 @@ export interface UserAccountRow {
   active: boolean;
   createdAt: Date;
   lastLoginAt: Date | null;
+  lastSeenAt: Date | null;
 }
 
 export const UserAccountMapper = {
@@ -28,6 +29,7 @@ export const UserAccountMapper = {
       active: row.active,
       createdAt: row.createdAt.toISOString(),
       lastLoginAt: row.lastLoginAt ? row.lastLoginAt.toISOString() : null,
+      lastSeenAt: row.lastSeenAt ? row.lastSeenAt.toISOString() : null,
     };
   },
 };

@@ -253,6 +253,7 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
           userId: profiles.id,
           name: profiles.fullName,
           role: profiles.role,
+          lastSeenAt: profiles.lastSeenAt,
           open,
           overdue,
           doneThisWeek: countWhere(and(eq(staffTasks.status, "done"), gte(staffTasks.completedAt, weekAgo))!),
@@ -265,7 +266,7 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
         .orderBy(desc(overdue), desc(open), asc(profiles.fullName), asc(profiles.id))
         .limit(limit)
         .offset(offset);
-      return rows satisfies WorkloadRow[];
+      return rows.map((r): WorkloadRow => ({ ...r, lastSeenAt: r.lastSeenAt?.toISOString() ?? null }));
     });
   }
 

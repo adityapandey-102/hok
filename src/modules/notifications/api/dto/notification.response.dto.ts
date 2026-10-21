@@ -20,6 +20,8 @@ export interface NotificationListResponseDto {
 
 export interface UnreadCountResponseDto {
   count: number;
+  /** Unread reminders among them: the bell plays its alert animation while > 0. */
+  reminders: number;
 }
 
 export interface NotificationPreferenceDto {

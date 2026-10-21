@@ -26,6 +26,7 @@ const USER_ROW_SELECT = {
   active: profiles.active,
   createdAt: profiles.createdAt,
   lastLoginAt: profiles.lastLoginAt,
+  lastSeenAt: profiles.lastSeenAt,
 };
 
 /**

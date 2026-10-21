@@ -6,6 +6,7 @@ import { validateBody, validateQuery } from "../../../common/http/validate.middl
 import { uuidParam } from "../../../common/http/uuid-param";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { AssetsService, type AssetsCaller } from "../application/assets.service";
+import { HttpLinkPreviewer, NoLinkPreviewer } from "../infrastructure/http-link-previewer";
 import { DrizzleAssetsRepository } from "../infrastructure/drizzle-assets.repository";
 import {
   assetQueryDtoSchema,
@@ -20,7 +21,9 @@ import {
 } from "./dto/asset.dto";
 
 /** Composition root for the Assets module. */
-const service = new AssetsService(new DrizzleAssetsRepository());
+// Link previews fetch outside pages: never in tests, and switchable off with LINK_PREVIEWS=off.
+const previewer = process.env.NODE_ENV === "test" || process.env.LINK_PREVIEWS === "off" ? new NoLinkPreviewer() : new HttpLinkPreviewer();
+const service = new AssetsService(new DrizzleAssetsRepository(), undefined, previewer);
 
 export const assetsRouter = Router();
 

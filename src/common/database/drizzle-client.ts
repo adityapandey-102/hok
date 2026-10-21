@@ -11,6 +11,7 @@ import * as stageTemplatesSchema from "../../modules/stage-templates/infrastruct
 import * as eventsSchema from "../../modules/events/infrastructure/events.schema";
 import * as personalEventsSchema from "../../modules/personal-events/infrastructure/personal-events.schema";
 import * as assetsSchema from "../../modules/assets/infrastructure/assets.schema";
+import * as clientTodosSchema from "../../modules/client-todos/infrastructure/client-todos.schema";
 import * as staffTasksSchema from "../../modules/staff-tasks/infrastructure/staff-tasks.schema";
 import * as notificationsSchema from "../../modules/notifications/infrastructure/notifications.schema";
 import * as portalSchema from "../../modules/portal/infrastructure/portal.schema";
@@ -40,6 +41,7 @@ const schema = {
   ...eventsSchema,
   ...personalEventsSchema,
   ...assetsSchema,
+  ...clientTodosSchema,
   ...staffTasksSchema,
   ...notificationsSchema,
   ...portalSchema,

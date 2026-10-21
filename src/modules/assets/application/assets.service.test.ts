@@ -27,6 +27,7 @@ function asset(o: Partial<AssetEntity> = {}): AssetEntity {
     url: "https://x.test/a",
     type: "video",
     comment: null,
+    preview: null,
     tags: [],
     createdBy: "rohan",
     createdByName: "Rohan",

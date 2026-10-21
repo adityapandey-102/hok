@@ -103,6 +103,8 @@ export interface WorkloadRow {
   overdue: number;
   /** Closed in the last 7 days. */
   doneThisWeek: number;
+  /** Last time they used HOK (FR-SYS-03); null = never. */
+  lastSeenAt: string | null;
 }
 
 /** FR-DSH-02/03: the viewer's own staff tasks. */

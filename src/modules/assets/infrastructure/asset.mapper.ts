@@ -13,6 +13,10 @@ export interface AssetRow {
   url: string;
   type: AssetType;
   comment: string | null;
+  previewTitle: string | null;
+  previewDescription: string | null;
+  previewImageUrl: string | null;
+  previewSiteName: string | null;
   createdBy: string | null;
   createdByName: string | null;
   version: number;
@@ -23,8 +27,11 @@ export interface AssetRow {
 export const AssetMapper = {
   /** Row + its tag names -> domain entity. Tags sorted ignoring case. */
   toEntity(row: AssetRow, tagNames: string[]): AssetEntity {
+    const { previewTitle, previewDescription, previewImageUrl, previewSiteName, ...rest } = row;
+    const hasPreview = Boolean(previewTitle || previewImageUrl || previewDescription);
     return {
-      ...row,
+      ...rest,
+      preview: hasPreview ? { title: previewTitle, description: previewDescription, imageUrl: previewImageUrl, siteName: previewSiteName } : null,
       tags: [...tagNames].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

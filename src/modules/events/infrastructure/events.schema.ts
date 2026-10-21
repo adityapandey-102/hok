@@ -23,6 +23,8 @@ export const events = pgTable("events", {
   currentStageId: uuid("current_stage_id"),
   stageCount: integer("stage_count").notNull(),
   state: text("state").notNull().$type<EventState>().default("active"),
+  /** When the 2-hour start reminder went out; cleared when starts_at changes (Phase 2 reminders). */
+  remindedAt: timestamp("reminded_at", { withTimezone: true }),
   version: integer("version").notNull().default(1),
   createdBy: uuid("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

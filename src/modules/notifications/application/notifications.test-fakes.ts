@@ -1,4 +1,4 @@
-import type { NotificationEntity, NotificationPreferences, PushMessage, PushSubscriptionEntity } from "../domain/notification.entity";
+import { REMINDER_TYPES, type NotificationEntity, type NotificationPreferences, type PushMessage, type PushSubscriptionEntity } from "../domain/notification.entity";
 import type {
   NewNotificationRecord,
   NewPushSubscription,
@@ -25,7 +25,8 @@ export class FakeNotificationsRepository implements NotificationsRepositoryPort 
     return Promise.resolve(this.mine(userId, unreadOnly).length);
   }
   countUnread(userId: string) {
-    return this.countForUser(userId, true);
+    const unread = this.rows.filter((r) => r.userId === userId && r.readAt === null);
+    return Promise.resolve({ count: unread.length, reminders: unread.filter((r) => (REMINDER_TYPES as readonly string[]).includes(r.type)).length });
   }
   markRead(userId: string, id: string) {
     const row = this.rows.find((r) => r.id === id && r.userId === userId);

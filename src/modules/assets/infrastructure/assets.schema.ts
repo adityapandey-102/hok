@@ -14,6 +14,12 @@ export const assets = pgTable("assets", {
   url: text("url").notNull(),
   type: text("type").notNull().$type<AssetType>(),
   comment: text("comment"),
+  // Link preview (FR-AST-08), fetched in the background after a save; all optional.
+  previewTitle: text("preview_title"),
+  previewDescription: text("preview_description"),
+  previewImageUrl: text("preview_image_url"),
+  previewSiteName: text("preview_site_name"),
+  previewFetchedAt: timestamp("preview_fetched_at", { withTimezone: true }),
   version: integer("version").notNull().default(1),
   createdBy: uuid("created_by"),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),

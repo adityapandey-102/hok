@@ -1,3 +1,4 @@
+import type { LinkPreview } from "./link-preview.rules";
 /**
  * Pure domain shapes for the asset link library (REQUIREMENTS FR-AST-01..07).
  * The platform stores LINKS only -- never files. Instants are ISO strings (UTC).
@@ -27,6 +28,8 @@ export interface AssetEntity {
   /** Tag names, sorted case-insensitively. */
   tags: string[];
   createdBy: string | null;
+  /** What the link points to (title, image...), once fetched; null until then or when the page has none (FR-AST-08). */
+  preview: LinkPreview | null;
   createdByName: string | null;
   /** Optimistic-lock token: send it back with a write; a stale one is 409 ASSET_MODIFIED. */
   version: number;

@@ -38,7 +38,7 @@ describe("NotificationsService", () => {
     expect(all.notifications.every((n) => n.url?.startsWith("/app/clients/"))).toBe(true);
     await service.markRead("sara", all.notifications[0]!.id);
     expect((await service.list("sara", { unread: true, limit: 20, offset: 0 })).total).toBe(1);
-    expect(await service.unreadCount("sara")).toEqual({ count: 1 });
+    expect(await service.unreadCount("sara")).toEqual({ count: 1, reminders: 0 });
   });
 
   it("someone else's notification is a 404", async () => {
@@ -49,7 +49,7 @@ describe("NotificationsService", () => {
   it("marks all read and reports how many changed", async () => {
     expect(await service.markAllRead("sara")).toEqual({ updated: 2 });
     expect(await service.markAllRead("sara")).toEqual({ updated: 0 });
-    expect(await service.unreadCount("rohan")).toEqual({ count: 1 });
+    expect(await service.unreadCount("rohan")).toEqual({ count: 1, reminders: 0 });
   });
 
   describe("preferences", () => {

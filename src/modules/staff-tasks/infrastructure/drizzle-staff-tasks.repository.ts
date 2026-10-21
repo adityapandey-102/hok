@@ -310,6 +310,9 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
         if (dueAt !== undefined) set.dueAt = dueAt ? new Date(dueAt) : null;
         if (changes.assigneeId !== undefined) set.assigneeId = changes.assigneeId;
         if (changes.status !== undefined) set.status = changes.status;
+        // The 2-hour due reminder starts over for a new due time, a new assignee or a reopened task.
+        const reopened = changes.status !== undefined && changes.status !== "done" && current.status === "done";
+        if (dueAt !== undefined || changes.assigneeId !== undefined || reopened) set.dueRemindedAt = null;
         if (Object.keys(set).length === 0 && !changes.entry) return; // nothing to write
 
         await tx

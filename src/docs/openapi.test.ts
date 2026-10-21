@@ -16,11 +16,16 @@ import { assetsRouter } from "../modules/assets/api/assets.routes";
 import { ASSET_TYPES } from "../modules/assets/domain/asset.entity";
 import { staffTasksRouter } from "../modules/staff-tasks/api/staff-tasks.routes";
 import { STAFF_TASK_PRIORITIES, STAFF_TASK_STATUSES, STAFF_TASK_UPDATE_KINDS } from "../modules/staff-tasks/domain/staff-task.entity";
+import { clientTodosByClientRouter, clientTodosRouter } from "../modules/client-todos/api/client-todos.routes";
+import { CLIENT_TODO_PRIORITIES, CLIENT_TODO_STATUSES } from "../modules/client-todos/domain/client-todo.entity";
 import { notificationsRouter } from "../modules/notifications/api/notifications.routes";
 import { portalLinksRouter } from "../modules/portal/api/portal-links.routes";
 import { portalPublicRouter } from "../modules/portal/api/portal-public.routes";
 import { clientCommentsRouter, portalCommentsRouter } from "../modules/client-comments/api/client-comments.routes";
 import { dashboardRouter } from "../modules/dashboard/api/dashboard.routes";
+import { activityRouter } from "../modules/activity/api/activity.routes";
+import { searchRouter } from "../modules/search/api/search.routes";
+import { reportsRouter } from "../modules/reports/api/reports.routes";
 import { COMMENT_STATUSES } from "../modules/client-comments/domain/client-comment.entity";
 import { NOTIFICATION_TYPES } from "../modules/notifications/domain/notification.entity";
 
@@ -39,6 +44,7 @@ const schemas = doc.components.schemas;
 const MOUNTED: [string, Router][] = [
   ["/api/v1/auth", authRouter],
   ["/api/v1/users", usersRouter],
+  ["/api/v1/clients/:clientId/todos", clientTodosByClientRouter],
   ["/api/v1/clients", clientsRouter],
   ["/api/v1/stage-templates", stageTemplatesRouter],
   ["/api/v1/events", eventsRouter],
@@ -47,10 +53,14 @@ const MOUNTED: [string, Router][] = [
   ["/api/v1/team-members", teamMembersRouter],
   ["/api/v1/assets", assetsRouter],
   ["/api/v1/staff-tasks", staffTasksRouter],
+  ["/api/v1/client-todos", clientTodosRouter],
   ["/api/v1/notifications", notificationsRouter],
   ["/api/v1/portal-links", portalLinksRouter],
   ["/api/v1/client-comments", clientCommentsRouter],
   ["/api/v1/dashboard", dashboardRouter],
+  ["/api/v1/activity", activityRouter],
+  ["/api/v1/search", searchRouter],
+  ["/api/v1/reports", reportsRouter],
   ["/api/v1/portal/{token}", portalCommentsRouter],
   ["/api/v1/portal/{token}", portalPublicRouter],
 ];
@@ -105,6 +115,13 @@ describe("openapi.yaml stays in sync with the Staff tasks module", () => {
     expect(schemas.StaffTaskStatus?.enum).toEqual([...STAFF_TASK_STATUSES]);
     expect(schemas.StaffTaskPriority?.enum).toEqual([...STAFF_TASK_PRIORITIES]);
     expect(schemas.StaffTaskUpdateKind?.enum).toEqual([...STAFF_TASK_UPDATE_KINDS]);
+  });
+});
+
+describe("openapi.yaml stays in sync with the Client to-dos module", () => {
+  it("documents exactly the to-do statuses and priorities, in order", () => {
+    expect(schemas.ClientTodoStatus?.enum).toEqual([...CLIENT_TODO_STATUSES]);
+    expect(schemas.ClientTodoPriority?.enum).toEqual([...CLIENT_TODO_PRIORITIES]);
   });
 });
 

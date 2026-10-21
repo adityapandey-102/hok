@@ -200,7 +200,9 @@ src/
     clients/               client profiles, owner row scope, archive, reassign; owns the `clients` schema
     stage-templates/       Admin-made templates (name + ordered stages); owns `stage_templates`, `stage_template_stages`
     assets/                asset link library: links + tags + search; owns `assets`, `tags`, `asset_tags`
+    client-todos/          client to-do lists (Phase 2): a manager's internal to-dos per client; owns `client_todos`
     events/                client events: copied stages, stage moves + history, state, range query; owns `events`, `event_stages`, `event_stage_history`
+    reports/               Admin reports (team status, staff month, client month): read-only aggregates, owns no table
     staff-tasks/           Admin-assigned staff tasks: assignee row scope, status + timeline, editor brief, reopen; owns `staff_tasks`, `staff_task_updates`
   docs/openapi.ts          loads openapi.yaml once for /api-docs (+ drift test)
   db/seed.ts               local dev seed
@@ -294,6 +296,7 @@ message.** Codes in use today:
 | Stage templates | `STAGE_TEMPLATE_NOT_FOUND` (404), `STAGE_TEMPLATE_STAGES_INVALID` (400), `STAGE_TEMPLATE_NAME_TAKEN`, `STAGE_TEMPLATE_MODIFIED` (409) |
 | Events | `EVENT_NOT_FOUND` (404, also for another manager's), `EVENT_TIMES_INVALID`, `EVENT_TEMPLATE_INVALID`, `EVENT_TEAM_INVALID`, `EVENT_STAGE_INVALID`, `EVENT_RANGE_INVALID` (400), `EVENT_MODIFIED`, `EVENT_STAGE_UNCHANGED`, `EVENT_NOT_ACTIVE` (409); `CLIENT_ARCHIVED` (409) for any write under an archived client |
 | Assets | `ASSET_NOT_FOUND` (404, also for another manager's), `ASSET_EVENT_INVALID`, `ASSET_RANGE_INVALID` (400), `ASSET_MODIFIED` (409); `CLIENT_ARCHIVED` (409) for any write under an archived client |
+| Client to-dos | `CLIENT_TODO_NOT_FOUND` (404, also for another manager's), `CLIENT_TODO_EVENT_INVALID`, `CLIENT_TODO_RANGE_INVALID` (400), `CLIENT_TODO_MODIFIED` (409); `CLIENT_NOT_FOUND` (404) on the list/create routes for a client you cannot see; `CLIENT_ARCHIVED` (409) for any write under an archived client |
 | Clients | `CLIENT_NOT_FOUND` (404, also for another manager's client), `CLIENT_OWNER_INVALID`, `CLIENT_CONTRACT_DATES_INVALID` (400), `CLIENT_OWNER_FORBIDDEN` (403), `CLIENT_MODIFIED`, `CLIENT_ARCHIVED`, `CLIENT_NOT_ARCHIVED` (409) |
 
 Adding an error means adding its code to the registry first, then
@@ -468,6 +471,15 @@ REQUIREMENTS §5.9 (FR-TSK-01..10; reminders FR-TSK-11 are Phase 2). Migration `
 - **Notifications (M9).** `StaffTasksService` calls a `StaffTaskNotifier` (`application/ports/staff-task-notifier.port.ts`) after commit: `taskAssigned` (create, reassign), `statusChanged` (status, reopen) and `commentAdded`, each with the actor. `staff-tasks.routes.ts` wires the real one: it notifies the other side (the assignee when the Admin acts, the assigner when the assignee acts).
 - Audit: `staff_task.created`, `staff_task.updated` (field names only), `staff_task.reassigned` (`{ from, to }`), `staff_task.deleted`. Status changes and comments live in the timeline instead.
 
+### Client to-dos (Phase 2)
+REQUIREMENTS §5.4 (FR-CTSK-01..04). Migration `20261017000003_client_todos.sql` (table `client_todos`).
+
+- **What**: a manager's internal to-dos for one client, optionally about one of the client's events. Separate from staff tasks (which the Admin assigns to people). **Never on the portal**: no portal route, nothing in the portal presenters.
+- **RBAC**: reuses `clients:read` (list) and `clients:write` (create / edit / delete). Row scope is the client's owner: the Admin sees all, a Social Media / Marketing Manager only their own clients' (the list/create routes answer `404 CLIENT_NOT_FOUND` for a client they cannot see, the `/client-todos/:id` routes `404 CLIENT_TODO_NOT_FOUND`; visibility is checked before the version), task-only staff `403`.
+- **Status** `todo` / `in_progress` / `done`; `done` stamps `completed_at` and reopening clears it (the DB CHECK ties them together). Priority `low`/`medium`/`high`/`urgent`. `dueAt` is an instant with an offset.
+- **Writes**: `version` required on PATCH (`409 CLIENT_TODO_MODIFIED`), locked FOR UPDATE with the guard-callback pattern; DELETE is a **hard delete** with an optional `?version=` (the audit entry `client_todo.deleted` is the trace). An archived client's to-dos are readable but read-only (`409 CLIENT_ARCHIVED`). `eventId` must be one of the same client's events (`400 CLIENT_TODO_EVENT_INVALID`). Audit: `client_todo.created/updated/deleted`, ids and field names only.
+- **List**: `GET /clients/:clientId/todos`, page cap 100 with `total`. No `status` = the open list (not done); `status=all` = every status. Filters `status`, `priority`, `overdue=true`, `dueFrom`/`dueTo` (inclusive/exclusive instants), `search` (title, escaped ILIKE). Order: open before done, soonest due first (no due date last), newest; `status=done` is most recently completed first. Queries: client lookup + one page query (joined to client, event title, creator) + one `count(*)`.
+
 ### Calendars and personal events (M5)
 
 REQUIREMENTS §5.6. Migration `20261014300001_personal_events.sql`. `personal-events` owns a manager's own entries (`personal_events:manage`, owner-only; anyone else's is 404). `calendar` owns no table: `GET /calendar?from&to` (≤ 92 days) merges client events and personal entries overlapping the range, in **two** parallel queries (one per kind, each capped at 500, `truncated: true` if hit). A manager gets their clients' events plus their own entries; the Admin gets every event (or one `ownerId`'s). Times are UTC; the web shows them in the viewer's zone.
@@ -491,6 +503,35 @@ REQUIREMENTS §5.11. The module owns no table.
 - Every list is a **preview of at most 5** with a total, so the web links "View all N" to the full, paged page.
 - `GET /api/v1/dashboard/team` (`dashboard:global`): the whole team's workload, busiest first; name `search`, `role` (never admin), paged (≤ 50). Two queries.
 - Figures are `count(*) filter (…)` aggregates; the query count is **fixed per role and view** (task-only staff 3, managers 7, the Admin's overview 5 and "My clients" 7, plus the auth lookup), whatever the data size (query-budget test). "Today" and "this week" are the caller's own time zone (`src/domain/zoned-day.ts`, DST-safe).
+
+### Activity log (Phase 2)
+
+FR-SYS-02 / FR-RPT-05. The module owns no table.
+- `GET /api/v1/activity` (`dashboard:global`, Admin only; others 403): who did what, newest first, as plain-English sentences. Query: `from`/`to` instants (default the last 7 days; `from` after `to` or a span over 31 days is a 400 `ACTIVITY_RANGE_INVALID`), `kind` (all | clients | events | tasks | comments | assets | accounts), `actorId`, `limit` (default and max 50), `offset`. Response `{ items: [{ id, at, kind, actor, summary, url }], total, limit, offset }`.
+- Sources, as **one UNION ALL query**, each bounded by the range and filtered by kind and person *before* the union, ordered by `at desc, id`, limited, with names joined by primary key only for the page's rows: `audit_log` (action prefixes map to kinds), `event_stage_history` (moves, not the initial stage), `staff_task_updates` (status, comment, reassigned, reopened), `client_comments` (actor null) and `client_comment_history`. Audit twins of those typed histories are skipped, so nothing shows twice. Plus one count over the same union: **two queries** whatever the page size (query-budget test). Indexed by `created_at desc` on each source (migration 20261021000001).
+- Sentences are built in the domain layer from structured fields (`in_progress` reads "In progress"). Comment bodies, tokens and contact details are never selected.
+
+### Reports (Phase 2)
+
+FR-RPT-01..04. The module owns no table; every endpoint is `dashboard:global` (Admin only, others 403).
+- `GET /api/v1/reports/team-status`: active non-admin staff, paged (default 20, max 50), busiest first. Filters `search` (name), `role`, `status=working|idle`, all in SQL. **Working** = has open tasks AND (was seen OR acted in the last 24 h); everyone else idle. `activityLast24h` = their task updates + stage moves + audit actions in the window. The response carries the rule (`rule.windowHours`, `rule.asOf`) so the screen can explain it. **Two queries** (rows, total) whatever the page size: each activity source is aggregated once over the last 24 h (`created_at` / actor indexes), never a subquery per row.
+- `GET /api/v1/reports/staff?userId&month=YYYY-MM`: assigned and completed in the month, of the completed on time (no due date counts as on time) vs late, average days to complete, open and overdue now, a weekly series (Monday-start weeks clipped to the month), plus the person's name, role and last seen. **Two queries** (person, then one aggregate with a `count(*) filter` pair per week).
+- `GET /api/v1/reports/client?clientId&month=YYYY-MM`: events that started in the month (total, by state, by type), stage moves made, comments received / solved / replied with the average first-reply hours, to-dos finished in the month vs open now, assets added, plus the client and its owner. **Six queries** (client, then five aggregates in parallel). Admin only, so every client is visible.
+- **Months** are calendar months in the *viewer's* time zone (`src/domain/zoned-day.ts`). Only the current month and the 5 before it are allowed; a future, older or malformed-but-shaped month is a 400 `REPORT_MONTH_OUT_OF_RANGE` (a month that isn't `YYYY-MM` is the usual 400 `VALIDATION_ERROR`). An unknown person or client is a 404.
+- Indexes used: `staff_tasks (assignee_id, created_at)` and `(assignee_id, completed_at) where completed_at is not null`, `events (client_id, starts_at)`, `event_stage_history (created_at desc)`, `client_comments (client_id, created_at desc)`, `client_todos (client_id, …)`, `assets (client_id, created_at desc)`, `staff_task_updates (author_id, created_at desc)`, `audit_log (actor_id, created_at desc)`.
+
+### Reminders and last seen (Phase 2)
+
+- **Reminders** (`src/modules/reminders`): one per active event (to the client's owner) and per open task with a due time (to the assignee), about **2 hours** ahead. An in-process runner (started in `src/index.ts`, never in tests) checks **every 10 minutes**: one transaction claims due rows through partial "still waiting" indexes with `FOR UPDATE SKIP LOCKED`, stamps `events.reminded_at` / `staff_tasks.due_reminded_at` and writes the bell rows; pushes go out after the commit. Two API instances never send the same reminder; moments already past are skipped; a new start/due time, a reassignment or a reopen clears the stamp. Types `event_reminder`, `task_due_reminder` (mutable in preferences); `GET /notifications/unread-count` also returns `reminders` (the bell's alert animation).
+- **Last seen**: `requireAuth` writes `profiles.last_seen_at` at most every 5 minutes per person (in-memory note + the same condition in SQL), fire-and-forget. Exposed on users and the team workload; the web reads anything older than 45 days as "not seen".
+
+### Global search (Phase 2)
+
+`GET /api/v1/search?q=` (2-80 chars), every role: up to 5 hits each for clients, events, staff tasks, client to-dos and asset links, scoped exactly like their pages (a group the role can't see is `null`). One trigram-indexed, escaped `ILIKE` query per group, in parallel: 5 queries + auth whatever matches (query-budget test).
+
+### Link previews (Phase 2)
+
+After an asset is saved (or its URL changes), `HttpLinkPreviewer` fetches the page in the background and stores `preview_*` (title, description, image URL, site). Guarded against SSRF: http(s) on standard ports only, every DNS answer checked at connect time (private, loopback, link-local/metadata, CGNAT, multicast, reserved and IPv4-mapped forms refused; literal IPs checked too), redirects re-checked (max 3), 4 s and 512 KB limits, HTML only. YouTube uses its oEmbed JSON. Off in tests and with `LINK_PREVIEWS=off`.
 
 ### Dependency injection
 
@@ -798,6 +839,10 @@ All paths are under `/api/v1`.
 | POST `/assets` | bearer | `assets:write` (own client; else 404) | assets.routes.ts | `create` | `findClient`, `findEvent`, `create` (client locked FOR SHARE) |
 | PATCH `/assets/:id` | bearer | `assets:write` (own; else 404) | assets.routes.ts | `update` | `findEvent`, `update` (locked, guarded) |
 | DELETE `/assets/:id` | bearer | `assets:write` (own; else 404) | assets.routes.ts | `remove` | `update` (locked, guarded; soft delete) |
+| GET `/clients/:clientId/todos` | bearer | `clients:read` (own clients for SMM/MM; else 404) | client-todos.routes.ts | `list` | `findClient`, `findMany`, `countMany` (status, priority, overdue, dueFrom/dueTo, search; max 100) |
+| POST `/clients/:clientId/todos` | bearer | `clients:write` (own client; else 404) | client-todos.routes.ts | `create` | `findClient`, `findEvent`, `create` (client locked FOR SHARE), `findById` |
+| PATCH `/client-todos/:id` | bearer | `clients:write` (own; else 404) | client-todos.routes.ts | `update` | `findEvent`, `update` (locked, guarded) |
+| DELETE `/client-todos/:id` | bearer | `clients:write` (own; else 404) | client-todos.routes.ts | `remove` | `update` (locked, guarded; hard delete) |
 | GET `/staff-tasks` | bearer | `staff_tasks:read` (own for non-admins) | staff-tasks.routes.ts | `list` | `findMany`, `countMany` (status, open, priority, overdue, dueFrom/dueTo, search; Admin: assigneeId, role, clientId; max 100) |
 | GET `/staff-tasks/:id` | bearer | `staff_tasks:read` (own; else 404) | staff-tasks.routes.ts | `get` | `findDetail` (+ timeline, event title) |
 | POST `/staff-tasks` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `create` | `findAssigneeCandidate`, `findClient`, `findEvent`, `create` (+ "created" entry) |
@@ -805,6 +850,9 @@ All paths are under `/api/v1`.
 | DELETE `/staff-tasks/:id` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `delete` | `delete` (locked) |
 | POST `/staff-tasks/:id/status` | bearer | `staff_tasks:update` (own; else 404) | staff-tasks.routes.ts | `changeStatus` | `update` (locked, guarded; + "status" entry) |
 | POST `/staff-tasks/:id/reopen` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `reopen` | `update` (locked, guarded; + "reopened" entry) |
+| GET `/reports/team-status` | bearer | `dashboard:global` (Admin) | reports.routes.ts | `teamStatusPage` | `teamStatus`, `teamStatusCount` (search, role, status, paged max 50) |
+| GET `/reports/staff` | bearer | `dashboard:global` (Admin) | reports.routes.ts | `staffReport` | `person`, `staffFigures` (month in the viewer's zone, last 6 only) |
+| GET `/reports/client` | bearer | `dashboard:global` (Admin) | reports.routes.ts | `clientReport` | `client`, `clientFigures` (month in the viewer's zone, last 6 only) |
 | POST `/staff-tasks/:id/comments` | bearer | `staff_tasks:update` (own; else 404) | staff-tasks.routes.ts | `comment` | `addComment` |
 
 Not in the API (outside `/api/v1`): `GET /health`, `GET /health/ready`, `GET /api-docs`.

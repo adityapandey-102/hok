@@ -30,6 +30,7 @@ function entity(overrides: Partial<UserAccountEntity> = {}): UserAccountEntity {
     active: true,
     createdAt: "2026-01-01T00:00:00.000Z",
     lastLoginAt: null,
+    lastSeenAt: null,
     ...overrides,
   };
 }

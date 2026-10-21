@@ -62,3 +62,37 @@ export function clientCommentPayload(input: { clientId: string; clientName: stri
     data: { clientId: input.clientId, commentId: input.commentId },
   };
 }
+
+/** "45 min", "1 h 50 min", "2 h": how long until a reminder's moment, as people say it. */
+export function timeUntilWords(ms: number): string {
+  const mins = Math.max(1, Math.round(ms / 60_000));
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+/** "10:30 am" in a zone. */
+function clockIn(at: Date, zone: string): string {
+  return new Intl.DateTimeFormat("en-GB", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: zone }).format(at);
+}
+
+/** event_reminder -> the client's owner, about 2 hours before the event starts (FR-EVT-10). */
+export function eventReminderPayload(input: { eventId: string; title: string; clientName: string; startsAt: Date; timeZone: string; now: Date }): NotificationPayload {
+  return {
+    title: `Starts in ${timeUntilWords(input.startsAt.getTime() - input.now.getTime())}: ${input.title}`,
+    body: `${input.clientName} · ${clockIn(input.startsAt, input.timeZone)} (${input.timeZone.replace(/_/g, " ")})`,
+    url: `/app/events/${input.eventId}`,
+    data: { eventId: input.eventId },
+  };
+}
+
+/** task_due_reminder -> the assignee, about 2 hours before the task is due (FR-TSK-11). */
+export function taskDueReminderPayload(input: { taskId: string; title: string; dueAt: Date; timeZone: string; now: Date }): NotificationPayload {
+  return {
+    title: `Due in ${timeUntilWords(input.dueAt.getTime() - input.now.getTime())}: ${input.title}`,
+    body: `Due at ${clockIn(input.dueAt, input.timeZone)}.`,
+    url: `/app/tasks/${input.taskId}`,
+    data: { taskId: input.taskId },
+  };
+}

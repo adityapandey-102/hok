@@ -8,6 +8,7 @@ import { eventStages, events } from "../../src/modules/events/infrastructure/eve
 import { personalEvents } from "../../src/modules/personal-events/infrastructure/personal-events.schema";
 import { assetTags, assets, tags } from "../../src/modules/assets/infrastructure/assets.schema";
 import { clientComments } from "../../src/modules/client-comments/infrastructure/client-comments.schema";
+import { clientTodos } from "../../src/modules/client-todos/infrastructure/client-todos.schema";
 import { staffTasks } from "../../src/modules/staff-tasks/infrastructure/staff-tasks.schema";
 import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, deleteStaffTasksFor, type FixtureUser } from "./helpers";
 
@@ -39,6 +40,10 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
   beforeAll(async () => {
     admin = await createFixtureUser("admin", "Query Budget Admin");
     auth = await bearerFor(admin);
+    // Warm-up: the first request records "last seen" (one throttled write in the
+    // background); let it land now so it isn't counted against any list below.
+    await request(app).get("/api/v1/auth/me").set("Authorization", auth);
+    await new Promise((resolve) => setTimeout(resolve, 300));
     // Enough clients that a page of 50 really returns more rows than a page of 5.
     const qbClients = await db
       .insert(clients)
@@ -63,6 +68,18 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     await db.insert(assetTags).values(qbAssets.flatMap((a) => qbTags.map((t) => ({ assetId: a.id, tagId: t.id }))));
     // ...and 12 client comments (half linked to an event) spread over the clients, for the comment inbox.
     firstClientId = qbClients[0]!.id;
+    // ...and 12 client to-dos (a third done, a third overdue) under the first client, for the to-do lists.
+    await db.insert(clientTodos).values(
+      Array.from({ length: 12 }, (_, i): typeof clientTodos.$inferInsert => ({
+        clientId: qbClients[0]!.id,
+        title: `QB todo ${i}`,
+        priority: i % 2 === 0 ? "high" : "low",
+        status: i % 3 === 0 ? "done" : "todo",
+        completedAt: i % 3 === 0 ? new Date() : null,
+        dueAt: new Date(Date.UTC(i % 2 === 0 ? 2020 : 2031, 0, 1 + i)),
+        createdBy: admin.id,
+      })),
+    );
     await db.insert(clientComments).values(Array.from({ length: 12 }, (_, i): typeof clientComments.$inferInsert => ({ clientId: qbClients[i % qbClients.length]!.id, body: `QB comment ${i}`, status: i % 3 === 0 ? "in_progress" : "received" })));
     // ...and 12 staff tasks assigned to the admin fixture (half linked to a client, half overdue), for the task lists.
     const probe = await db.execute(sql`select to_regclass('public.staff_tasks') is not null as ok`);
@@ -135,10 +152,18 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     ["client comments inbox", (l) => `/api/v1/client-comments?limit=${l}`],
     ["client comments by client + status", (l) => `/api/v1/client-comments?clientId=${firstClientId}&status=received&limit=${l}`],
     ["client comments search", (l) => `/api/v1/client-comments?search=QB&limit=${l}`],
+    ["client to-dos (open)", (l) => `/api/v1/clients/${firstClientId}/todos?limit=${l}`],
+    ["client to-dos done", (l) => `/api/v1/clients/${firstClientId}/todos?status=done&limit=${l}`],
+    ["client to-dos overdue + priority + search", (l) => `/api/v1/clients/${firstClientId}/todos?overdue=true&priority=high&search=QB&limit=${l}`],
+    ["client to-dos due range", (l) => `/api/v1/clients/${firstClientId}/todos?dueFrom=2000-01-01T00:00:00Z&dueTo=2100-01-01T00:00:00Z&limit=${l}`],
     ["notifications", (l) => `/api/v1/notifications?limit=${l}`],
     ["notifications unread", (l) => `/api/v1/notifications?unread=true&limit=${l}`],
+    ["activity log", (l) => `/api/v1/activity?limit=${l}`],
+    ["activity log by kind + person + range", (l) => `/api/v1/activity?kind=tasks&actorId=${admin.id}&from=2020-01-01T00:00:00Z&to=2020-01-20T00:00:00Z&limit=${l}`],
     ["dashboard team workload", (l) => `/api/v1/dashboard/team?limit=${l}`],
     ["dashboard team workload search + role", (l) => `/api/v1/dashboard/team?search=a&role=editor&limit=${l}`],
+    ["reports team status", (l) => `/api/v1/reports/team-status?limit=${l}`],
+    ["reports team status search + role + status", (l) => `/api/v1/reports/team-status?search=a&role=editor&status=idle&limit=${l}`],
     ["staff tasks", (l) => `/api/v1/staff-tasks?limit=${l}`],
     ["staff tasks by assignee + search + priority", (l) => `/api/v1/staff-tasks?assigneeId=${admin.id}&search=QB&priority=high&limit=${l}`],
     ["staff tasks by role + overdue", (l) => `/api/v1/staff-tasks?role=admin&overdue=true&limit=${l}`],
@@ -173,6 +198,24 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     if (!staffTasksReady) ctx.skip();
     expect(await queriesFor("/api/v1/dashboard")).toBe(6);
     expect(await queriesFor("/api/v1/dashboard?view=mine")).toBe(8);
+  });
+
+  // Phase 2: global search is one capped query per group (5 groups for the Admin) + the auth lookup,
+  // however many rows match (the fixture Admin owns 12 "QB" clients, events, comments and tasks).
+  it("global search: a fixed number of queries, whatever matches", async () => {
+    expect(await queriesFor("/api/v1/search?q=QB")).toBe(6);
+  });
+
+  // Phase 2 reports: one person / one client for a month is a fixed handful of aggregate reads, whatever
+  // the data. Staff: auth profile + person + figures. Client: auth profile + client + 5 aggregates.
+  it("reports: the staff and client reports cost a fixed number of queries", async (ctx) => {
+    if (!staffTasksReady) ctx.skip();
+    const d = new Date();
+    d.setUTCDate(1);
+    d.setUTCMonth(d.getUTCMonth() - 1);
+    const month = d.toISOString().slice(0, 7);
+    expect(await queriesFor(`/api/v1/reports/staff?userId=${admin.id}&month=${month}`)).toBe(3);
+    expect(await queriesFor(`/api/v1/reports/client?clientId=${firstClientId}&month=${month}`)).toBe(7);
   });
 
   it("list page sizes are capped (an over-large limit is clamped, never honoured)", async () => {

@@ -51,4 +51,6 @@ export {
   taskAssignedPayload,
   taskCommentedPayload,
   taskStatusChangedPayload,
+  eventReminderPayload,
+  taskDueReminderPayload,
 } from "./domain/notification.messages";

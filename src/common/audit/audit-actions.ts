@@ -74,6 +74,12 @@ export const AUDIT_ACTIONS = {
   STAFF_TASK_REASSIGNED: "staff_task.reassigned",
   /** Hard delete (its timeline goes with it); this entry is the trace. */
   STAFF_TASK_DELETED: "staff_task.deleted",
+
+  // Client to-dos (Phase 2). Metadata carries ids / field names, never the text.
+  CLIENT_TODO_CREATED: "client_todo.created",
+  CLIENT_TODO_UPDATED: "client_todo.updated",
+  /** Hard delete; this entry is the trace. */
+  CLIENT_TODO_DELETED: "client_todo.deleted",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -90,6 +96,7 @@ export const AUDIT_ENTITIES = {
   COMMENT: "comment",
   ASSET: "asset",
   STAFF_TASK: "staff_task",
+  CLIENT_TODO: "client_todo",
 } as const;
 
 export type AuditEntity = (typeof AUDIT_ENTITIES)[keyof typeof AUDIT_ENTITIES];

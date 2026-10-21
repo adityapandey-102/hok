@@ -27,7 +27,8 @@ export interface NotificationsRepositoryPort {
   findForUser(userId: string, unreadOnly: boolean, page: NotificationListPage): Promise<NotificationEntity[]>;
   countForUser(userId: string, unreadOnly: boolean): Promise<number>;
   /** The badge: an index-only count of unread rows. */
-  countUnread(userId: string): Promise<number>;
+  /** Unread total, and how many of those are reminders (the bell's alert animation). One query. */
+  countUnread(userId: string): Promise<{ count: number; reminders: number }>;
   /** Marks one of the user's notifications read. False if no such row is theirs. Already read = true, unchanged. */
   markRead(userId: string, id: string): Promise<boolean>;
   /** Marks all the user's unread notifications read; returns how many changed. */

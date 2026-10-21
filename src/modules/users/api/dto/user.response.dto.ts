@@ -12,4 +12,5 @@ export interface UserResponseDto {
   active: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+  lastSeenAt: string | null;
 }
