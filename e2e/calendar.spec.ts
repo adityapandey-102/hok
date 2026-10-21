@@ -101,3 +101,24 @@ test("a manager creates a personal event from an empty day and sees it in month 
   await page.getByRole("button", { name: "Yes, delete" }).click();
   await expect(page.locator('[data-day="2026-12-15"]').getByText(title)).toHaveCount(0, { timeout: 15_000 });
 });
+
+test("a manager makes a Google Calendar link; the feed serves their calendar until it's turned off", async ({ page, request }) => {
+  await login(page, "rohan.smm@hok.test");
+  await page.goto("/app/calendar");
+  await page.getByRole("button", { name: "Add to Google Calendar" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByTestId("feed-status")).toBeVisible();
+
+  await dialog.getByRole("button", { name: /Make (my|a new) link/ }).click();
+  const url = (await dialog.getByTestId("feed-url").innerText()).trim();
+  expect(url).toMatch(/\/calendar-feed\/[A-Za-z0-9_-]{43}\.ics$/);
+  await expect(dialog.getByRole("link", { name: "Open Google Calendar" })).toHaveAttribute("href", /calendar\.google\.com.*cid=webcal/);
+
+  const feed = await request.get(url);
+  expect(feed.status()).toBe(200);
+  expect(await feed.text()).toContain("BEGIN:VCALENDAR");
+
+  await dialog.getByRole("button", { name: "Turn off" }).click();
+  await expect(dialog.getByTestId("feed-status")).toHaveText("You have no calendar link yet.");
+  expect((await request.get(url)).status()).toBe(404);
+});

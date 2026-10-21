@@ -89,15 +89,24 @@ export const GUIDE: GuideArticle[] = [
     title: "Calendar",
     topic: "Calendar",
     pages: ["/app/calendar"],
-    keywords: ["calendar", "month", "week", "list", "personal event", "schedule", "time zone"],
+    keywords: ["calendar", "month", "week", "list", "personal event", "schedule", "time zone", "google calendar", "subscribe", "ics", "outlook", "apple"],
     requires: "events:read",
     summary: "All your clients’ events and your own personal entries, in your time zone.",
     steps: [
       "Switch between Month, Week and List at the top.",
       "Click an empty day to add a client event or a personal entry on that day.",
       "Click an event to open it.",
+      "To see it in Google Calendar: click “Add to Google Calendar”, then “Make my link”, then “Open Google Calendar” and confirm there.",
     ],
-    tips: ["Personal entries have a dashed outline; cancelled events are struck through."],
+    tips: [
+      "Personal entries have a dashed outline; cancelled events are struck through.",
+      "Your Google Calendar copy is read-only and Google refreshes it every few hours. Make changes in HOK.",
+      "Keep the calendar link private. If it leaks, make a new one: the old one stops working at once.",
+    ],
+    problems: [
+      { q: "I lost my calendar link.", a: "It is shown only once. Click “Add to Google Calendar”, then “Make a new link”, and add the new one to Google." },
+      { q: "Google Calendar shows nothing yet.", a: "Google can take a few hours to fetch a new calendar. It also can't reach a copy of HOK that runs only on your computer." },
+    ],
   },
   {
     id: "todos",
