@@ -103,22 +103,44 @@ test("a manager creates a personal event from an empty day and sees it in month 
 });
 
 test("a manager makes a Google Calendar link; the feed serves their calendar until it's turned off", async ({ page, request }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await login(page, "rohan.smm@hok.test");
   await page.goto("/app/calendar");
   await page.getByRole("button", { name: "Add to Google Calendar" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByTestId("feed-status")).toBeVisible();
+  const status = dialog.getByTestId("feed-status");
+  await expect(status).toBeVisible();
 
-  await dialog.getByRole("button", { name: /Make (my|a new) link/ }).click();
+  // A link left by an earlier run: replacing it asks first (the old one stops working).
+  if ((await status.innerText()).startsWith("Your link is on")) {
+    await dialog.getByRole("button", { name: "Make a new link" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("stops working");
+    await dialog.getByRole("button", { name: "Yes, make a new link" }).click();
+  } else {
+    await dialog.getByRole("button", { name: "Make my link" }).click();
+  }
   const url = (await dialog.getByTestId("feed-url").innerText()).trim();
-  expect(url).toMatch(/\/calendar-feed\/[A-Za-z0-9_-]{43}\.ics$/);
-  await expect(dialog.getByRole("link", { name: "Open Google Calendar" })).toHaveAttribute("href", /calendar\.google\.com.*cid=webcal/);
+  expect(url).toMatch(/^https?:\/\/.+\/api\/v1\/calendar-feed\/[A-Za-z0-9_-]{43}\.ics$/); // absolute, from the API
+  await expect(dialog.getByRole("link", { name: "Open Google Calendar" })).toHaveAttribute("href", /calendar\.google\.com.*cid=http/);
+
+  // Closing before copying asks first; the link is shown only once.
+  await page.keyboard.press("Escape");
+  await expect(dialog.getByRole("button", { name: "Close anyway" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Go back" }).click();
+  await dialog.getByRole("button", { name: "Copy link" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(url);
 
   const feed = await request.get(url);
   expect(feed.status()).toBe(200);
   expect(await feed.text()).toContain("BEGIN:VCALENDAR");
 
+  // Turning off asks first too.
   await dialog.getByRole("button", { name: "Turn off" }).click();
-  await expect(dialog.getByTestId("feed-status")).toHaveText("You have no calendar link yet.");
+  await dialog.getByRole("button", { name: "Yes, turn it off" }).click();
+  await expect(status).toHaveText("You have no calendar link yet.");
   expect((await request.get(url)).status()).toBe(404);
+
+  // Copied, so closing doesn't ask.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
 });

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { calendarFeedApi, feedUrl, googleSubscribeUrl, isLocalAddress, type FeedLink } from "../calendarApi";
+import { calendarFeedApi, googleSubscribeUrl, isLocalAddress, type FeedLink } from "../calendarApi";
 import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Modal } from "../../../components/ui/Modal";
+import { OneTimeLink } from "../../../components/ui/OneTimeLink";
 import { useToast } from "../../../components/ui/Toast";
 
 /**
@@ -25,6 +26,11 @@ export function CalendarSubscribe({ timeZone }: { timeZone: string }) {
 }
 
 type Loaded = { link: FeedLink } | { error: string };
+/**
+ * Steps that need a second click, asked INSIDE the dialog: a confirm dialog
+ * stacked on this one would share its Escape key and close both.
+ */
+type Pending = "replace" | "off" | "close" | null;
 
 function SubscribeDialog({ timeZone, onClose }: { timeZone: string; onClose: () => void }) {
   const { showToast } = useToast();
@@ -32,7 +38,9 @@ function SubscribeDialog({ timeZone, onClose }: { timeZone: string; onClose: () 
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [url, setUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<Pending>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,12 +58,23 @@ function SubscribeDialog({ timeZone, onClose }: { timeZone: string; onClose: () 
     ? new Intl.DateTimeFormat("en-GB", { timeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(link.createdAt))
     : null;
 
+  /** Escape, the backdrop and X all come here: never lose a link that hasn't been copied, or one still being made. */
+  function requestClose() {
+    if (busy) return;
+    if (url && !copied && pending !== "close") return setPending("close");
+    onClose();
+  }
+
   async function make() {
+    // An existing link stops working the moment a new one is made: ask first.
+    if (link && pending !== "replace") return setPending("replace");
+    setPending(null);
     setBusy(true);
     try {
       const res = await calendarFeedApi.create();
       setLoaded({ link: res.link });
-      setUrl(feedUrl(res.token));
+      setUrl(res.url);
+      setCopied(false);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Could not make the link", "error");
     } finally {
@@ -64,6 +83,8 @@ function SubscribeDialog({ timeZone, onClose }: { timeZone: string; onClose: () 
   }
 
   async function turnOff() {
+    if (pending !== "off") return setPending("off");
+    setPending(null);
     setBusy(true);
     try {
       await calendarFeedApi.revoke();
@@ -77,24 +98,14 @@ function SubscribeDialog({ timeZone, onClose }: { timeZone: string; onClose: () 
     }
   }
 
-  async function copy() {
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      showToast("Link copied.", "success");
-    } catch {
-      showToast("Could not copy. Select the link and copy it by hand.", "error");
-    }
-  }
-
   return (
-    <Modal open onClose={onClose} labelledBy="subscribe-title" initialFocusRef={closeRef} panelClassName="sm:max-w-xl">
+    <Modal open onClose={requestClose} labelledBy="subscribe-title" initialFocusRef={closeRef} panelClassName="sm:max-w-xl">
       <div className="flex items-center gap-3 border-b border-border-light px-5 py-4">
         <Icon name="calendar" size={18} className="text-primary" />
         <h2 id="subscribe-title" className="font-serif text-lg text-text-primary">
           Add to Google Calendar
         </h2>
-        <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="ml-auto rounded-app p-1.5 text-text-muted hover:bg-accent-bg">
+        <button ref={closeRef} type="button" onClick={requestClose} aria-label="Close" className="ml-auto rounded-app p-1.5 text-text-muted hover:bg-accent-bg">
           <Icon name="x" size={18} />
         </button>
       </div>
@@ -102,7 +113,7 @@ function SubscribeDialog({ timeZone, onClose }: { timeZone: string; onClose: () 
       <div className="flex flex-col gap-4 px-5 py-5 text-sm text-text-secondary">
         <p>
           See your HOK calendar inside Google Calendar (or Apple Calendar, Outlook). It shows the last 30 days and the next 6 months, and updates on its own. Google
-          refreshes it every few hours.
+          checks for changes on its own schedule, usually within a day, so use HOK for anything urgent.
         </p>
 
         {!loaded ? (
@@ -121,34 +132,57 @@ function SubscribeDialog({ timeZone, onClose }: { timeZone: string; onClose: () 
         )}
 
         {url && (
-          <div className="animate-rise rounded-app-lg border border-primary/25 bg-primary-bg p-4">
-            <p className="flex items-center gap-1.5 text-xs font-medium text-text-secondary">
-              <Icon name="lock" size={13} /> Keep it private: anyone with this link can see your calendar. It is shown only this once.
-            </p>
-            <p data-testid="feed-url" className="mt-2 rounded-app bg-card p-2.5 break-all text-text-primary ring-1 ring-border ring-inset">
-              {url}
-            </p>
-            {isLocalAddress(url) && (
-              <p className="mt-2 text-xs text-warning-text">This copy of HOK runs on this computer, so Google can&apos;t reach it yet. The link works once HOK is online.</p>
-            )}
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+          <OneTimeLink
+            url={url}
+            testId="feed-url"
+            note="Keep it private: anyone with this link can see your calendar. It is shown only this once."
+            copyLabel="Copy link"
+            onCopied={() => setCopied(true)}
+            actions={
               <a
                 href={googleSubscribeUrl(url)}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => setCopied(true)}
                 className="inline-flex items-center justify-center gap-2 rounded-app bg-ink px-4 py-2.5 text-sm font-semibold text-on-ink hover:bg-ink-hover"
               >
                 <Icon name="external-link" size={16} /> Open Google Calendar
               </a>
-              <Button variant="outline" onClick={copy}>
-                <Icon name="copy" size={16} /> Copy link
+            }
+          >
+            {isLocalAddress(url) && (
+              <p className="mt-2 text-xs text-warning-text">This copy of HOK isn&apos;t on the internet, so Google can&apos;t reach it yet. The link works once HOK is online.</p>
+            )}
+            <p className="mt-3 text-xs text-text-muted">Other apps: copy the link, then use “Subscribe to calendar” / “Add calendar from URL”.</p>
+          </OneTimeLink>
+        )}
+
+        {pending && (
+          <div role="alert" className="rounded-app-lg border border-warning/40 bg-warning-bg p-3 text-warning-text">
+            <p>
+              {pending === "replace"
+                ? "Make a new link? Your current link stops working straight away, so any calendar using it goes empty until you add the new one."
+                : pending === "off"
+                  ? "Turn the link off? Every calendar app using it stops updating. You can make a new link later, but you'd have to add it again."
+                  : "You haven't copied your link. It won't be shown again, so you'd need to make a new one."}
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+              <Button
+                variant="danger"
+                autoFocus
+                disabled={busy}
+                onClick={() => (pending === "replace" ? make() : pending === "off" ? turnOff() : onClose())}
+              >
+                {pending === "replace" ? "Yes, make a new link" : pending === "off" ? "Yes, turn it off" : "Close anyway"}
+              </Button>
+              <Button variant="outline" onClick={() => setPending(null)}>
+                {pending === "close" ? "Go back" : "Cancel"}
               </Button>
             </div>
-            <p className="mt-3 text-xs text-text-muted">Other apps: copy the link, then use “Subscribe to calendar” / “Add calendar from URL”.</p>
           </div>
         )}
 
-        {loaded && "link" in loaded && (
+        {loaded && "link" in loaded && !pending && (
           <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
             <Button disabled={busy} onClick={make}>
               <Icon name={link ? "refresh" : "plus"} size={16} /> {link ? "Make a new link" : "Make my link"}
@@ -160,7 +194,7 @@ function SubscribeDialog({ timeZone, onClose }: { timeZone: string; onClose: () 
             )}
           </div>
         )}
-        {link && !url && <p className="text-xs text-text-muted">Lost the link? Make a new one. The old one stops working straight away.</p>}
+        {link && !url && !pending && <p className="text-xs text-text-muted">Lost the link? Make a new one. The old one stops working straight away.</p>}
       </div>
     </Modal>
   );

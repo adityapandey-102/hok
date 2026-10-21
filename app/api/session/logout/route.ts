@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAccessToken, clearSession } from "../../../../lib/session/server";
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "../../../../lib/session/constants";
+import { safeNext } from "../../../../lib/session/safe-next";
+import { rejectCrossSite } from "../../../../lib/session/same-origin";
 
 /** Best-effort server-side revoke of the current session (needs the bearer token). */
 async function revokeUpstream() {
@@ -14,7 +16,9 @@ async function revokeUpstream() {
 }
 
 /** Revokes the session server-side (best-effort) and clears both cookies. */
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const rejected = rejectCrossSite(request);
+  if (rejected) return rejected;
   await revokeUpstream();
   await clearSession();
   return new NextResponse(null, { status: 204 });
@@ -33,7 +37,7 @@ export async function GET(request: NextRequest) {
   await revokeUpstream();
   const loginUrl = new URL("/login", request.url);
   const next = request.nextUrl.searchParams.get("next");
-  if (next && next.startsWith("/")) loginUrl.searchParams.set("next", next);
+  if (next) loginUrl.searchParams.set("next", safeNext(next));
 
   const response = NextResponse.redirect(loginUrl);
   response.cookies.delete(ACCESS_TOKEN_COOKIE);

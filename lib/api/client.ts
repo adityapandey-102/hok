@@ -59,8 +59,19 @@ async function safeFetch(url: string, init: RequestInit, path: string): Promise<
 async function ensureFreshAccessToken(): Promise<string | null> {
   const token = getAccessToken();
   if (token && !isExpired(token)) return token;
+  // Single flight: a page firing 5 calls after expiry shares ONE refresh. Several
+  // parallel rotations of the same refresh token raced each other, and one
+  // failing could sign the user out though another had succeeded (review 2026-10-22).
+  refreshing ??= refreshAccessToken().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
 
-  const response = await fetch("/api/session/refresh", { method: "POST" });
+let refreshing: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  const response = await fetch("/api/session/refresh", { method: "POST", headers: { "Content-Type": "application/json" } });
   if (!response.ok) return null;
 
   const data = (await response.json().catch(() => ({}))) as { accessToken?: string };

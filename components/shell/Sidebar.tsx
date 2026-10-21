@@ -8,6 +8,7 @@ import { BrandLockup, BrandMark } from "./BrandMark";
 import { Icon } from "../ui/Icon";
 import { CommentsBadge } from "../../modules/client-comments/components/CommentsBadge";
 import { authApi } from "../../modules/auth/api/authApi";
+import { unsubscribeThisDevice } from "../../modules/notifications/pushDevice";
 
 function initials(name: string) {
   return name
@@ -42,6 +43,9 @@ export function Sidebar({
     .sort((x, y) => y.length - x.length)[0];
 
   async function handleSignOut() {
+    // While still signed in: this device must stop getting this person's notifications.
+    // Best effort -- signing out never waits on, or fails because of, push.
+    await unsubscribeThisDevice().catch(() => undefined);
     await authApi.logout();
     router.push("/login");
     router.refresh();

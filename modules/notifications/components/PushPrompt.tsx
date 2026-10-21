@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { unsubscribeThisDevice } from "../pushDevice";
 import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { useToast } from "../../../components/ui/Toast";
@@ -96,12 +97,7 @@ export function PushPrompt({ className = "" }: { className?: string }) {
   const disable = useCallback(async () => {
     setBusy(true);
     try {
-      const reg = await navigator.serviceWorker.getRegistration("/");
-      const sub = await reg?.pushManager.getSubscription();
-      if (sub) {
-        await notificationsApi.unsubscribePush(sub.endpoint);
-        await sub.unsubscribe();
-      }
+      await unsubscribeThisDevice();
       setState("off");
       showToast("Push notifications are off for this device.", "info");
     } catch (err) {

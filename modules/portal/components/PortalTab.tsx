@@ -5,6 +5,7 @@ import { isApiErrorCode } from "../../../lib/api/client";
 import { portalApi, type PortalLink } from "../api/portalApi";
 import { linkState, whatsappShareUrl } from "../lib/share";
 import { Button } from "../../../components/ui/Button";
+import { OneTimeLink } from "../../../components/ui/OneTimeLink";
 import { Panel } from "../../../components/ui/Panel";
 import { Icon } from "../../../components/ui/Icon";
 import { StatusPill } from "../../../components/ui/StatusPill";
@@ -116,19 +117,6 @@ export function PortalTab({
     }
   }
 
-  async function copy() {
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      showToast("Link copied.", "success");
-    } catch {
-      showToast(
-        "Could not copy. Select the link and copy it by hand.",
-        "error",
-      );
-    }
-  }
-
   if (loading)
     return (
       <div className="max-w-2xl space-y-3" aria-busy="true" aria-label="Loading the portal link">
@@ -191,17 +179,12 @@ export function PortalTab({
         )}
 
         {url && (
-          <div className="animate-rise mt-4 rounded-app-lg border border-primary/25 bg-primary-bg p-4">
-            <p className="flex items-center gap-1.5 text-xs font-medium text-text-secondary">
-              <Icon name="lock" size={13} /> Copy it now. For safety the link is shown only this once.
-            </p>
-            <p data-testid="portal-url" className="mt-2 rounded-app bg-card p-2.5 text-sm break-all text-text-primary ring-1 ring-border ring-inset">
-              {url}
-            </p>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-              <Button variant="outline" onClick={copy}>
-                <Icon name="copy" size={16} /> Copy
-              </Button>
+          <OneTimeLink
+            className="mt-4"
+            url={url}
+            testId="portal-url"
+            note="Copy it now. For safety the link is shown only this once."
+            actions={
               <a
                 href={whatsappShareUrl(url)}
                 target="_blank"
@@ -210,8 +193,8 @@ export function PortalTab({
               >
                 <Icon name="external-link" size={16} /> Share on WhatsApp
               </a>
-            </div>
-          </div>
+            }
+          />
         )}
 
         {!archived && (

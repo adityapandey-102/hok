@@ -21,14 +21,15 @@ export const calendarApi = {
   },
 };
 
-/** The caller's calendar subscribe link (FR-CAL-08). The token comes back only from `createFeedLink`. */
+/** The caller's calendar subscribe link (FR-CAL-08). The token and address come back only from `create`. */
 export type FeedLink = { createdAt: string } | null;
 
 export const calendarFeedApi = {
   get(): Promise<{ link: FeedLink }> {
     return apiFetch("/calendar/feed-link");
   },
-  create(): Promise<{ link: FeedLink; token: string }> {
+  /** `url` is built by hok-api from its own public address, so every calendar app gets one that works. */
+  create(): Promise<{ link: NonNullable<FeedLink>; token: string; url: string }> {
     return apiFetch("/calendar/feed-link", { method: "POST" });
   },
   revoke(): Promise<null> {
@@ -36,17 +37,47 @@ export const calendarFeedApi = {
   },
 };
 
-/** The public .ics address calendar apps fetch (served by hok-api). */
-export function feedUrl(token: string, apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? ""): string {
-  return `${apiBase.replace(/\/+$/, "")}/calendar-feed/${token}.ics`;
-}
-
-/** Google Calendar's "add by URL" screen, pre-filled (it wants the webcal:// form). */
+/**
+ * Google Calendar's "add by URL" screen, pre-filled. The https address is
+ * passed as-is: rewriting it to webcal:// drops the scheme, and apps that
+ * read webcal as plain http would send the secret token unencrypted.
+ */
 export function googleSubscribeUrl(url: string): string {
-  return `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(url.replace(/^https?:\/\//, "webcal://"))}`;
+  return `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(url)}`;
 }
 
-/** Calendar apps fetch from their own servers, so a localhost address can't work for them. */
+const PRIVATE_V4: [number, number, number][] = [
+  // [first octet, second octet from, second octet to]
+  [0, 0, 255],
+  [10, 0, 255],
+  [100, 64, 127], // CGNAT
+  [127, 0, 255],
+  [169, 254, 254],
+  [172, 16, 31],
+  [192, 168, 168],
+];
+
+/**
+ * True when Google (or any calendar app's servers) can't reach this address
+ * from the internet: localhost, private or link-local networks (incl. the
+ * LAN IP used for phone testing), `.local` / `.localhost` names, and bare
+ * machine names. Calendar apps fetch from their own servers, so such a link
+ * can't work for them yet.
+ */
 export function isLocalAddress(url: string): boolean {
-  return /^https?:\/\/(localhost|127\.|\[::1\])/.test(url);
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  } catch {
+    return true;
+  }
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    return PRIVATE_V4.some(([first, from, to]) => a === first && b >= from && b <= to);
+  }
+  if (host.includes(":")) return host === "::" || host === "::1" || /^f[cd]/.test(host) || /^fe[89ab]/.test(host);
+  return !host.includes("."); // a bare machine name only resolves on its own network
 }

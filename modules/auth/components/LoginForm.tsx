@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { authApi } from "../api/authApi";
+import { safeNext } from "../../../lib/session/safe-next";
 import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
 import { Icon } from "../../../components/ui/Icon";
@@ -24,7 +25,7 @@ export function LoginForm() {
 
     try {
       await authApi.login({ email, password });
-      router.push(searchParams.get("next") || "/app");
+      router.push(safeNext(searchParams.get("next")));
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

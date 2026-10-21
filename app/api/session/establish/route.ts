@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { setSession } from "../../../../lib/session/server";
+import { rejectCrossSite } from "../../../../lib/session/same-origin";
 
 /**
  * Stores a session the client already obtained. Needed only for the implicit
@@ -9,6 +10,8 @@ import { setSession } from "../../../../lib/session/server";
  * can no longer touch, instead of a JS-readable one.
  */
 export async function POST(request: NextRequest) {
+  const rejected = rejectCrossSite(request);
+  if (rejected) return rejected;
   const body = (await request.json().catch(() => ({}))) as { accessToken?: string; refreshToken?: string };
   if (!body.accessToken || !body.refreshToken) {
     return NextResponse.json({ error: "Missing tokens" }, { status: 400 });

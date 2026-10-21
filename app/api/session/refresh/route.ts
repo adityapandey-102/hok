@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { postToAuthApi } from "../../../../lib/session/api-proxy";
-import { getRefreshToken, setSession, clearSession } from "../../../../lib/session/server";
+import { getRefreshToken, setSession } from "../../../../lib/session/server";
+import { rejectCrossSite } from "../../../../lib/session/same-origin";
 
 /**
  * Rotates the session from the httpOnly refresh cookie -- the browser calls
@@ -9,6 +10,8 @@ import { getRefreshToken, setSession, clearSession } from "../../../../lib/sessi
  * immediately; the Set-Cookie also updates the readable access cookie.
  */
 export async function POST(request: NextRequest) {
+  const rejected = rejectCrossSite(request);
+  if (rejected) return rejected;
   const refreshToken = await getRefreshToken();
   if (!refreshToken) {
     return NextResponse.json({ error: "No session" }, { status: 401 });
@@ -16,7 +19,9 @@ export async function POST(request: NextRequest) {
 
   const { status, data } = await postToAuthApi("/auth/refresh", { refreshToken }, request);
   if (status !== 200) {
-    await clearSession();
+    // Cookies are NOT cleared here: this may be a losing race with another tab's (or
+    // the proxy's) successful rotation, and clearing would wipe the fresh session.
+    // A session that's really dead is cleared by the proxy on the next navigation.
     return NextResponse.json({ error: data.error ?? "Session expired", code: data.code }, { status: 401 });
   }
 

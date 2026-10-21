@@ -62,6 +62,10 @@ adapted to HOK; the agent working rules are in `../CLAUDE.md` §0.
 - The web holds **no Supabase keys and no secrets in `NEXT_PUBLIC_*`**. The refresh token (`hok_rt`) is an httpOnly cookie, set only by `app/api/session/*`. *Why:* anything shipped to the browser is public.
 - There's no `dangerouslySetInnerHTML` anywhere (the portfolio included).
 - The client portal (`/p/[token]`) shows only what hok-api returns for that token; the token is never logged.
+- Every cookie-setting `app/api/session/*` POST starts with `rejectCrossSite(request)` (`lib/session/same-origin.ts`): JSON bodies from this origin only. *Why:* otherwise a form on another site can sign a visitor in as the attacker (login CSRF).
+- Any redirect target taken from the URL (`?next=`) goes through `safeNext()` (`lib/session/safe-next.ts`). *Why:* `//evil`, `/\evil` and full URLs leave the site, an open redirect used for phishing.
+- Signing out also removes this browser's push subscription (`unsubscribeThisDevice`). *Why:* on a shared device the next person would see the previous person's notifications.
+- A secret link shown once (portal link, calendar link) uses `components/ui/OneTimeLink.tsx`, and replacing or turning it off asks first.
 
 ## 7. Testing and the release checklist
 

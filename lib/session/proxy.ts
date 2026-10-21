@@ -29,8 +29,12 @@ function isProtectedPath(pathname: string): boolean {
  * /login). /update-password is intentionally NOT here: it's reached right
  * after the reset-password email link is exchanged for a session via
  * /auth/callback, so a present session there must render normally.
+ * /auth/callback is NOT here either: an invite or reset link opened in a
+ * browser that is already signed in must still reach the callback, or its
+ * tokens are never used (review 2026-10-22). The link's session replaces
+ * the old one, as the link intends.
  */
-const SIGN_IN_PATHS = ["/login", "/setup", "/reset-password", "/auth/callback"];
+const SIGN_IN_PATHS = ["/login", "/setup", "/reset-password"];
 
 type Tokens = { accessToken: string; refreshToken: string };
 

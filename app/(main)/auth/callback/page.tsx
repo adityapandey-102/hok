@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { authApi } from "../../../../modules/auth/api/authApi";
+import { safeNext } from "../../../../lib/session/safe-next";
 
 /**
  * Lands here from a password-reset or invite email link. This local Supabase
@@ -18,7 +19,7 @@ function AuthCallbackContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const next = searchParams.get("next") || "/app";
+    const next = safeNext(searchParams.get("next"));
     const code = searchParams.get("code");
 
     async function complete() {

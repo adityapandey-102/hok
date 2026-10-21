@@ -100,12 +100,12 @@ export const GUIDE: GuideArticle[] = [
     ],
     tips: [
       "Personal entries have a dashed outline; cancelled events are struck through.",
-      "Your Google Calendar copy is read-only and Google refreshes it every few hours. Make changes in HOK.",
+      "Your Google Calendar copy is read-only. Google checks for changes on its own schedule, usually within a day, so a change in HOK can take that long to show there. Make changes in HOK.",
       "Keep the calendar link private. If it leaks, make a new one: the old one stops working at once.",
     ],
     problems: [
       { q: "I lost my calendar link.", a: "It is shown only once. Click “Add to Google Calendar”, then “Make a new link”, and add the new one to Google." },
-      { q: "Google Calendar shows nothing yet.", a: "Google can take a few hours to fetch a new calendar. It also can't reach a copy of HOK that runs only on your computer." },
+      { q: "Google Calendar shows nothing yet.", a: "Google can take up to a day to fetch a new calendar. It also can't reach a copy of HOK that runs only on your computer." },
     ],
   },
   {

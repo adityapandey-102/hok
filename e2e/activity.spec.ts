@@ -27,7 +27,7 @@ test("the admin reads daily activity in Reports, switches kinds and filters by p
   await page.getByRole("tab", { name: "Accounts", exact: true }).click();
   await expect(page.getByRole("tab", { name: "Accounts", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(rows.first()).toBeVisible();
-  await expect(rows.filter({ hasNotText: /signed|account|password|profile/ })).toHaveCount(0);
+  await expect(rows.filter({ hasNotText: /signed|account|password|profile|calendar subscribe link/ })).toHaveCount(0);
   await page.getByRole("tab", { name: "Tasks", exact: true }).click();
   await expect(rows.filter({ hasText: /signed in/ })).toHaveCount(0);
   await page.getByRole("tab", { name: "All", exact: true }).click();
