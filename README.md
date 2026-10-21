@@ -396,7 +396,7 @@ API's `modules/auth` endpoints, thin stateless wrappers around the
 | --- | --- |
 | `POST /auth/login` | email + password → `{ accessToken, refreshToken, expiresAt, profile }`; records `last_login_at`, audits `auth.login` |
 | `POST /auth/refresh` | rotates a refresh token for a new pair (not a "login") |
-| `POST /auth/logout` | revokes the session server-side (`admin.signOut(token, "global")`) |
+| `POST /auth/logout` | revokes this session server-side (`admin.signOut(token, "local")`; other devices stay signed in) |
 | `POST /auth/password-reset-request` | always 204, whether or not the email has an account |
 | `POST /auth/password-update` | bearer; sets the caller's own password |
 | `POST /auth/exchange-code` | exchanges a PKCE `?code=` from an email link for a session |
@@ -535,7 +535,7 @@ After an asset is saved (or its URL changes), `HttpLinkPreviewer` fetches the pa
 
 ### Calendar subscribe link (FR-CAL-08)
 
-Anyone with a calendar (`events:read`: Admin, SMM, MM) can make one secret link to add their HOK calendar to Google Calendar, Apple Calendar or Outlook ("subscribe from URL"). `GET|POST|DELETE /api/v1/calendar/feed-link` shows, makes (a new one replaces the old one at once) and turns off the caller's own link; the token is returned once and only its SHA-256 is stored (`profiles.calendar_feed_token_hash`, migration `20261022000001`). The public `GET /api/v1/calendar-feed/<token>.ics` (no login, rate-limited, token redacted from logs) returns the same items as the person's calendar in HOK, the last 30 days and the next 180 (up to 500 per kind), in UTC: 1 lookup + 2 queries. Every bad link (malformed, unknown, replaced, off, deactivated person, role without a calendar) is the same 404 `CALENDAR_FEED_INVALID`. Calendar apps fetch it from their own servers, so it only works once the API is on a public https address; Google refreshes subscribed calendars every few hours.
+Anyone with a calendar (`events:read`: Admin, SMM, MM) can make one secret link to add their HOK calendar to Google Calendar, Apple Calendar or Outlook ("subscribe from URL"). `GET|POST|DELETE /api/v1/calendar/feed-link` shows, makes (a new one replaces the old one at once) and turns off the caller's own link; the token and the full link (`PUBLIC_API_URL` + `/api/v1/calendar-feed/<token>.ics`) are returned once and only its SHA-256 is stored (`profiles.calendar_feed_token_hash`, migration `20261022000001`). The public `GET /api/v1/calendar-feed/<token>.ics` (no login, rate-limited, token redacted from logs) returns the same items as the person's calendar in HOK: the next 180 days (up to 500 per kind) and the last 30 (up to 100 per kind), read separately so a busy past never pushes upcoming items out, in UTC: 1 lookup + 4 queries. Every bad link (malformed, unknown, replaced, off, deactivated person, role without a calendar) is the same 404 `CALENDAR_FEED_INVALID`. Calendar apps fetch it from their own servers, so it only works once the API is on a public https address; Google re-fetches subscribed calendars on its own schedule (typically every 8-24 hours) and ignores the feed's refresh hint; Apple and Outlook let the user choose the interval.
 
 ### Dependency injection
 

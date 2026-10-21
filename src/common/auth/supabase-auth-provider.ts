@@ -40,7 +40,8 @@ export class SupabaseAuthProvider implements AuthProvider {
   }
 
   async signOut(accessToken: string): Promise<void> {
-    await supabaseClient.auth.admin.signOut(accessToken, "global").catch(() => {
+    // "local": only this device's session ends; the person stays signed in elsewhere (review 2026-10-22).
+    await supabaseClient.auth.admin.signOut(accessToken, "local").catch(() => {
       // Best-effort: a token that's already invalid/expired is not an error.
     });
   }

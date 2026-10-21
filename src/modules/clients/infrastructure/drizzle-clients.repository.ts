@@ -1,7 +1,7 @@
 import { and, desc, eq, ilike, ne, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
-import { AppError, InternalError, NotFoundError } from "../../../common/errors/app-error";
+import { NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only read: `profiles` is owned by the Users
 // module's schema (owner name, owner candidate). See docs/adr/0003.
@@ -23,8 +23,8 @@ import type {
   ClientListFilters,
   ClientListPage,
   ClientsRepositoryPort,
-  NewClientRecord,
-} from "../application/ports/clients-repository.port";
+  NewClientRecord } from "../application/ports/clients-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -71,15 +71,6 @@ const CLIENT_SUMMARY_SELECT = {
   createdAt: clients.createdAt,
 };
 
-/** Rethrows a deliberate AppError (a guard's 404/409) untouched; wraps anything else as a 500 with the cause for the logs. */
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
 
 async function selectClient(ex: Executor, id: string, forUpdate = false): Promise<ClientEntity | null> {
   const query = ex

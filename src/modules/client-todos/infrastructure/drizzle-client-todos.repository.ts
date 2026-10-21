@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, ilike, lt, ne, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
-import { AppError, InternalError, NotFoundError } from "../../../common/errors/app-error";
+import { NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only reads (ADR 0003): the client a to-do
 // belongs to, its optional event, and staff names.
@@ -16,8 +16,8 @@ import type {
   ClientTodoListFilters,
   ClientTodoPage,
   ClientTodosRepositoryPort,
-  NewClientTodoRecord,
-} from "../application/ports/client-todos-repository.port";
+  NewClientTodoRecord } from "../application/ports/client-todos-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -61,15 +61,6 @@ function toEntity(row: TodoRow): ClientTodoEntity {
   };
 }
 
-/** Rethrows a deliberate AppError (a guard's 404/409) untouched; wraps anything else as a 500 with the cause for the logs. */
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
 
 function baseSelect(ex: Executor) {
   return ex

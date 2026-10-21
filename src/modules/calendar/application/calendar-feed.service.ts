@@ -8,7 +8,8 @@ import type { AuditLogger } from "../../../common/audit/audit-logger";
 import { hasCapability } from "../../../domain";
 import { CALENDAR_MAX_ITEMS_PER_KIND } from "../domain/calendar.entity";
 import { mergeByStart, resolveCalendarScope } from "../domain/calendar.rules";
-import { feedTokenFrom, feedWindow, toIcs } from "../domain/calendar-feed.rules";
+import { FEED_PAST_MAX_PER_KIND, feedTokenFrom, feedUrl, feedWindows, toIcs } from "../domain/calendar-feed.rules";
+import type { CalendarItem } from "../domain/calendar.entity";
 import type { CalendarFeedRepositoryPort, CalendarRepositoryPort } from "./ports/calendar-repository.port";
 
 export type FeedLink = { createdAt: string } | null;
@@ -28,17 +29,21 @@ export class CalendarFeedService {
     private readonly audit: AuditLogger = defaultAuditLogger,
     private readonly webAppUrl: string = env.WEB_APP_URL,
     private readonly now: () => Date = () => new Date(),
+    private readonly publicApiUrl: string = env.PUBLIC_API_URL,
   ) {}
 
   get(userId: string): Promise<FeedLink> {
     return this.links.feedLink(userId);
   }
 
-  async create(userId: string): Promise<{ link: FeedLink; token: string }> {
+  /** Returns the full subscribe address (built here, from this API's public URL) so every app gets the same working link. */
+  async create(userId: string): Promise<{ link: NonNullable<FeedLink>; token: string; url: string }> {
     const token = generateOpaqueToken();
     const link = await this.links.setFeedLink(userId, hashToken(token));
+    // Nothing saved (the profile row is gone): never hand out a token that can't work.
+    if (!link) throw new NotFoundError("Your account wasn't found", ERROR_CODES.USER_NOT_FOUND);
     await this.audit.record({ action: AUDIT_ACTIONS.CALENDAR_FEED_CREATED, entityType: AUDIT_ENTITIES.USER, entityId: userId });
-    return { link, token };
+    return { link, token, url: feedUrl(this.publicApiUrl, token) };
   }
 
   /** Idempotent: turning off a link that isn't there is fine. */
@@ -58,12 +63,19 @@ export class CalendarFeedService {
     }
     const scope = resolveCalendarScope({ userId: owner.userId, role: owner.role }, undefined);
     const now = this.now();
-    const range = feedWindow(now);
-    // shortcut: earliest 500 of each kind in the window; enough for a firm this size, page it if the Admin's feed ever fills up.
-    const [events, personal] = await Promise.all([
-      this.calendar.eventsInRange(range, scope.events, CALENDAR_MAX_ITEMS_PER_KIND),
-      scope.personal ? this.calendar.personalInRange(range, scope.personal, CALENDAR_MAX_ITEMS_PER_KIND) : Promise.resolve([]),
+    const { past, upcoming } = feedWindows(now);
+    const none = Promise.resolve([] as CalendarItem[]);
+    // Upcoming and past are read separately so a busy past month never pushes next month out (4 queries, fixed).
+    // shortcut: the earliest 100 of the past 30 days + the next 500 of each kind; enough for a firm this size, page it if the Admin's feed ever fills up.
+    const reads = await Promise.all([
+      this.calendar.eventsInRange(upcoming, scope.events, CALENDAR_MAX_ITEMS_PER_KIND),
+      scope.personal ? this.calendar.personalInRange(upcoming, scope.personal, CALENDAR_MAX_ITEMS_PER_KIND) : none,
+      this.calendar.eventsInRange(past, scope.events, FEED_PAST_MAX_PER_KIND),
+      scope.personal ? this.calendar.personalInRange(past, scope.personal, FEED_PAST_MAX_PER_KIND) : none,
     ]);
-    return toIcs(mergeByStart(events, personal), { calendarName: `HOK · ${owner.fullName}`, webAppUrl: this.webAppUrl, now });
+    // An item happening "now" is in both windows: keep it once.
+    const unique = new Map<string, CalendarItem>();
+    for (const item of reads.flat()) unique.set(`${item.kind}:${item.id}`, item);
+    return toIcs(mergeByStart([...unique.values()], []), { calendarName: `HOK · ${owner.fullName}`, webAppUrl: this.webAppUrl, now });
   }
 }

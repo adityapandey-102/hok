@@ -1,14 +1,13 @@
 import { BadRequestError, ConflictError, NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
-import { EVENT_MAX_DURATION_DAYS, EVENT_RANGE_MAX_DAYS, type EventStage, type EventState } from "./event.entity";
+import { rangeProblem, spanProblem } from "../../../domain";
+import type { EventStage, EventState } from "./event.entity";
 
 /**
  * Event rules (FR-EVT-02..07). Pure functions that throw AppError (ADR 0002).
  * An event inherits its client's row scope: a manager sees only events of
  * clients they own; anything else is a 404.
  */
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Same shape as the Clients module's scope (kept local: domains don't import each other, ADR 0003). */
 export type EventScope = { kind: "all" } | { kind: "own"; userId: string };
@@ -66,16 +65,10 @@ export function assertEventVersion(current: number, expected: number | undefined
   }
 }
 
-/** Ends on or after it starts, and lasts at most 31 days. */
+/** Ends on or after it starts, and lasts at most MAX_ITEM_DAYS (the shared cap the calendar scans rely on). */
 export function assertEventTimes(startsAt: string, endsAt: string): void {
-  const start = Date.parse(startsAt);
-  const end = Date.parse(endsAt);
-  if (Number.isNaN(start) || Number.isNaN(end) || end < start) {
-    throw new BadRequestError("The event can't end before it starts", ERROR_CODES.EVENT_TIMES_INVALID);
-  }
-  if (end - start > EVENT_MAX_DURATION_DAYS * DAY_MS) {
-    throw new BadRequestError(`An event can last at most ${EVENT_MAX_DURATION_DAYS} days`, ERROR_CODES.EVENT_TIMES_INVALID);
-  }
+  const problem = spanProblem(startsAt, endsAt);
+  if (problem) throw new BadRequestError(problem, ERROR_CODES.EVENT_TIMES_INVALID);
 }
 
 /** Every assigned team member must be an active staff account. `found` = the ids the database confirmed. */
@@ -115,10 +108,7 @@ export function resolveRange(from: string | undefined, to: string | undefined): 
   if (from === undefined || to === undefined) {
     throw new BadRequestError("Send both `from` and `to`, or neither", ERROR_CODES.EVENT_RANGE_INVALID);
   }
-  const span = Date.parse(to) - Date.parse(from);
-  if (!(span > 0)) throw new BadRequestError("`to` must be after `from`", ERROR_CODES.EVENT_RANGE_INVALID);
-  if (span > EVENT_RANGE_MAX_DAYS * DAY_MS) {
-    throw new BadRequestError(`A range can span at most ${EVENT_RANGE_MAX_DAYS} days`, ERROR_CODES.EVENT_RANGE_INVALID);
-  }
+  const problem = rangeProblem(from, to);
+  if (problem) throw new BadRequestError(problem, ERROR_CODES.EVENT_RANGE_INVALID);
   return { from, to };
 }

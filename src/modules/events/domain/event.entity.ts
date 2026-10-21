@@ -10,10 +10,9 @@ export type EventType = (typeof EVENT_TYPES)[number];
 export const EVENT_STATES = ["active", "cancelled", "postponed"] as const;
 export type EventState = (typeof EVENT_STATES)[number];
 
-/** Longest event; also lets a calendar range query bound its scan on starts_at. */
-export const EVENT_MAX_DURATION_DAYS = 31;
-/** Widest calendar range one request may ask for (a month view plus its leading/trailing weeks, or a quarter). */
-export const EVENT_RANGE_MAX_DAYS = 92;
+// An event's longest span and the widest calendar range are the shared
+// MAX_ITEM_DAYS / MAX_RANGE_DAYS in src/domain/time-range.ts: the calendar
+// and the subscribe feed bound their scans on them, so there is one copy.
 export const EVENT_TEAM_MAX = 20;
 
 export interface EventStage {

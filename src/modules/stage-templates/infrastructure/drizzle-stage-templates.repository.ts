@@ -2,7 +2,8 @@ import { and, asc, eq, ilike, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
 import { isUniqueViolation } from "../../../common/database/pg-errors";
-import { AppError, ConflictError, InternalError, NotFoundError } from "../../../common/errors/app-error";
+import { guarded as guardedQuery } from "../../../common/database/guarded";
+import { ConflictError, NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { stageTemplateStages, stageTemplates } from "./stage-templates.schema";
 import type { StageTemplateEntity, TemplateStage } from "../domain/stage-template.entity";
@@ -16,18 +17,12 @@ import type {
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 type TemplateRow = typeof stageTemplates.$inferSelect;
 
-/** Turns the unique-name index into a 409; rethrows deliberate AppErrors; wraps the rest as a 500. */
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    if (isUniqueViolation(error, "stage_templates_name_key")) {
-      throw new ConflictError("A stage template with this name already exists", ERROR_CODES.STAGE_TEMPLATE_NAME_TAKEN);
-    }
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
+/** The shared guard, plus: the unique-name index becomes a 409. */
+const nameTaken = (error: unknown) =>
+  isUniqueViolation(error, "stage_templates_name_key")
+    ? new ConflictError("A stage template with this name already exists", ERROR_CODES.STAGE_TEMPLATE_NAME_TAKEN)
+    : undefined;
+const guarded = <T>(what: string, run: () => Promise<T>): Promise<T> => guardedQuery(what, run, nameTaken);
 
 /** The stages of several templates in ONE query, grouped by template id, in order. */
 async function stagesFor(ex: Executor, templateIds: string[]): Promise<Map<string, TemplateStage[]>> {

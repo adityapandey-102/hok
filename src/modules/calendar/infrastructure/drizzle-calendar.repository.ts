@@ -1,7 +1,6 @@
 import { and, asc, eq, gt, gte, lt, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../common/database/drizzle-client";
-import { AppError, InternalError } from "../../../common/errors/app-error";
 import { scanLowerBound } from "../../../domain";
 // The Calendar module owns no table: it reads the Events and Personal-events
 // modules' tables Infrastructure-to-Infrastructure (ADR 0003), read-only.
@@ -17,19 +16,10 @@ import type {
   CalendarPersonalFilters,
   CalendarRange,
   CalendarRepositoryPort,
-  FeedOwner,
-} from "../application/ports/calendar-repository.port";
+  FeedOwner } from "../application/ports/calendar-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 const currentStage = alias(eventStages, "current_stage");
-
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
 
 /**
  * One query per kind, each: overlap with [from, to), bounded below on

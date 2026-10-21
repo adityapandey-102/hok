@@ -5,12 +5,21 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** What a subscribed calendar shows: the last 30 days and the next 180. */
 export const FEED_PAST_DAYS = 30;
 export const FEED_FUTURE_DAYS = 180;
+/** Most items of each kind from the past 30 days; upcoming ones get the full CALENDAR_MAX_ITEMS_PER_KIND, so the past never pushes them out. */
+export const FEED_PAST_MAX_PER_KIND = 100;
 
-export function feedWindow(now: Date): { from: string; to: string } {
+/** Two windows read separately (upcoming first in importance); an item spanning "now" is in both and is kept once. */
+export function feedWindows(now: Date): { past: { from: string; to: string }; upcoming: { from: string; to: string } } {
+  const at = now.toISOString();
   return {
-    from: new Date(now.getTime() - FEED_PAST_DAYS * DAY_MS).toISOString(),
-    to: new Date(now.getTime() + FEED_FUTURE_DAYS * DAY_MS).toISOString(),
+    past: { from: new Date(now.getTime() - FEED_PAST_DAYS * DAY_MS).toISOString(), to: at },
+    upcoming: { from: at, to: new Date(now.getTime() + FEED_FUTURE_DAYS * DAY_MS).toISOString() },
   };
+}
+
+/** The public address calendar apps fetch: <API>/api/v1/calendar-feed/<token>.ics. */
+export function feedUrl(publicApiUrl: string, token: string): string {
+  return `${publicApiUrl.replace(/\/+$/, "")}/api/v1/calendar-feed/${token}.ics`;
 }
 
 /** The feed's file name in the URL: `<token>.ics` (calendar apps like the extension). Same token shape as portal links. */
@@ -69,7 +78,9 @@ export function toIcs(items: readonly CalendarItem[], opts: { calendarName: stri
     "X-PUBLISHED-TTL:PT1H",
   ];
   for (const item of items) {
-    lines.push("BEGIN:VEVENT", `UID:${item.kind}-${item.id}@hok`, `DTSTAMP:${stamp}`, `DTSTART:${utc(item.startsAt)}`, `DTEND:${utc(item.endsAt)}`);
+    lines.push("BEGIN:VEVENT", `UID:${item.kind}-${item.id}@hok`, `DTSTAMP:${stamp}`, `DTSTART:${utc(item.startsAt)}`);
+    // RFC 5545: DTEND must be after DTSTART. A zero-length item (allowed in HOK) leaves it out, which means "ends when it starts".
+    if (item.endsAt > item.startsAt) lines.push(`DTEND:${utc(item.endsAt)}`);
     if (item.kind === "event") {
       lines.push(
         `SUMMARY:${text(`${item.title} · ${item.clientName}`)}`,

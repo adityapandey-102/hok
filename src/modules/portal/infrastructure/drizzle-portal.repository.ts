@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
-import { AppError, InternalError, NotFoundError } from "../../../common/errors/app-error";
+import { NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { scanLowerBound } from "../../../domain";
 // Cross-module Infrastructure-only reads (ADR 0003): the client, its events,
@@ -12,17 +12,9 @@ import { portalLinks } from "./portal.schema";
 import { PORTAL_UPDATES_LIMIT, type PortalEvent, type PortalEventDetail, type PortalLinkEntity } from "../domain/portal.entity";
 import type { PortalClient } from "../domain/portal.rules";
 import type { PortalLinksRepositoryPort, PortalReadRepositoryPort } from "../application/ports/portal-repositories.port";
+import { guarded } from "../../../common/database/guarded";
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
 
 // ---------------------------------------------------------------- staff side --
 

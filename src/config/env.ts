@@ -14,6 +14,8 @@ const envSchema = z.object({
   CORS_ALLOWED_ORIGIN: z.string().default("http://localhost:3400"),
   /** Where the frontend lives -- used to build the redirect URL Supabase puts in password-reset emails. */
   WEB_APP_URL: z.string().default("http://localhost:3400"),
+  /** This API's public address (no /api/v1), for links outside apps fetch, e.g. the calendar subscribe feed. Production: the https URL. */
+  PUBLIC_API_URL: z.string().url().default("http://localhost:4100"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   /** Queries slower than this (ms) are logged at WARN for observability. See common/database/query-timing. */
   SLOW_QUERY_MS: z.coerce.number().default(250),

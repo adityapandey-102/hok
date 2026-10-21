@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, gte, ilike, inArray, lt, sql, type SQL } from "
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
-import { AppError, InternalError, NotFoundError } from "../../../common/errors/app-error";
+import { NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only reads (ADR 0003): the client an event
 // belongs to, the template it's created from, staff names.
@@ -10,7 +10,8 @@ import { clients } from "../../clients/infrastructure/clients.schema";
 import { stageTemplateStages, stageTemplates } from "../../stage-templates/infrastructure/stage-templates.schema";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { eventStageHistory, eventStages, events } from "./events.schema";
-import { EVENT_MAX_DURATION_DAYS, type EventDetail, type EventEntity, type EventStage, type EventSummaryEntity } from "../domain/event.entity";
+import { scanLowerBound } from "../../../domain";
+import { type EventDetail, type EventEntity, type EventStage, type EventSummaryEntity } from "../domain/event.entity";
 import type { EventClient, EventTemplate } from "../domain/event.rules";
 import type {
   EventChanges,
@@ -18,14 +19,13 @@ import type {
   EventPage,
   EventsRepositoryPort,
   NewEventRecord,
-  StageMoveEntry,
-} from "../application/ports/events-repository.port";
+  StageMoveEntry } from "../application/ports/events-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** History entries returned with an event, newest first. Older ones stay in the table. */
 const HISTORY_LIMIT = 100;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const currentStage = alias(eventStages, "current_stage");
 
@@ -72,15 +72,6 @@ const SUMMARY_SELECT = {
   stageCount: events.stageCount,
   version: events.version,
 };
-
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
 
 function eventQuery(ex: Executor, id: string) {
   return ex.select(EVENT_SELECT).from(events).innerJoin(clients, eq(clients.id, events.clientId)).where(eq(events.id, id)).limit(1);
@@ -132,8 +123,8 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
       const to = new Date(f.range.to);
       // Overlap with [from, to) ...
       c.push(lt(events.startsAt, to), gt(events.endsAt, from));
-      // ... and, since no event lasts longer than 31 days, an index-friendly lower bound on starts_at.
-      c.push(gte(events.startsAt, new Date(from.getTime() - EVENT_MAX_DURATION_DAYS * DAY_MS)));
+      // ... and, since no event lasts longer than MAX_ITEM_DAYS, an index-friendly lower bound on starts_at.
+      c.push(gte(events.startsAt, scanLowerBound(f.range.from)));
     }
     return c.length ? and(...c) : undefined;
   }

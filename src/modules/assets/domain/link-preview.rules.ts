@@ -44,23 +44,50 @@ const BLOCKED_V4: [string, number][] = [
 ];
 
 /**
+ * An IPv6 address as its 8 16-bit groups, whatever way it was written
+ * (`::` shorthand, hex or dotted IPv4 tail). The URL parser and DNS hand
+ * back the hex form (`::ffff:7f00:1`), so string patterns aren't enough.
+ */
+function v6Groups(ip: string): number[] {
+  let text = ip.toLowerCase().replace(/%.*$/, "");
+  const dotted = /(\d+\.\d+\.\d+\.\d+)$/.exec(text);
+  if (dotted) {
+    const n = v4ToInt(dotted[1]!);
+    text = text.slice(0, -dotted[1]!.length) + `${(n >>> 16).toString(16)}:${(n & 0xffff).toString(16)}`;
+  }
+  const [head = "", tail] = text.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const zeros = tail === undefined ? [] : Array<string>(8 - left.length - right.length).fill("0");
+  return [...left, ...zeros, ...right].map((g) => parseInt(g, 16));
+}
+
+const groupsToV4 = (hi: number, lo: number) => [hi >>> 8, hi & 0xff, lo >>> 8, lo & 0xff].join(".");
+
+/**
  * True only for a public unicast address. Anything else -- private networks,
  * loopback, link-local (incl. 169.254.169.254 cloud metadata), unique-local
- * IPv6, multicast, reserved, and IPv4-mapped IPv6 forms of those -- is refused.
+ * IPv6, multicast, reserved, and IPv6 forms that carry an IPv4 address
+ * (mapped, compatible, NAT64, 6to4, Teredo) -- is refused or judged by the
+ * IPv4 address inside.
  */
 export function isPublicAddress(ip: string): boolean {
   const kind = isIP(ip);
   if (kind === 4) return !BLOCKED_V4.some(([base, bits]) => inV4(ip, base, bits));
   if (kind !== 6) return false;
-  const lower = ip.toLowerCase();
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-  if (mapped) return isPublicAddress(mapped[1]!);
-  if (lower === "::" || lower === "::1") return false;
-  const first = parseInt(lower.split(":")[0] || "0", 16);
+  const g = v6Groups(ip);
+  if (g.length !== 8 || g.some((n) => !Number.isInteger(n) || n < 0 || n > 0xffff)) return false;
+  // ::ffff:a.b.c.d (IPv4-mapped): judge the IPv4 address it carries.
+  if (g.slice(0, 5).every((n) => n === 0) && g[5] === 0xffff) return isPublicAddress(groupsToV4(g[6]!, g[7]!));
+  // ::, ::1 and the deprecated IPv4-compatible ::a.b.c.d.
+  if (g.slice(0, 6).every((n) => n === 0)) return false;
+  const [first, second] = g as [number, number];
   if ((first & 0xfe00) === 0xfc00) return false; // fc00::/7 unique local
-  if ((first & 0xffc0) === 0xfe80) return false; // fe80::/10 link-local
-  if ((first & 0xff00) === 0xff00) return false; // ff00::/8 multicast
-  if (lower.startsWith("64:ff9b:") || lower.startsWith("2001:db8:")) return false; // NAT64 / documentation
+  if ((first & 0xffc0) === 0xfe80 || (first & 0xffc0) === 0xfec0) return false; // link-local, old site-local
+  if ((first & 0xff00) === 0xff00) return false; // multicast
+  if (first === 0x0064 && second === 0xff9b) return false; // NAT64 (64:ff9b::/96, 64:ff9b:1::/48)
+  if (first === 0x2002) return false; // 6to4 carries an IPv4 address
+  if (first === 0x2001 && (second === 0 || second === 0xdb8)) return false; // Teredo, documentation
   return true;
 }
 

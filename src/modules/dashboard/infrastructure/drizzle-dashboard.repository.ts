@@ -2,7 +2,6 @@ import { and, asc, count, desc, eq, gt, gte, ilike, lt, ne, sql, type SQL } from
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
-import { AppError, InternalError } from "../../../common/errors/app-error";
 import { scanLowerBound } from "../../../domain";
 // The Dashboard module owns no table: read-only aggregates over the Clients,
 // Events, Staff-tasks, Client-comments and Users modules' tables,
@@ -14,6 +13,7 @@ import { staffTaskUpdates, staffTasks } from "../../staff-tasks/infrastructure/s
 import { profiles } from "../../users/infrastructure/profile.schema";
 import type { DashboardComment, DashboardEvent, DashboardTask, StageGroup, WorkloadRow } from "../domain/dashboard.entity";
 import type { DashboardRepositoryPort, TeamFilter, Window } from "../application/ports/dashboard-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 const currentStage = alias(eventStages, "current_stage");
 const assignees = alias(profiles, "assignees");
@@ -41,15 +41,6 @@ const teamWhere = (f: TeamFilter) =>
     f.search ? ilike(profiles.fullName, containsPattern(f.search)) : undefined,
     f.role ? eq(profiles.role, f.role) : undefined,
   );
-
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
 
 export class DrizzleDashboardRepository implements DashboardRepositoryPort {
   taskSummary(assigneeId: string, w: Window) {

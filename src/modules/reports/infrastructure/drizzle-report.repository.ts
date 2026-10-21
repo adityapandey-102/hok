@@ -1,7 +1,6 @@
 import { and, eq, gte, lt, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
-import { AppError, InternalError } from "../../../common/errors/app-error";
 // The Reports module owns no table: read-only aggregates over other modules'
 // tables, Infrastructure-to-Infrastructure (ADR 0003).
 import { assets } from "../../assets/infrastructure/assets.schema";
@@ -19,21 +18,12 @@ import type {
   ReportRepositoryPort,
   StaffFigures,
   TeamStatusFilter,
-  TeamStatusRowData,
-} from "../application/ports/report-repository.port";
+  TeamStatusRowData } from "../application/ports/report-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 /** `count(*) filter (where …)` as a number. */
 const countWhere = (cond: SQL) => sql<number>`(count(*) filter (where ${cond}))::int`;
 const inRange = (col: Parameters<typeof gte>[0], from: Date, to: Date) => and(gte(col, from), lt(col, to))!;
-
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
 
 /**
  * The team-status rows as ONE statement: each activity source is aggregated

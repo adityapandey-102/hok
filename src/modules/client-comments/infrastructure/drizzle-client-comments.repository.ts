@@ -2,7 +2,7 @@ import { and, count, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle
 import { containsPattern } from "../../../common/database/like-pattern";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../common/database/drizzle-client";
-import { InternalError, NotFoundError, AppError } from "../../../common/errors/app-error";
+import { NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only reads (docs/adr/0003): the client's name and
 // owner (Clients), event titles (Events), the replier's name (Users).
@@ -12,6 +12,7 @@ import { profiles } from "../../users/infrastructure/profile.schema";
 import { clientCommentHistory, clientComments } from "./client-comments.schema";
 import type { ClientCommentEntity, CommentCounts, CommentScope, PortalCommentEntity } from "../domain/client-comment.entity";
 import type { ClientCommentsRepositoryPort, CommentChange, CommentListFilters } from "../application/ports/client-comments-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 const repliers = alias(profiles, "repliers");
 
@@ -68,15 +69,6 @@ const toPortal = (r: { id: string; eventId: string | null; eventTitle: string | 
   repliedAt: r.repliedAt?.toISOString() ?? null,
   createdAt: r.createdAt.toISOString(),
 });
-
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
 
 function scopeCondition(scope: CommentScope): SQL | undefined {
   return scope.kind === "own" ? eq(clients.ownerId, scope.userId) : undefined;

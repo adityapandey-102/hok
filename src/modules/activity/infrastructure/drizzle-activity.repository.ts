@@ -1,14 +1,13 @@
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
-import { AppError, InternalError } from "../../../common/errors/app-error";
 import {
   AUDIT_PREFIXES_BY_KIND,
   type ActivityFilter,
   type ActivityKind,
   type ActivityRow,
-  type ActivitySource,
-} from "../domain/activity.entity";
+  type ActivitySource } from "../domain/activity.entity";
 import type { ActivityRepositoryPort } from "../application/ports/activity-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 // The Activity module owns no table: a read-only feed over audit_log,
 // event_stage_history, staff_task_updates, client_comments and
@@ -110,15 +109,6 @@ function toRow(r: Raw): ActivityRow {
     fromStatus: str(r.from_status),
     toStatus: str(r.to_status),
   };
-}
-
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
 }
 
 export class DrizzleActivityRepository implements ActivityRepositoryPort {

@@ -1,7 +1,7 @@
 import { and, desc, eq, ilike, isNull, or, sql, type SQL, type AnyColumn } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
-import { AppError, InternalError } from "../../../common/errors/app-error";
+import { guarded as guardedQuery } from "../../../common/database/guarded";
 // Read-only, Infrastructure-to-Infrastructure (docs/adr/0003): the search
 // module owns no table.
 import { assets } from "../../assets/infrastructure/assets.schema";
@@ -12,14 +12,7 @@ import { staffTasks } from "../../staff-tasks/infrastructure/staff-tasks.schema"
 import type { SearchHit, SearchScope } from "../domain/search.rules";
 import type { SearchRepositoryPort } from "../application/ports/search-repository.port";
 
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to search ${what}`, error);
-  }
-}
+const guarded = <T>(what: string, run: () => Promise<T>): Promise<T> => guardedQuery(`search ${what}`, run);
 
 /** Starts-with matches first (what people usually mean), then the rest. */
 const prefixFirst = (col: AnyColumn, term: string) => sql`(lower(${col}) like lower(${`${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`})) desc`;

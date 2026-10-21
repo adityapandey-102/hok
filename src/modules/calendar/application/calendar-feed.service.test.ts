@@ -5,6 +5,7 @@ import { hashToken } from "../../../common/crypto/credentials";
 import type { Role } from "../../../domain";
 import { CalendarFeedService } from "./calendar-feed.service";
 import type { CalendarFeedRepositoryPort, CalendarRepositoryPort, FeedOwner } from "./ports/calendar-repository.port";
+import type { CalendarItem } from "../domain/calendar.entity";
 
 function setup(role: Role = "social_media_manager", active = true) {
   const hashes = new Map<string, string>(); // userId -> hash
@@ -27,7 +28,7 @@ function setup(role: Role = "social_media_manager", active = true) {
     personalInRange: (range, f) => (reads.push({ kind: "personal", range, f }), Promise.resolve([])),
   };
   const audit: AuditLogger = { record: (e) => (audits.push(e), Promise.resolve()) };
-  const service = new CalendarFeedService(links, calendar, audit, "https://hok.example", () => new Date("2026-10-21T00:00:00Z"));
+  const service = new CalendarFeedService(links, calendar, audit, "https://hok.example", () => new Date("2026-10-21T00:00:00Z"), "https://api.hok.example");
   return { service, hashes, audits, reads };
 }
 
@@ -44,10 +45,50 @@ async function codeOf(p: Promise<unknown>): Promise<string | null> {
 describe("CalendarFeedService", () => {
   it("stores only the hash, returns the token once, audits", async () => {
     const { service, hashes, audits } = setup();
-    const { token, link } = await service.create("rohan");
+    const { token, link, url } = await service.create("rohan");
     expect(link).not.toBeNull();
+    expect(url).toBe(`https://api.hok.example/api/v1/calendar-feed/${token}.ics`);
     expect(hashes.get("rohan")).toBe(hashToken(token));
     expect(audits.map((a) => a.action)).toEqual(["calendar_feed.created"]);
+  });
+
+  it("never hands out a token when nothing was saved (profile gone)", async () => {
+    const { audits } = setup();
+    const gone = new CalendarFeedService(
+      { feedLink: () => Promise.resolve(null), setFeedLink: () => Promise.resolve(null), findFeedOwner: () => Promise.resolve(null) },
+      { eventsInRange: () => Promise.resolve([]), personalInRange: () => Promise.resolve([]) },
+      { record: (e) => (audits.push(e), Promise.resolve()) },
+    );
+    expect(await codeOf(gone.create("ghost"))).toBe("USER_NOT_FOUND");
+    expect(audits).toEqual([]);
+  });
+
+  it("keeps an item happening now once, though both windows return it", async () => {
+    const now: CalendarItem = {
+      kind: "personal",
+      id: "p1",
+      title: "Shoot",
+      startsAt: "2026-10-20T23:00:00.000Z",
+      endsAt: "2026-10-21T01:00:00.000Z",
+      timeZone: "Asia/Kolkata",
+      clientId: null,
+      clientName: null,
+      ownerId: "rohan",
+    };
+    const hashes = new Map<string, string>();
+    const svc = new CalendarFeedService(
+      {
+        feedLink: () => Promise.resolve(null),
+        setFeedLink: (u, h) => (h && hashes.set(u, h), Promise.resolve({ createdAt: "2026-10-21T00:00:00.000Z" })),
+        findFeedOwner: (h) => Promise.resolve(hashes.get("rohan") === h ? { userId: "rohan", role: "social_media_manager" as Role, fullName: "Rohan" } : null),
+      },
+      { eventsInRange: () => Promise.resolve([]), personalInRange: () => Promise.resolve([now]) },
+      { record: () => Promise.resolve() },
+      "https://hok.example",
+      () => new Date("2026-10-21T00:00:00Z"),
+    );
+    const { token } = await svc.create("rohan");
+    expect((await svc.ics(`${token}.ics`)).match(/BEGIN:VEVENT/g)).toHaveLength(1);
   });
 
   it("a new link replaces the old one; the old one is a 404", async () => {
@@ -58,13 +99,17 @@ describe("CalendarFeedService", () => {
     expect(await service.ics(`${second.token}.ics`)).toContain("X-WR-CALNAME:HOK · Rohan Mehta");
   });
 
-  it("reads the owner's own scope over the feed window", async () => {
+  it("reads the owner's own scope, upcoming and past separately so the past never pushes upcoming out", async () => {
     const { service, reads } = setup();
     const { token } = await service.create("rohan");
     await service.ics(`${token}.ics`);
+    const upcoming = { from: "2026-10-21T00:00:00.000Z", to: "2027-04-19T00:00:00.000Z" };
+    const past = { from: "2026-09-21T00:00:00.000Z", to: "2026-10-21T00:00:00.000Z" };
     expect(reads).toEqual([
-      { kind: "events", range: { from: "2026-09-21T00:00:00.000Z", to: "2027-04-19T00:00:00.000Z" }, f: { ownerId: "rohan" } },
-      { kind: "personal", range: { from: "2026-09-21T00:00:00.000Z", to: "2027-04-19T00:00:00.000Z" }, f: { ownerId: "rohan" } },
+      { kind: "events", range: upcoming, f: { ownerId: "rohan" } },
+      { kind: "personal", range: upcoming, f: { ownerId: "rohan" } },
+      { kind: "events", range: past, f: { ownerId: "rohan" } },
+      { kind: "personal", range: past, f: { ownerId: "rohan" } },
     ]);
   });
 

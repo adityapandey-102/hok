@@ -325,6 +325,7 @@ async function main() {
   }
   check("POST /calendar/feed-link without a login -> 401", (await req("/calendar/feed-link", { method: "POST" })).status, 401);
   const feed = await req("/calendar/feed-link", { method: "POST" }, smm.token);
+  check("POST /calendar/feed-link returns the absolute feed url", /^https?:\/\/.+\/api\/v1\/calendar-feed\/[A-Za-z0-9_-]{43}\.ics$/.test(feed.body?.url ?? ""), true);
   const feedRes = await fetch(`${BASE}/calendar-feed/${feed.body?.token}.ics`);
   const feedText = await feedRes.text();
   check("GET /calendar-feed/<token>.ics (public) -> 200 text/calendar", `${feedRes.status} ${feedRes.headers.get("content-type")?.split(";")[0]}`, "200 text/calendar");

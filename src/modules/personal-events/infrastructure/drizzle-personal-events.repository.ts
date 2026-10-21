@@ -1,6 +1,6 @@
 import { and, desc, asc, eq, gt, gte, lt, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
-import { AppError, InternalError, NotFoundError } from "../../../common/errors/app-error";
+import { NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { scanLowerBound } from "../../../domain";
 // Cross-module Infrastructure-only reads (ADR 0003): owner and client names.
@@ -12,8 +12,8 @@ import type {
   NewPersonalEvent,
   PersonalEventChanges,
   PersonalEventFilters,
-  PersonalEventsRepositoryPort,
-} from "../application/ports/personal-events-repository.port";
+  PersonalEventsRepositoryPort } from "../application/ports/personal-events-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -50,15 +50,6 @@ function toEntity(r: Row): PersonalEventEntity {
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
-}
-
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
 }
 
 async function selectOne(ex: Executor, id: string, forUpdate = false): Promise<PersonalEventEntity | null> {

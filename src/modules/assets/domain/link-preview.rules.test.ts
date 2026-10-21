@@ -14,6 +14,18 @@ describe("isPublicAddress (SSRF guard)", () => {
     }
   });
 
+  it("refuses the hex forms the URL parser and DNS actually return (review 2026-10-22)", () => {
+    const hosts = ["http://[::ffff:127.0.0.1]/", "http://[::ffff:169.254.169.254]/latest/meta-data/", "http://[::ffff:10.0.0.1]/"];
+    for (const raw of hosts) {
+      const host = new URL(raw).hostname.replace(/^[|]$/g, "");
+      expect(isPublicAddress(host), `${raw} -> ${host}`).toBe(false);
+    }
+    for (const ip of ["::ffff:7f00:1", "::ffff:a9fe:a9fe", "0:0:0:0:0:ffff:7f00:1", "::7f00:1", "::127.0.0.1", "64:ff9b::7f00:1", "2002:7f00:1::1", "2001:0:4136:e378::1", "fec0::1", "fe80::1%eth0"]) {
+      expect(isPublicAddress(ip), ip).toBe(false);
+    }
+    expect(isPublicAddress("::ffff:808:808")).toBe(true); // 8.8.8.8, hex form
+  });
+
   it("allows public addresses", () => {
     for (const ip of ["8.8.8.8", "142.250.183.14", "172.32.0.1", "2606:4700:4700::1111", "::ffff:8.8.8.8"]) {
       expect(isPublicAddress(ip), ip).toBe(true);

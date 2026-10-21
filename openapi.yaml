@@ -1123,9 +1123,11 @@ paths:
       tags: [Calendar]
       summary: Make a calendar subscribe link (a new one replaces the old one at once)
       description: |
-        `events:read`. The token is returned in this response ONLY. The
-        subscribe URL is `<API base>/api/v1/calendar-feed/<token>.ics`.
-        Audited as `calendar_feed.created` (never with the token).
+        `events:read`. The token and the full subscribe `url`
+        (`PUBLIC_API_URL` + `/api/v1/calendar-feed/<token>.ics`) are returned
+        in this response ONLY. Audited as `calendar_feed.created` (never with
+        the token). 404 `USER_NOT_FOUND` if the caller's profile is gone (no
+        token is handed out then).
       security: [{ bearerAuth: [] }]
       responses:
         "201":
@@ -1134,10 +1136,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [link, token]
+                required: [link, token, url]
                 properties:
                   link: { $ref: "#/components/schemas/CalendarFeedLink" }
                   token: { type: string, description: "43 characters, base64url. Shown once." }
+                  url: { type: string, format: uri, description: "The address to give calendar apps. Shown once." }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
     delete:
@@ -1157,8 +1160,9 @@ paths:
         No login: `<token>.ics` is the credential (rate-limited per IP,
         redacted from logs). The owner's calendar as in HOK (a manager: their
         clients' events + own entries; the Admin: every client event + own
-        entries), the last 30 days and the next 180, up to 500 of each kind.
-        Times are UTC. A malformed, unknown, replaced or turned-off link, a
+        entries): the next 180 days (up to 500 of each kind) and the last 30
+        (up to 100 of each kind), read separately so the past never pushes
+        upcoming items out. Times are UTC; a zero-length item has no DTEND. A malformed, unknown, replaced or turned-off link, a
         deactivated person or a role without a calendar: the same 404
         `CALENDAR_FEED_INVALID`.
       parameters:

@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, ilike, lt, ne, sql, type SQL } from "drizzle-o
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
-import { AppError, InternalError, NotFoundError } from "../../../common/errors/app-error";
+import { NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only reads (ADR 0003): the assignee's and
 // author's names, the linked client's name and the linked event's title.
@@ -17,8 +17,8 @@ import type {
   StaffTaskChangeDecision,
   StaffTaskListFilters,
   StaffTaskPage,
-  StaffTasksRepositoryPort,
-} from "../application/ports/staff-tasks-repository.port";
+  StaffTasksRepositoryPort } from "../application/ports/staff-tasks-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -76,15 +76,6 @@ const SUMMARY_SELECT = {
 };
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
-
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
 
 /** SQLSTATE 42P01: the events table isn't there (migration 20261013000004 not applied). Drizzle may wrap it in `cause`. */
 function isUndefinedTable(err: unknown): boolean {

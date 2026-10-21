@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feedTokenFrom, feedWindow, toIcs } from "./calendar-feed.rules";
+import { feedTokenFrom, feedUrl, feedWindows, toIcs } from "./calendar-feed.rules";
 import type { CalendarItem } from "./calendar.entity";
 
 const event: CalendarItem = {
@@ -54,6 +54,12 @@ describe("toIcs", () => {
     expect(lines).toContain("SUMMARY:Call\\nback");
   });
 
+  it("leaves DTEND out of a zero-length item (RFC 5545: DTEND must be after DTSTART)", () => {
+    const zero = toIcs([{ ...personal, endsAt: personal.startsAt }], opts).split("\r\n");
+    expect(zero).toContain("DTSTART:20261022T050000Z");
+    expect(zero.some((l) => l.startsWith("DTEND"))).toBe(false);
+  });
+
   it("folds lines longer than 75 bytes without splitting a character", () => {
     const long = toIcs([{ ...personal, title: "é".repeat(100) }], opts);
     for (const line of long.split("\r\n")) expect(Buffer.byteLength(line)).toBeLessThanOrEqual(75);
@@ -70,7 +76,14 @@ describe("feed helpers", () => {
     expect(feedTokenFrom("../x.ics")).toBeNull();
   });
 
-  it("covers the last 30 days and the next 180", () => {
-    expect(feedWindow(new Date("2026-10-21T00:00:00Z"))).toEqual({ from: "2026-09-21T00:00:00.000Z", to: "2027-04-19T00:00:00.000Z" });
+  it("reads the last 30 days and the next 180 as two windows meeting at now", () => {
+    expect(feedWindows(new Date("2026-10-21T00:00:00Z"))).toEqual({
+      past: { from: "2026-09-21T00:00:00.000Z", to: "2026-10-21T00:00:00.000Z" },
+      upcoming: { from: "2026-10-21T00:00:00.000Z", to: "2027-04-19T00:00:00.000Z" },
+    });
+  });
+
+  it("builds the public address from the API's own URL", () => {
+    expect(feedUrl("https://api.hok.example/", "t")).toBe("https://api.hok.example/api/v1/calendar-feed/t.ics");
   });
 });

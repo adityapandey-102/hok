@@ -1,6 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
-import { AppError, InternalError } from "../../../common/errors/app-error";
 // Cross-module Infrastructure-only read: `profiles` is owned by the Users
 // module's schema (the actor's name on a bell entry). See docs/adr/0003.
 import { profiles } from "../../users/infrastructure/profile.schema";
@@ -13,19 +12,11 @@ import type {
   NotificationListPage,
   NotificationsRepositoryPort,
 } from "../application/ports/notifications-repository.port";
+import { guarded } from "../../../common/database/guarded";
 
 /** The pool, or an open transaction (for insertNotificationsInTransaction). */
 export type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** Rethrows a deliberate AppError untouched; wraps anything else as a 500 with the cause for the logs. */
-async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new InternalError(`Failed to ${what}`, error);
-  }
-}
 
 const NOTIFICATION_SELECT = {
   id: notifications.id,
