@@ -7,6 +7,11 @@ describe("redactUrl", () => {
     expect(redactUrl("/api/v1/portal/AbC_123-xyz")).toBe("/api/v1/portal/[redacted]");
   });
 
+  it("hides the calendar subscribe token", () => {
+    expect(redactUrl("/api/v1/calendar-feed/AbC_123-xyz.ics")).toBe("/api/v1/calendar-feed/[redacted]");
+    expect(redactUrl("/api/v1/calendar/feed-link")).toBe("/api/v1/calendar/feed-link");
+  });
+
   it("leaves other URLs alone (the staff /portal-links route has no token)", () => {
     expect(redactUrl("/api/v1/events?from=x")).toBe("/api/v1/events?from=x");
     expect(redactUrl("/api/v1/portal-links/0b1c")).toBe("/api/v1/portal-links/0b1c");

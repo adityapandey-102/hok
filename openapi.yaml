@@ -1105,6 +1105,77 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /api/v1/calendar/feed-link:
+    get:
+      tags: [Calendar]
+      summary: The caller's own calendar subscribe link, if one is on (FR-CAL-08)
+      description: "`events:read`. Never returns the token (only its hash is stored)."
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The link, or null.
+          content:
+            application/json:
+              schema: { type: object, required: [link], properties: { link: { $ref: "#/components/schemas/CalendarFeedLink" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Calendar]
+      summary: Make a calendar subscribe link (a new one replaces the old one at once)
+      description: |
+        `events:read`. The token is returned in this response ONLY. The
+        subscribe URL is `<API base>/api/v1/calendar-feed/<token>.ics`.
+        Audited as `calendar_feed.created` (never with the token).
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: The new link and its token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [link, token]
+                properties:
+                  link: { $ref: "#/components/schemas/CalendarFeedLink" }
+                  token: { type: string, description: "43 characters, base64url. Shown once." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      tags: [Calendar]
+      summary: Turn the calendar subscribe link off (idempotent)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Off. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/calendar-feed/{file}:
+    get:
+      tags: [Calendar]
+      summary: Public iCalendar feed for Google Calendar / Apple / Outlook (FR-CAL-08)
+      description: |
+        No login: `<token>.ics` is the credential (rate-limited per IP,
+        redacted from logs). The owner's calendar as in HOK (a manager: their
+        clients' events + own entries; the Admin: every client event + own
+        entries), the last 30 days and the next 180, up to 500 of each kind.
+        Times are UTC. A malformed, unknown, replaced or turned-off link, a
+        deactivated person or a role without a calendar: the same 404
+        `CALENDAR_FEED_INVALID`.
+      parameters:
+        - { name: file, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}\.ics$' } }
+      responses:
+        "200":
+          description: The calendar.
+          content:
+            text/calendar:
+              schema: { type: string }
+        "404":
+          description: Not a valid link (`CALENDAR_FEED_INVALID`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
   # ------------------------------------------------------ Dashboard (M10) --
   /api/v1/dashboard:
     get:
@@ -2543,6 +2614,12 @@ components:
     CommentStatus:
       type: string
       enum: [received, in_progress, solved]
+    CalendarFeedLink:
+      type: object
+      nullable: true
+      required: [createdAt]
+      properties:
+        createdAt: { type: string, format: date-time }
     PortalLink:
       type: object
       description: Staff view of a client's portal link. Never the token or its hash.

@@ -104,6 +104,8 @@ export const ERROR_CODES = {
   PERSONAL_EVENT_TIMES_INVALID: "PERSONAL_EVENT_TIMES_INVALID",
   /** `from`/`to` missing, reversed, or more than 92 days apart (400). */
   CALENDAR_RANGE_INVALID: "CALENDAR_RANGE_INVALID",
+  /** Public: unknown, malformed, replaced or turned-off subscribe link, or a person who no longer has a calendar -- always the same 404. */
+  CALENDAR_FEED_INVALID: "CALENDAR_FEED_INVALID",
 
   // -- Client portal + comments (M8) ----------------------------------------------
   /** Public: unknown, malformed, regenerated or disabled link, or an archived client -- always the same 404. */

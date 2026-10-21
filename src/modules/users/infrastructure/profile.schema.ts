@@ -28,4 +28,7 @@ export const profiles = pgTable("profiles", {
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   /** Last authenticated API call, throttled (FR-SYS-03). */
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  /** SHA-256 of the person's calendar subscribe token (FR-CAL-08); null = no link. The Calendar module manages it. */
+  calendarFeedTokenHash: text("calendar_feed_token_hash"),
+  calendarFeedCreatedAt: timestamp("calendar_feed_created_at", { withTimezone: true }),
 });

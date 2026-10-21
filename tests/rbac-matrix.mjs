@@ -317,6 +317,23 @@ async function main() {
   const mmCal = await req(`/calendar?${calRange}&ownerId=${smm.id}`, {}, mm.token);
   check("GET /calendar as MM never shows the SMM's items (ownerId ignored)", mmCal.body?.items?.every((i) => i.ownerId === mm.id), true);
 
+  console.log("\n--- calendar subscribe link (FR-CAL-08; own link only; task-only: 403; public feed: token only) ---");
+  for (const [role, token] of everyone) {
+    const ok = !TASK_ONLY.includes(role);
+    check(`GET /calendar/feed-link as ${role} -> ${ok ? 200 : 403}`, (await req("/calendar/feed-link", {}, token)).status, ok ? 200 : 403);
+    check(`POST /calendar/feed-link as ${role} -> ${ok ? 201 : 403}`, (await req("/calendar/feed-link", { method: "POST" }, token)).status, ok ? 201 : 403);
+  }
+  check("POST /calendar/feed-link without a login -> 401", (await req("/calendar/feed-link", { method: "POST" })).status, 401);
+  const feed = await req("/calendar/feed-link", { method: "POST" }, smm.token);
+  const feedRes = await fetch(`${BASE}/calendar-feed/${feed.body?.token}.ics`);
+  const feedText = await feedRes.text();
+  check("GET /calendar-feed/<token>.ics (public) -> 200 text/calendar", `${feedRes.status} ${feedRes.headers.get("content-type")?.split(";")[0]}`, "200 text/calendar");
+  check("the SMM's feed is a calendar", feedText.startsWith("BEGIN:VCALENDAR"), true);
+  check("GET /calendar-feed/<unknown>.ics -> 404", (await req(`/calendar-feed/${"x".repeat(43)}.ics`)).status, 404);
+  check("GET /calendar-feed/<malformed> -> 404", (await req("/calendar-feed/nope")).status, 404);
+  check("DELETE /calendar/feed-link as SMM -> 204", (await req("/calendar/feed-link", { method: "DELETE" }, smm.token)).status, 204);
+  check("the turned-off link -> 404", (await req(`/calendar-feed/${feed.body?.token}.ics`)).status, 404);
+
   console.log("\n--- portal links + client comments (admin: all; SMM / MM: own clients, others' 404; task-only: 403; public: token only) ---");
   const porClient = (await req("/clients", { method: "POST", body: newClient("portal-client") }, smm.token)).body?.client;
   const linkExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };

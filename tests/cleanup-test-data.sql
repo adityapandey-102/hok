@@ -21,6 +21,8 @@ delete from public.staff_tasks
   where assignee_id in (select id from t_users)
      or client_id in (select id from t_clients)
      or title ~ '^(E2E |IT |RBAC |QB |Dash )';
+delete from public.client_todos
+  where client_id in (select id from t_clients) or title ~ '^(E2E |IT |RBAC )';
 delete from public.assets where client_id in (select id from t_clients);
 delete from public.tags where client_id in (select id from t_clients);
 delete from public.personal_events
@@ -39,3 +41,4 @@ select 'left: profiles', count(*) from public.profiles;
 select 'left: clients', count(*) from public.clients;
 select 'left: events', count(*) from public.events;
 select 'left: tasks', count(*) from public.staff_tasks;
+select 'left: to-dos', count(*) from public.client_todos;

@@ -79,6 +79,7 @@ describe("describeActivity", () => {
     expect(describeActivity(row({ action: "user.created", targetUserName: "Rohan" }))).toBe("Sara created the account for Rohan");
     expect(describeActivity(row({ action: "asset.created", assetTitle: "Raw clips" }))).toBe("Sara added the asset Raw clips");
     expect(describeActivity(row({ action: "portal_link.generated", clientName: "Chai" }))).toBe("Sara created a portal link for Chai");
+    expect(describeActivity(row({ action: "calendar_feed.created" }))).toBe("Sara made a calendar subscribe link");
   });
 
   it("falls back gracefully when a name is gone or the actor is unknown", () => {

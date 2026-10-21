@@ -17,7 +17,7 @@ import { clientsRouter } from "./modules/clients/api/clients.routes";
 import { stageTemplatesRouter } from "./modules/stage-templates/api/stage-templates.routes";
 import { eventsRouter } from "./modules/events/api/events.routes";
 import { personalEventsRouter } from "./modules/personal-events/api/personal-events.routes";
-import { calendarRouter } from "./modules/calendar/api/calendar.routes";
+import { calendarFeedPublicRouter, calendarRouter } from "./modules/calendar/api/calendar.routes";
 import { teamMembersRouter } from "./modules/team-members/api/team-members.routes";
 import { assetsRouter } from "./modules/assets/api/assets.routes";
 import { staffTasksRouter } from "./modules/staff-tasks/api/staff-tasks.routes";
@@ -31,7 +31,7 @@ import { activityRouter } from "./modules/activity/api/activity.routes";
 import { reportsRouter } from "./modules/reports/api/reports.routes";
 import { searchRouter } from "./modules/search/api/search.routes";
 import { requirePortalLink } from "./common/middleware/portal-link.middleware";
-import { portalReadLimiter } from "./common/middleware/portal-rate-limit.middleware";
+import { calendarFeedLimiter, portalReadLimiter } from "./common/middleware/portal-rate-limit.middleware";
 
 /** Turns the TRUST_PROXY env string into what Express's `trust proxy` expects:
  *  a boolean, a hop count, or a preset/subnet string (e.g. "loopback"). */
@@ -132,6 +132,8 @@ export function createApp() {
   apiV1.use("/events", eventsRouter);
   apiV1.use("/personal-events", personalEventsRouter);
   apiV1.use("/calendar", calendarRouter);
+  // Public calendar subscribe feed (FR-CAL-08): the token in the path is the credential.
+  apiV1.use("/calendar-feed", calendarFeedLimiter, calendarFeedPublicRouter);
   apiV1.use("/team-members", teamMembersRouter);
   apiV1.use("/assets", assetsRouter);
   apiV1.use("/staff-tasks", staffTasksRouter);

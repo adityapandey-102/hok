@@ -33,6 +33,7 @@ arrives in M11; until then the query budget below is the check.)
 | Index | Serves |
 | --- | --- |
 | `profiles (role)` | Bootstrap's "does an admin exist", the users list's role filter |
+| `profiles (calendar_feed_token_hash)` unique, partial (`where … is not null`) | The public calendar feed's lookup by token hash (FR-CAL-08); only people with a link are indexed |
 | `audit_log (created_at desc)`, `(entity_type, entity_id)`, `(actor_id, created_at desc)` | Activity views, an entity's history, "last seen" per person |
 | `clients (owner_id, created_at desc, id desc)` | A manager's client list (newest first), the Admin's owner filter, the `owner_id` FK check |
 | `clients (status, created_at desc, id desc)` | The Admin's all-clients list and the status filter (default list = `status <> 'archived'`) |

@@ -533,6 +533,10 @@ FR-RPT-01..04. The module owns no table; every endpoint is `dashboard:global` (A
 
 After an asset is saved (or its URL changes), `HttpLinkPreviewer` fetches the page in the background and stores `preview_*` (title, description, image URL, site). Guarded against SSRF: http(s) on standard ports only, every DNS answer checked at connect time (private, loopback, link-local/metadata, CGNAT, multicast, reserved and IPv4-mapped forms refused; literal IPs checked too), redirects re-checked (max 3), 4 s and 512 KB limits, HTML only. YouTube uses its oEmbed JSON. Off in tests and with `LINK_PREVIEWS=off`.
 
+### Calendar subscribe link (FR-CAL-08)
+
+Anyone with a calendar (`events:read`: Admin, SMM, MM) can make one secret link to add their HOK calendar to Google Calendar, Apple Calendar or Outlook ("subscribe from URL"). `GET|POST|DELETE /api/v1/calendar/feed-link` shows, makes (a new one replaces the old one at once) and turns off the caller's own link; the token is returned once and only its SHA-256 is stored (`profiles.calendar_feed_token_hash`, migration `20261022000001`). The public `GET /api/v1/calendar-feed/<token>.ics` (no login, rate-limited, token redacted from logs) returns the same items as the person's calendar in HOK, the last 30 days and the next 180 (up to 500 per kind), in UTC: 1 lookup + 2 queries. Every bad link (malformed, unknown, replaced, off, deactivated person, role without a calendar) is the same 404 `CALENDAR_FEED_INVALID`. Calendar apps fetch it from their own servers, so it only works once the API is on a public https address; Google refreshes subscribed calendars every few hours.
+
 ### Dependency injection
 
 No container -- manual constructor injection at each module's composition

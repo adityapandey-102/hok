@@ -53,6 +53,10 @@ export const AUDIT_ACTIONS = {
   PERSONAL_EVENT_UPDATED: "personal_event.updated",
   PERSONAL_EVENT_DELETED: "personal_event.deleted",
 
+  // Calendar subscribe link (FR-CAL-08), the person's own. The token is never logged or audited.
+  CALENDAR_FEED_CREATED: "calendar_feed.created",
+  CALENDAR_FEED_REVOKED: "calendar_feed.revoked",
+
   // Client portal (M8). The token itself is never logged or audited.
   PORTAL_LINK_GENERATED: "portal_link.generated",
   PORTAL_LINK_DISABLED: "portal_link.disabled",

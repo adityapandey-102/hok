@@ -68,6 +68,10 @@ function describeAudit(r: ActivityRow, who: string): string {
       return `${who} reset the password of ${person}`;
     case "user.profile_updated":
       return `${who} updated their profile`;
+    case "calendar_feed.created":
+      return `${who} made a calendar subscribe link`;
+    case "calendar_feed.revoked":
+      return `${who} turned off their calendar subscribe link`;
     case "client.created":
       return `${who} added ${theClient}`;
     case "client.updated":

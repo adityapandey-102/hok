@@ -8,8 +8,17 @@ import { scanLowerBound } from "../../../domain";
 import { clients } from "../../clients/infrastructure/clients.schema";
 import { eventStages, events } from "../../events/infrastructure/events.schema";
 import { personalEvents } from "../../personal-events/infrastructure/personal-events.schema";
+// The subscribe link's hash lives on the person's profile (Users' table, ADR 0003).
+import { profiles } from "../../users/infrastructure/profile.schema";
 import type { CalendarEventItem, CalendarPersonalItem } from "../domain/calendar.entity";
-import type { CalendarEventFilters, CalendarPersonalFilters, CalendarRange, CalendarRepositoryPort } from "../application/ports/calendar-repository.port";
+import type {
+  CalendarEventFilters,
+  CalendarFeedRepositoryPort,
+  CalendarPersonalFilters,
+  CalendarRange,
+  CalendarRepositoryPort,
+  FeedOwner,
+} from "../application/ports/calendar-repository.port";
 
 const currentStage = alias(eventStages, "current_stage");
 
@@ -27,7 +36,7 @@ async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
  * starts_at by the 31-day item cap (index-friendly), joined to what a
  * calendar cell shows (client name, current stage), earliest first, capped.
  */
-export class DrizzleCalendarRepository implements CalendarRepositoryPort {
+export class DrizzleCalendarRepository implements CalendarRepositoryPort, CalendarFeedRepositoryPort {
   eventsInRange(range: CalendarRange, f: CalendarEventFilters, limit: number) {
     return guarded("load calendar events", async () => {
       const c: SQL[] = [
@@ -95,6 +104,36 @@ export class DrizzleCalendarRepository implements CalendarRepositoryPort {
       return rows.map(
         (r): CalendarPersonalItem => ({ kind: "personal", ...r, startsAt: r.startsAt.toISOString(), endsAt: r.endsAt.toISOString() }),
       );
+    });
+  }
+
+  feedLink(userId: string) {
+    return guarded("load the calendar link", async () => {
+      const [row] = await db.select({ createdAt: profiles.calendarFeedCreatedAt }).from(profiles).where(eq(profiles.id, userId)).limit(1);
+      return row?.createdAt ? { createdAt: row.createdAt.toISOString() } : null;
+    });
+  }
+
+  setFeedLink(userId: string, tokenHash: string | null) {
+    return guarded("save the calendar link", async () => {
+      const [row] = await db
+        .update(profiles)
+        .set({ calendarFeedTokenHash: tokenHash, calendarFeedCreatedAt: tokenHash ? new Date() : null })
+        .where(eq(profiles.id, userId))
+        .returning({ createdAt: profiles.calendarFeedCreatedAt });
+      return row?.createdAt ? { createdAt: row.createdAt.toISOString() } : null;
+    });
+  }
+
+  /** By hash (partial unique index profiles_calendar_feed_token_idx); a deactivated person's link stops working. */
+  findFeedOwner(tokenHash: string): Promise<FeedOwner | null> {
+    return guarded("open the calendar link", async () => {
+      const [row] = await db
+        .select({ userId: profiles.id, role: profiles.role, fullName: profiles.fullName })
+        .from(profiles)
+        .where(and(eq(profiles.calendarFeedTokenHash, tokenHash), eq(profiles.active, true)))
+        .limit(1);
+      return row ?? null;
     });
   }
 }

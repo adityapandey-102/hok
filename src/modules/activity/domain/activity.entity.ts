@@ -22,7 +22,7 @@ export const AUDIT_PREFIXES_BY_KIND: Record<ActivityKind, readonly string[]> = {
   tasks: ["staff_task.", "client_todo."],
   comments: ["comment."],
   assets: ["asset."],
-  accounts: ["auth.", "user."],
+  accounts: ["auth.", "user.", "calendar_feed."],
 };
 
 export type ActivitySource = "audit" | "stage" | "task" | "comment" | "comment_status";

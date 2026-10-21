@@ -9,7 +9,7 @@ import { CLIENT_STATUSES, SOCIAL_PLATFORMS } from "../modules/clients/domain/cli
 import { stageTemplatesRouter } from "../modules/stage-templates/api/stage-templates.routes";
 import { eventsRouter } from "../modules/events/api/events.routes";
 import { personalEventsRouter } from "../modules/personal-events/api/personal-events.routes";
-import { calendarRouter } from "../modules/calendar/api/calendar.routes";
+import { calendarFeedPublicRouter, calendarRouter } from "../modules/calendar/api/calendar.routes";
 import { teamMembersRouter } from "../modules/team-members/api/team-members.routes";
 import { EVENT_STATES, EVENT_TYPES } from "../modules/events/domain/event.entity";
 import { assetsRouter } from "../modules/assets/api/assets.routes";
@@ -50,6 +50,7 @@ const MOUNTED: [string, Router][] = [
   ["/api/v1/events", eventsRouter],
   ["/api/v1/personal-events", personalEventsRouter],
   ["/api/v1/calendar", calendarRouter],
+  ["/api/v1/calendar-feed", calendarFeedPublicRouter],
   ["/api/v1/team-members", teamMembersRouter],
   ["/api/v1/assets", assetsRouter],
   ["/api/v1/staff-tasks", staffTasksRouter],

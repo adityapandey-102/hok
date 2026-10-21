@@ -27,6 +27,9 @@ const HOUR = 60 * 60 * 1000;
 
 export const portalReadLimiter = limiter(15 * 60 * 1000, env.PORTAL_READ_RATE_LIMIT_MAX, "Too many requests. Please wait a few minutes and try again.");
 
+/** The public calendar feed (FR-CAL-08): calendar apps re-fetch every hour or so; this only stops guessing. */
+export const calendarFeedLimiter = limiter(15 * 60 * 1000, env.PORTAL_READ_RATE_LIMIT_MAX, "Too many requests. Please wait a few minutes and try again.");
+
 export const portalCommentLimiters = [
   limiter(HOUR, env.PORTAL_COMMENT_RATE_LIMIT_MAX, "You've sent a lot of comments. Please try again in a while."),
   limiter(HOUR, env.PORTAL_COMMENT_GLOBAL_MAX_PER_HOUR, "Comments are busy right now. Please try again later.", () => "everyone"),
