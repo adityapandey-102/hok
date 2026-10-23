@@ -36,12 +36,12 @@ const CLIENT_SELECT = {
   businessName: clients.businessName,
   logoUrl: clients.logoUrl,
   industry: clients.industry,
-  contactPerson: clients.contactPerson,
-  phone: clients.phone,
   email: clients.email,
   address: clients.address,
-  website: clients.website,
-  socialHandles: clients.socialHandles,
+  websites: clients.websites,
+  phones: clients.phones,
+  contacts: clients.contacts,
+  socialAccounts: clients.socialAccounts,
   services: clients.services,
   contractStart: clients.contractStart,
   contractEnd: clients.contractEnd,
@@ -62,7 +62,8 @@ const CLIENT_SUMMARY_SELECT = {
   businessName: clients.businessName,
   logoUrl: clients.logoUrl,
   industry: clients.industry,
-  contactPerson: clients.contactPerson,
+  // The first contact's name only, not the whole list.
+  contactPerson: sql<string | null>`${clients.contacts} -> 0 ->> 'name'`,
   status: clients.status,
   timeZone: clients.timeZone,
   contractEnd: clients.contractEnd,
@@ -80,7 +81,7 @@ async function selectClient(ex: Executor, id: string, forUpdate = false): Promis
     .where(eq(clients.id, id))
     .limit(1);
   // FOR UPDATE OF clients: lock only the client row, not its owner's profile.
-  const rows: ClientRow[] = forUpdate ? await query.for("update", { of: clients }) : await query;
+  const rows: Omit<ClientRow, "contactPerson">[] = forUpdate ? await query.for("update", { of: clients }) : await query;
   const row = rows[0];
   return row ? ClientMapper.toEntity(row) : null;
 }
@@ -141,12 +142,12 @@ export class DrizzleClientsRepository implements ClientsRepositoryPort {
           businessName: record.businessName,
           logoUrl: record.logoUrl,
           industry: record.industry,
-          contactPerson: record.contactPerson,
-          phone: record.phone,
           email: record.email,
           address: record.address,
-          website: record.website,
-          socialHandles: record.socialHandles,
+          websites: record.websites,
+          phones: record.phones,
+          contacts: record.contacts,
+          socialAccounts: record.socialAccounts,
           services: record.services,
           contractStart: record.contractStart,
           contractEnd: record.contractEnd,

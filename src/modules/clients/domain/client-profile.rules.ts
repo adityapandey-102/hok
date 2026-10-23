@@ -1,7 +1,7 @@
 import { BadRequestError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { isValidHttpUrl } from "../../../domain";
-import { SOCIAL_PLATFORMS, type SocialHandles, type SocialPlatform } from "./client.entity";
+import { SOCIAL_PLATFORMS, type SocialAccount, type SocialPlatform } from "./client.entity";
 
 /**
  * Field rules for a client profile (FR-CLI-02). Pure functions: the zod DTOs
@@ -30,17 +30,42 @@ export function isValidSocialHandle(value: string): boolean {
   return HANDLE.test(value);
 }
 
-/**
- * Trims every value and drops empty ones, so `{ tiktok: "" }` clears TikTok.
- * Assumes keys and values were validated (see the DTO); returns a fresh object.
- */
-export function normalizeSocialHandles(handles: Record<string, string | null | undefined>): SocialHandles {
-  const out: SocialHandles = {};
-  for (const [key, raw] of Object.entries(handles)) {
-    const value = raw?.trim();
-    if (value && isSocialPlatform(key)) out[key] = value;
-  }
-  return out;
+/** How many of each a client can list (the database checks the same caps). */
+export const CLIENT_LIST_MAX = { websites: 10, phones: 10, contacts: 20, socialAccounts: 20 } as const;
+
+/** Keeps the first of each value by `key`, in the order given. */
+function uniqueBy<T>(items: readonly T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const k = key(item);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** The same account twice (same platform, same handle ignoring case) is kept once. Values are validated by the DTO. */
+export function normalizeSocialAccounts(accounts: readonly SocialAccount[]): SocialAccount[] {
+  return uniqueBy(
+    accounts.map((a) => ({ platform: a.platform, handle: a.handle.trim() })),
+    (a) => `${a.platform}:${a.handle.toLowerCase()}`,
+  );
+}
+
+/** Websites as typed ("acme.com" → "https://acme.com"), duplicates dropped. Values are validated by the DTO. */
+export function normalizeWebsites(websites: readonly string[]): string[] {
+  return uniqueBy(
+    websites.map((w) => normalizeWebsite(w) ?? w.trim()),
+    (w) => w.toLowerCase(),
+  );
+}
+
+/** Phone numbers trimmed; the same number typed twice (ignoring spaces and dashes) is kept once. */
+export function normalizePhones(phones: readonly string[]): string[] {
+  return uniqueBy(
+    phones.map((p) => p.trim()),
+    (p) => p.replace(/[\s\-().]/g, ""),
+  );
 }
 
 /** Trims, drops blanks and case-insensitive duplicates (first spelling wins), keeping the order given. */

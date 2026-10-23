@@ -1,4 +1,4 @@
-import type { ClientEntity, ClientStatus, ClientSummaryEntity, SocialHandles } from "../domain/client.entity";
+import type { ClientContact, ClientEntity, ClientStatus, ClientSummaryEntity, SocialAccount } from "../domain/client.entity";
 
 /** Raw shape of the repository's CLIENT_SELECT projection (pg returns timestamptz as Date; `date` columns are read as strings). */
 export interface ClientRow {
@@ -8,12 +8,14 @@ export interface ClientRow {
   businessName: string;
   logoUrl: string | null;
   industry: string | null;
+  /** The first contact's name; only the summary projection selects it. */
   contactPerson: string | null;
-  phone: string | null;
   email: string | null;
   address: string | null;
-  website: string | null;
-  socialHandles: SocialHandles;
+  websites: string[];
+  phones: string[];
+  contacts: ClientContact[];
+  socialAccounts: SocialAccount[];
   services: string[];
   contractStart: string | null;
   contractEnd: string | null;
@@ -46,10 +48,13 @@ export type ClientSummaryRow = Pick<
 
 /** Row -> domain entity. Sync, no logic beyond Date -> ISO string. */
 export const ClientMapper = {
-  toEntity(row: ClientRow): ClientEntity {
+  toEntity(row: Omit<ClientRow, "contactPerson">): ClientEntity {
     return {
       ...row,
-      socialHandles: row.socialHandles ?? {},
+      websites: row.websites ?? [],
+      phones: row.phones ?? [],
+      contacts: row.contacts ?? [],
+      socialAccounts: row.socialAccounts ?? [],
       services: row.services ?? [],
       archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
       createdAt: row.createdAt.toISOString(),

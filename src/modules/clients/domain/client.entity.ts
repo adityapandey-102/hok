@@ -11,24 +11,35 @@ export type ClientStatus = (typeof CLIENT_STATUSES)[number];
 export const EDITABLE_CLIENT_STATUSES = ["active", "paused"] as const satisfies readonly ClientStatus[];
 export type EditableClientStatus = (typeof EDITABLE_CLIENT_STATUSES)[number];
 
-/** The social networks a client profile can list a handle for. Keys of `socialHandles`. */
+/** The social networks a client can list accounts on (the form's drop-down). */
 export const SOCIAL_PLATFORMS = ["instagram", "facebook", "tiktok", "youtube", "linkedin", "x", "threads", "pinterest", "snapchat"] as const;
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
 
-/** e.g. `{ instagram: "@acme", youtube: "https://youtube.com/@acme" }` -- only the platforms the client uses. */
-export type SocialHandles = Partial<Record<SocialPlatform, string>>;
+/** One account, e.g. `{ platform: "instagram", handle: "@acme" }`. A business may have several on the same platform. */
+export interface SocialAccount {
+  platform: SocialPlatform;
+  handle: string;
+}
+
+/** A person to talk to at the client; phone and email are optional. */
+export interface ClientContact {
+  name: string;
+  phone: string | null;
+  email: string | null;
+}
 
 /** The editable profile fields, shared by create and update. */
 export interface ClientProfileFields {
   businessName: string;
   logoUrl: string | null;
   industry: string | null;
-  contactPerson: string | null;
-  phone: string | null;
+  /** The business's own email. People have theirs in `contacts`. */
   email: string | null;
   address: string | null;
-  website: string | null;
-  socialHandles: SocialHandles;
+  websites: string[];
+  phones: string[];
+  contacts: ClientContact[];
+  socialAccounts: SocialAccount[];
   services: string[];
   contractStart: string | null;
   contractEnd: string | null;
@@ -58,6 +69,7 @@ export interface ClientSummaryEntity {
   businessName: string;
   logoUrl: string | null;
   industry: string | null;
+  /** The first contact's name (what a list row shows). */
   contactPerson: string | null;
   status: ClientStatus;
   timeZone: string;

@@ -1,4 +1,4 @@
-import type { ClientStatus, SocialHandles } from "../../domain/client.entity";
+import type { ClientContact, ClientStatus, SocialAccount } from "../../domain/client.entity";
 
 /** GET /clients/:id and every write's `{ client }`. */
 export interface ClientResponseDto {
@@ -8,12 +8,12 @@ export interface ClientResponseDto {
   businessName: string;
   logoUrl: string | null;
   industry: string | null;
-  contactPerson: string | null;
-  phone: string | null;
   email: string | null;
   address: string | null;
-  website: string | null;
-  socialHandles: SocialHandles;
+  websites: string[];
+  phones: string[];
+  contacts: ClientContact[];
+  socialAccounts: SocialAccount[];
   services: string[];
   contractStart: string | null;
   contractEnd: string | null;

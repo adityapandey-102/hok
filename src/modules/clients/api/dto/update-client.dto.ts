@@ -11,7 +11,8 @@ export const versionSchema = z.number().int().min(1);
  * has the copy it was loaded from, and a stale one is 409 CLIENT_MODIFIED.
  * `status` may only move between active and paused; archiving has its own
  * endpoint. Ownership is not editable here (POST /clients/:id/reassign).
- * `socialHandles` replaces the whole set; `services` replaces the whole list.
+ * Each list sent (`websites`, `phones`, `contacts`, `socialAccounts`,
+ * `services`) replaces that whole list.
  */
 export const updateClientDtoSchema = z.object({
   ...clientFieldSchemas,

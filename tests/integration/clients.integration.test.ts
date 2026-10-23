@@ -59,9 +59,14 @@ describe("POST /clients", () => {
   it("creates a client owned by the creator, normalised, active, with the default time zone", async () => {
     const c = await createAs("social_media_manager", {
       businessName: "  IT Acme Bakery ",
-      website: "acme-bakery.com",
+      websites: ["acme-bakery.com", "shop.acme-bakery.com"],
+      phones: ["+91 98765 43210", "+91 98765 43211"],
+      contacts: [{ name: "Priya", phone: "+91 98765 43212" }, { name: "Dev", email: "Dev@Acme.com" }],
       email: "Hello@Acme.COM",
-      socialHandles: { instagram: "@acmebakery", tiktok: "" },
+      socialAccounts: [
+        { platform: "instagram", handle: "@acmebakery" },
+        { platform: "instagram", handle: "@acmebakery_cakes" },
+      ],
       services: ["Reels", "reels", "Shoots"],
       contractStart: "2026-01-01",
       contractEnd: "2026-12-31",
@@ -70,9 +75,17 @@ describe("POST /clients", () => {
       ownerId: smm.id,
       ownerName: "IT Clients SMM",
       businessName: "IT Acme Bakery",
-      website: "https://acme-bakery.com",
+      websites: ["https://acme-bakery.com", "https://shop.acme-bakery.com"],
+      phones: ["+91 98765 43210", "+91 98765 43211"],
+      contacts: [
+        { name: "Priya", phone: "+91 98765 43212", email: null },
+        { name: "Dev", phone: null, email: "dev@acme.com" },
+      ],
       email: "hello@acme.com",
-      socialHandles: { instagram: "@acmebakery" },
+      socialAccounts: [
+        { platform: "instagram", handle: "@acmebakery" },
+        { platform: "instagram", handle: "@acmebakery_cakes" },
+      ],
       services: ["Reels", "Shoots"],
       contractStart: "2026-01-01",
       contractEnd: "2026-12-31",
@@ -90,7 +103,8 @@ describe("POST /clients", () => {
       };
     expect((await bad({ timeZone: "+05:30" })).code).toBe("VALIDATION_ERROR");
     expect((await bad({ logoUrl: "javascript:alert(1)" })).code).toBe("VALIDATION_ERROR");
-    expect((await bad({ socialHandles: { myspace: "@x" } })).code).toBe("VALIDATION_ERROR");
+    expect((await bad({ socialAccounts: [{ platform: "myspace", handle: "@x" }] })).code).toBe("VALIDATION_ERROR");
+    expect((await bad({ contacts: [{ name: "" }] })).code).toBe("VALIDATION_ERROR");
     expect((await bad({ contractStart: "2026-06-01", contractEnd: "2026-05-01" })).code).toBe("CLIENT_CONTRACT_DATES_INVALID");
   });
 
@@ -152,7 +166,7 @@ describe("PATCH /clients/:id (optimistic lock)", () => {
     const first = await request(app)
       .patch(`/api/v1/clients/${c.id}`)
       .set("Authorization", auth.social_media_manager!)
-      .send({ notes: "first", status: "paused", phone: "+91 98765 43210", version: 1 });
+      .send({ notes: "first", status: "paused", phones: ["+91 98765 43210"], version: 1 });
     expect(first.status).toBe(200);
     expect((first.body as { client: ClientBody }).client).toMatchObject({ notes: "first", status: "paused", version: 2 });
 

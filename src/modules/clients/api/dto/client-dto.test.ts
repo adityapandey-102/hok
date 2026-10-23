@@ -24,11 +24,19 @@ describe("createClientDtoSchema", () => {
       businessName: "Acme",
       logoUrl: "https://cdn.acme.com/logo.png",
       industry: "Food",
-      contactPerson: "Priya",
-      phone: "+91 98765 43210",
+      contacts: [
+        { name: " Priya ", phone: "+91 98765 43210", email: "Priya@Acme.com" },
+        { name: "Dev", phone: "", email: null },
+      ],
+      phones: ["+91 98765 43210", "+91-98765-43210", "+44 20 7946 0958"],
       email: "Hello@Acme.COM",
-      website: "acme.com",
-      socialHandles: { instagram: " @acme ", youtube: "https://youtube.com/@acme", tiktok: "" },
+      websites: ["acme.com", "https://shop.acme.com", "ACME.com"],
+      socialAccounts: [
+        { platform: "instagram", handle: " @acme " },
+        { platform: "instagram", handle: "@acme_shop" },
+        { platform: "instagram", handle: "@ACME" },
+        { platform: "youtube", handle: "https://youtube.com/@acme" },
+      ],
       services: ["Reels", "reels", " Shoots "],
       contractStart: "2026-01-01",
       contractEnd: "2026-12-31",
@@ -38,14 +46,24 @@ describe("createClientDtoSchema", () => {
     expect(r.success).toBe(true);
     if (!r.success) return;
     expect(r.data.email).toBe("hello@acme.com");
-    expect(r.data.website).toBe("https://acme.com");
-    expect(r.data.socialHandles).toEqual({ instagram: "@acme", youtube: "https://youtube.com/@acme" });
+    // Several of each; exact duplicates (ignoring case / spacing) are kept once.
+    expect(r.data.websites).toEqual(["https://acme.com", "https://shop.acme.com"]);
+    expect(r.data.phones).toEqual(["+91 98765 43210", "+44 20 7946 0958"]);
+    expect(r.data.contacts).toEqual([
+      { name: "Priya", phone: "+91 98765 43210", email: "priya@acme.com" },
+      { name: "Dev", phone: null, email: null },
+    ]);
+    expect(r.data.socialAccounts).toEqual([
+      { platform: "instagram", handle: "@acme" },
+      { platform: "instagram", handle: "@acme_shop" },
+      { platform: "youtube", handle: "https://youtube.com/@acme" },
+    ]);
     expect(r.data.services).toEqual(["Reels", "Shoots"]);
   });
 
   it("turns blank optional text into null", () => {
-    const r = ok({ businessName: "Acme", industry: "", phone: "", website: "" });
-    expect(r.success && [r.data.industry, r.data.phone, r.data.website]).toEqual([null, null, null]);
+    const r = ok({ businessName: "Acme", industry: "", email: "" });
+    expect(r.success && [r.data.industry, r.data.email]).toEqual([null, null]);
   });
 
   it("refuses a raw offset or unknown time zone", () => {
@@ -56,19 +74,30 @@ describe("createClientDtoSchema", () => {
   it("refuses unsafe or malformed links", () => {
     expect(issuePaths({ businessName: "A", logoUrl: "javascript:alert(1)" })).toContain("logoUrl");
     expect(issuePaths({ businessName: "A", logoUrl: "logo.png" })).toContain("logoUrl");
-    expect(issuePaths({ businessName: "A", website: "javascript:alert(1)" })).toContain("website");
-    expect(issuePaths({ businessName: "A", website: "not a site" })).toContain("website");
+    expect(issuePaths({ businessName: "A", websites: ["javascript:alert(1)"] })).toContain("websites.0");
+    expect(issuePaths({ businessName: "A", websites: ["acme.com", "not a site"] })).toContain("websites.1");
   });
 
-  it("refuses an unknown platform and a bad handle", () => {
-    expect(issuePaths({ businessName: "A", socialHandles: { myspace: "@a" } })).toContain("socialHandles.myspace");
-    expect(issuePaths({ businessName: "A", socialHandles: { instagram: "acme bakery" } })).toContain("socialHandles.instagram");
-    expect(issuePaths({ businessName: "A", socialHandles: { instagram: "javascript:alert(1)" } })).toContain("socialHandles.instagram");
+  it("refuses an unknown platform, a bad or empty handle, and a contact with no name", () => {
+    expect(issuePaths({ businessName: "A", socialAccounts: [{ platform: "myspace", handle: "@a" }] })).toContain("socialAccounts.0.platform");
+    expect(issuePaths({ businessName: "A", socialAccounts: [{ platform: "instagram", handle: "acme bakery" }] })).toContain("socialAccounts.0.handle");
+    expect(issuePaths({ businessName: "A", socialAccounts: [{ platform: "instagram", handle: "javascript:alert(1)" }] })).toContain("socialAccounts.0.handle");
+    expect(issuePaths({ businessName: "A", socialAccounts: [{ platform: "instagram", handle: " " }] })).toContain("socialAccounts.0.handle");
+    expect(issuePaths({ businessName: "A", contacts: [{ name: " ", phone: null, email: null }] })).toContain("contacts.0.name");
+    expect(issuePaths({ businessName: "A", contacts: [{ name: "Priya", phone: "call me", email: "nope" }] })).toEqual(
+      expect.arrayContaining(["contacts.0.phone", "contacts.0.email"]),
+    );
+  });
+
+  it("caps each list", () => {
+    expect(issuePaths({ businessName: "A", websites: Array.from({ length: 11 }, (_, i) => `s${i}.example.com`) })).toContain("websites");
+    expect(issuePaths({ businessName: "A", phones: Array.from({ length: 11 }, (_, i) => `+91 98200 0000${i}`) })).toContain("phones");
+    expect(issuePaths({ businessName: "A", contacts: Array.from({ length: 21 }, (_, i) => ({ name: `P${i}` })) })).toContain("contacts");
   });
 
   it("refuses a bad email, phone, impossible date, and too many services", () => {
     expect(issuePaths({ businessName: "A", email: "nope" })).toContain("email");
-    expect(issuePaths({ businessName: "A", phone: "call me" })).toContain("phone");
+    expect(issuePaths({ businessName: "A", phones: ["call me"] })).toContain("phones.0");
     expect(issuePaths({ businessName: "A", contractStart: "2026-02-30" })).toContain("contractStart");
     expect(issuePaths({ businessName: "A", services: Array.from({ length: 21 }, (_, i) => `S${i}`) })).toContain("services");
   });
@@ -91,9 +120,9 @@ describe("updateClientDtoSchema", () => {
     expect(updateClientDtoSchema.safeParse({ status: "archived", version: 1 }).success).toBe(false);
   });
 
-  it("null clears an optional field; businessName can't be cleared", () => {
-    const r = updateClientDtoSchema.safeParse({ phone: null, version: 1 });
-    expect(r.success && r.data.phone).toBeNull();
+  it("null clears an optional field, [] clears a list; businessName can't be cleared", () => {
+    const r = updateClientDtoSchema.safeParse({ email: null, phones: [], version: 1 });
+    expect(r.success && [r.data.email, r.data.phones]).toEqual([null, []]);
     expect(updateClientDtoSchema.safeParse({ businessName: "", version: 1 }).success).toBe(false);
   });
 

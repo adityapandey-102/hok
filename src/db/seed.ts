@@ -25,7 +25,7 @@ import { authProvider } from "../common/auth/supabase-auth-provider";
 import { logger } from "../common/logger/logger";
 import { profiles } from "../modules/users/infrastructure/profile.schema";
 import { clients } from "../modules/clients/infrastructure/clients.schema";
-import type { ClientStatus, SocialHandles } from "../modules/clients/domain/client.entity";
+import type { ClientStatus, SocialPlatform } from "../modules/clients/domain/client.entity";
 import { stageTemplateStages, stageTemplates } from "../modules/stage-templates/infrastructure/stage-templates.schema";
 import { eventStageHistory, eventStages, events } from "../modules/events/infrastructure/events.schema";
 import type { EventState, EventType } from "../modules/events/domain/event.entity";
@@ -79,7 +79,7 @@ interface SeedClient {
   phone: string;
   email: string;
   website: string;
-  socialHandles: SocialHandles;
+  socialHandles: Partial<Record<SocialPlatform, string>>;
   services: string[];
   contractStart: string;
   contractEnd: string;
@@ -121,8 +121,14 @@ async function seedClients(): Promise<void> {
       logger.info({ businessName: client.businessName }, "seed: client already exists -- reused");
       continue;
     }
+    // The sample data keeps one of each for readability; the table stores lists.
+    const { contactPerson, phone, website, socialHandles, ...rest } = client;
     await db.insert(clients).values({
-      ...client,
+      ...rest,
+      contacts: [{ name: contactPerson, phone: null, email: null }],
+      phones: [phone],
+      websites: [website],
+      socialAccounts: Object.entries(socialHandles).map(([platform, handle]) => ({ platform: platform as SocialPlatform, handle })),
       ownerId,
       notes: client.notes ?? null,
       archivedAt: client.status === "archived" ? new Date() : null,

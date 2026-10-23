@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, jsonb, date, integer, timestamp } from "drizzle-orm/pg-core";
-import type { ClientStatus, SocialHandles } from "../domain/client.entity";
+import type { ClientContact, ClientStatus, SocialAccount } from "../domain/client.entity";
 
 /**
  * The Clients module owns `clients`. Other modules (events, assets, portal,
@@ -17,12 +17,12 @@ export const clients = pgTable("clients", {
   businessName: text("business_name").notNull(),
   logoUrl: text("logo_url"),
   industry: text("industry"),
-  contactPerson: text("contact_person"),
-  phone: text("phone"),
   email: text("email"),
   address: text("address"),
-  website: text("website"),
-  socialHandles: jsonb("social_handles").notNull().$type<SocialHandles>().default({}),
+  websites: text("websites").array().notNull().default([]),
+  phones: text("phones").array().notNull().default([]),
+  contacts: jsonb("contacts").notNull().$type<ClientContact[]>().default([]),
+  socialAccounts: jsonb("social_accounts").notNull().$type<SocialAccount[]>().default([]),
   services: text("services").array().notNull().default([]),
   contractStart: date("contract_start", { mode: "string" }),
   contractEnd: date("contract_end", { mode: "string" }),

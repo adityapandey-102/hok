@@ -38,12 +38,12 @@ function client(overrides: Partial<ClientEntity> = {}): ClientEntity {
     businessName: "Acme",
     logoUrl: null,
     industry: null,
-    contactPerson: null,
-    phone: null,
     email: null,
     address: null,
-    website: null,
-    socialHandles: {},
+    websites: [],
+    phones: [],
+    contacts: [],
+    socialAccounts: [],
     services: [],
     contractStart: null,
     contractEnd: null,
@@ -74,7 +74,7 @@ class FakeClientsRepository implements ClientsRepositoryPort {
 
   findMany(filters: ClientListFilters, page: ClientListPage) {
     this.lastFilters = filters;
-    return Promise.resolve([...this.rows.values()].slice(page.offset, page.offset + page.limit));
+    return Promise.resolve([...this.rows.values()].slice(page.offset, page.offset + page.limit).map((c) => ({ ...c, contactPerson: c.contacts[0]?.name ?? null })));
   }
   countMany() {
     return Promise.resolve(this.rows.size);
@@ -176,7 +176,7 @@ describe("ClientsService", () => {
 
     it("makes the creator the owner, starts active, defaults the time zone, and audits", async () => {
       const created = await service.create(ROHAN, dto());
-      expect(created).toMatchObject({ ownerId: "rohan", status: "active", timeZone: "Asia/Kolkata", services: [], socialHandles: {} });
+      expect(created).toMatchObject({ ownerId: "rohan", status: "active", timeZone: "Asia/Kolkata", services: [], websites: [], phones: [], contacts: [], socialAccounts: [] });
       expect(audit.events).toEqual([expect.objectContaining({ action: AUDIT_ACTIONS.CLIENT_CREATED, entityId: created.id, metadata: { ownerId: "rohan" } })]);
     });
 

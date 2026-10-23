@@ -94,7 +94,8 @@ describe("openapi.yaml stays in sync with the Clients module", () => {
   });
 
   it("documents exactly the social platforms", () => {
-    expect(Object.keys(schemas.SocialHandles?.properties ?? {})).toEqual([...SOCIAL_PLATFORMS]);
+    const platform = schemas.SocialAccount?.properties?.platform as { enum?: string[] } | undefined;
+    expect(platform?.enum).toEqual([...SOCIAL_PLATFORMS]);
   });
 });
 

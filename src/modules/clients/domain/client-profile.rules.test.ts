@@ -5,9 +5,11 @@ import {
   isCalendarDate,
   isSocialPlatform,
   isValidSocialHandle,
+  normalizePhones,
   normalizeServices,
-  normalizeSocialHandles,
+  normalizeSocialAccounts,
   normalizeWebsite,
+  normalizeWebsites,
 } from "./client-profile.rules";
 
 describe("isValidSocialHandle", () => {
@@ -30,13 +32,28 @@ describe("isSocialPlatform", () => {
   });
 });
 
-describe("normalizeSocialHandles", () => {
-  it("trims values and drops empty or cleared platforms", () => {
-    expect(normalizeSocialHandles({ instagram: "  @acme ", tiktok: "", youtube: null })).toEqual({ instagram: "@acme" });
+describe("list normalisers", () => {
+  it("keeps several accounts on one platform, dropping exact repeats", () => {
+    expect(
+      normalizeSocialAccounts([
+        { platform: "instagram", handle: " @acme " },
+        { platform: "instagram", handle: "@acme_shop" },
+        { platform: "instagram", handle: "@ACME" },
+        { platform: "tiktok", handle: "@acme" },
+      ]),
+    ).toEqual([
+      { platform: "instagram", handle: "@acme" },
+      { platform: "instagram", handle: "@acme_shop" },
+      { platform: "tiktok", handle: "@acme" },
+    ]);
   });
 
-  it("drops unknown platforms (defence in depth; the DTO already refuses them)", () => {
-    expect(normalizeSocialHandles({ instagram: "@a", myspace: "@b" })).toEqual({ instagram: "@a" });
+  it("normalises websites and drops repeats", () => {
+    expect(normalizeWebsites(["acme.com", "https://acme.com", "shop.acme.com"])).toEqual(["https://acme.com", "https://shop.acme.com"]);
+  });
+
+  it("treats the same number with different spacing as one", () => {
+    expect(normalizePhones([" +91 98200 11111", "+91-98200-11111", "+971 50 123 4567"])).toEqual(["+91 98200 11111", "+971 50 123 4567"]);
   });
 });
 

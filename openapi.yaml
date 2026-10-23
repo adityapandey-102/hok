@@ -601,7 +601,7 @@ paths:
       description: |
         `clients:write`. Send only the fields to change plus the `version` you
         loaded (**required**). `null` or `""` clears an optional field;
-        `socialHandles` and `services` replace the whole set. `status` may move
+        Each list sent (`websites`, `phones`, `contacts`, `socialAccounts`, `services`) replaces that whole list. `status` may move
         only between `active` and `paused`. Refused with
         `409 CLIENT_MODIFIED` (stale version), `409 CLIENT_ARCHIVED` (unarchive
         first) and `400 CLIENT_CONTRACT_DATES_INVALID` (end before start,
@@ -2755,25 +2755,20 @@ components:
       type: string
       description: "active <-> paused by a normal edit; archived only through POST /clients/{id}/archive (and back to active through /unarchive)."
       enum: [active, paused, archived]
-    SocialHandles:
+    SocialAccount:
       type: object
-      description: |
-        Only the platforms the client uses. Keys from a fixed list (an unknown
-        key is a 400); each value is a handle (`@acme`, `acme.studio`,
-        `company/acme`) or a full http(s) link, max 200 characters. On a write,
-        `""` or `null` drops that platform.
+      required: [platform, handle]
       properties:
-        instagram: { type: string }
-        facebook: { type: string }
-        tiktok: { type: string }
-        youtube: { type: string }
-        linkedin: { type: string }
-        x: { type: string }
-        threads: { type: string }
-        pinterest: { type: string }
-        snapchat: { type: string }
-      additionalProperties: false
-      example: { instagram: "@acmebakery", youtube: "https://youtube.com/@acmebakery" }
+        platform: { type: string, enum: [instagram, facebook, tiktok, youtube, linkedin, x, threads, pinterest, snapchat] }
+        handle: { type: string, maxLength: 200, description: "A handle (`@acme`, `acme.studio`, `company/acme`) or a full http(s) link." }
+      example: { platform: instagram, handle: "@acmebakery" }
+    ClientContact:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        phone: { allOf: [{ $ref: "#/components/schemas/Phone" }], nullable: true, description: Optional. }
+        email: { type: string, format: email, maxLength: 254, nullable: true, description: Optional; stored lower-case. }
     ClientFields:
       type: object
       description: The editable profile fields (FR-CLI-02), shared by create and update. Optional text accepts `null` or `""` to clear.
@@ -2781,12 +2776,28 @@ components:
         businessName: { type: string, minLength: 1, maxLength: 160 }
         logoUrl: { type: string, format: uri, maxLength: 2048, nullable: true, description: A full http(s) link to the logo image. }
         industry: { type: string, maxLength: 80, nullable: true }
-        contactPerson: { type: string, maxLength: 120, nullable: true }
-        phone: { allOf: [{ $ref: "#/components/schemas/Phone" }], nullable: true }
-        email: { type: string, format: email, maxLength: 254, nullable: true, description: Stored lower-case. }
+        email: { type: string, format: email, maxLength: 254, nullable: true, description: The business's own email; stored lower-case. }
         address: { type: string, maxLength: 500, nullable: true }
-        website: { type: string, maxLength: 2048, nullable: true, description: "`acme.com` is stored as `https://acme.com`; only http(s)." }
-        socialHandles: { $ref: "#/components/schemas/SocialHandles" }
+        websites:
+          type: array
+          maxItems: 10
+          description: "Each `acme.com` is stored as `https://acme.com`; only http(s). Duplicates dropped. Replaces the whole list."
+          items: { type: string, maxLength: 2048 }
+        phones:
+          type: array
+          maxItems: 10
+          description: The business's numbers. The same number with different spacing is kept once. Replaces the whole list.
+          items: { $ref: "#/components/schemas/Phone" }
+        contacts:
+          type: array
+          maxItems: 20
+          description: People to talk to at the client, each with an optional phone and email. Replaces the whole list.
+          items: { $ref: "#/components/schemas/ClientContact" }
+        socialAccounts:
+          type: array
+          maxItems: 20
+          description: Accounts on known platforms; a platform may repeat (an unknown one is a 400). Exact duplicates dropped. Replaces the whole list.
+          items: { $ref: "#/components/schemas/SocialAccount" }
         services:
           type: array
           maxItems: 20
@@ -2818,8 +2829,8 @@ components:
     Client:
       type: object
       required:
-        [id, ownerId, ownerName, businessName, logoUrl, industry, contactPerson, phone, email, address, website,
-         socialHandles, services, contractStart, contractEnd, timeZone, notes, status, archivedAt, version, createdAt, updatedAt]
+        [id, ownerId, ownerName, businessName, logoUrl, industry, email, address, websites, phones, contacts,
+         socialAccounts, services, contractStart, contractEnd, timeZone, notes, status, archivedAt, version, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         ownerId: { type: string, format: uuid }
@@ -2827,12 +2838,12 @@ components:
         businessName: { type: string }
         logoUrl: { type: string, nullable: true }
         industry: { type: string, nullable: true }
-        contactPerson: { type: string, nullable: true }
-        phone: { type: string, nullable: true }
         email: { type: string, nullable: true }
         address: { type: string, nullable: true }
-        website: { type: string, nullable: true }
-        socialHandles: { $ref: "#/components/schemas/SocialHandles" }
+        websites: { type: array, items: { type: string } }
+        phones: { type: array, items: { type: string } }
+        contacts: { type: array, items: { $ref: "#/components/schemas/ClientContact" } }
+        socialAccounts: { type: array, items: { $ref: "#/components/schemas/SocialAccount" } }
         services: { type: array, items: { type: string } }
         contractStart: { type: string, format: date, nullable: true }
         contractEnd: { type: string, format: date, nullable: true }
@@ -2845,7 +2856,7 @@ components:
         updatedAt: { type: string, format: date-time }
     ClientSummary:
       type: object
-      description: A list row -- the full client minus phone, email, address, website, handles, services, contract start and notes.
+      description: A list row -- the full client minus email, address, the lists, services, contract start and notes. `contactPerson` is the first contact's name.
       required: [id, ownerId, ownerName, businessName, logoUrl, industry, contactPerson, status, timeZone, contractEnd, archivedAt, version, createdAt]
       properties:
         id: { type: string, format: uuid }
