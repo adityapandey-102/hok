@@ -17,10 +17,15 @@ export function PortalTab({
   clientId,
   archived,
   viewerTimeZone,
+  canManage = true,
+  leadName,
 }: {
   clientId: string;
   archived: boolean;
   viewerTimeZone: string;
+  /** The client's lead (or the Admin) makes and turns off the link; other team members only see it. */
+  canManage?: boolean;
+  leadName?: string;
 }) {
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -197,7 +202,11 @@ export function PortalTab({
           />
         )}
 
-        {!archived && (
+        {!archived && !canManage && (
+          <p className="mt-4 text-sm text-text-muted">Only the client&apos;s lead{leadName ? ` (${leadName})` : ""} or the Admin can change the portal link.</p>
+        )}
+
+        {!archived && canManage && (
           <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
             <Button disabled={busy} onClick={generate}>
               <Icon name={state === "active" ? "refresh" : "plus"} size={16} /> {state === "active" ? "Regenerate link" : "Generate link"}

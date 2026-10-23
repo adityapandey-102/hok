@@ -28,8 +28,9 @@ export const STATUS_TONES: Record<ClientStatus, PillTone> = { active: "green", p
 
 /**
  * Clients list (FR-CLI-03/04): server-paged, debounced search, status filter.
- * Archived clients only show when the status filter says so. Admin also gets an
- * owner filter and column (`isAdmin`); the API scopes everyone else to their own.
+ * Archived clients only show when the status filter says so. Admin also gets a
+ * "team member" filter and the lead's name (`isAdmin`); the API scopes everyone
+ * else to the clients whose team they're on.
  */
 export function ClientsListClient({ isAdmin }: { isAdmin: boolean }) {
   const [clients, setClients] = useState<ClientSummary[]>([]);
@@ -142,8 +143,8 @@ export function ClientsListClient({ isAdmin }: { isAdmin: boolean }) {
           {isAdmin && (
             <SearchSelect
               className="sm:w-56"
-              aria-label="Filter by owner"
-              placeholder="All owners"
+              aria-label="Filter by team member"
+              placeholder="Anyone on the team"
               value={ownerId || null}
               clearable
               load={clientsApi.searchOwnerOptions}
@@ -206,7 +207,7 @@ export function ClientsListClient({ isAdmin }: { isAdmin: boolean }) {
                     {isAdmin && (
                       <div className="mt-0.5 flex items-center gap-1 truncate text-xs text-text-muted">
                         <Icon name="user" size={11} className="shrink-0" />
-                        <span className="truncate">{c.ownerName}</span>
+                        <span className="truncate">Lead: {c.ownerName}</span>
                       </div>
                     )}
                   </div>

@@ -278,7 +278,7 @@ export function ClientForm({
         )}
         {!editing && canPickOwner && (
           <div>
-            <FieldLabel htmlFor="cf-owner">Owner</FieldLabel>
+            <FieldLabel htmlFor="cf-owner">Lead</FieldLabel>
             <SearchSelect
               id="cf-owner"
               placeholder="Me"

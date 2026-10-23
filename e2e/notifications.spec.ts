@@ -12,7 +12,7 @@ async function login(page: Page, email: string) {
 
 test.setTimeout(150_000);
 
-test("reassigning a client puts a notification in the new owner's bell", async ({
+test("adding someone to a client's team puts a notification in their bell; they see the client but not its portal controls", async ({
   browser,
 }) => {
   const name = `E2E Notify ${Date.now()}`;
@@ -30,18 +30,22 @@ test("reassigning a client puts a notification in the new owner's bell", async (
   });
   const clientUrl = rohan.url();
 
-  // Admin reassigns it to Sara.
+  // A team member who isn't the Admin can't archive or change the team.
+  await expect(rohan.getByRole("button", { name: "Archive" })).toHaveCount(0);
+  await expect(rohan.getByRole("button", { name: "Edit team" })).toHaveCount(0);
+
+  // Admin adds Sara to the team (Rohan stays the lead).
   const adminCtx = await browser.newContext();
   const admin = await adminCtx.newPage();
   await login(admin, "admin@hok.test");
   await admin.goto(clientUrl);
-  await admin.getByRole("button", { name: "Reassign owner" }).click();
-  await admin.locator("#reassign-owner").fill("Sara");
+  await admin.getByRole("button", { name: "Edit team" }).click();
+  await admin.locator("#team-add").fill("Sara");
   await admin.getByRole("option", { name: /Sara Ali/ }).click();
-  await admin.getByRole("button", { name: "Reassign", exact: true }).click();
-  await expect(admin.getByText("Reassigned to Sara Ali.")).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(admin.getByRole("radio", { name: "Make Sara Ali the lead" })).toBeVisible();
+  await admin.getByRole("button", { name: "Save team" }).click();
+  await expect(admin.getByText("Team saved.")).toBeVisible({ timeout: 30_000 });
+  await expect(admin.getByText("Team of 2")).toBeVisible();
 
   // Sara sees it in her bell and the click opens the client.
   const saraCtx = await browser.newContext({
@@ -61,6 +65,11 @@ test("reassigning a client puts a notification in the new owner's bell", async (
   await expect(item).toBeVisible();
   await item.click();
   await expect(sara).toHaveURL(clientUrl);
+
+  // On the team but not the lead: the portal tab shows the link's state, not the controls.
+  await sara.getByRole("tab", { name: "Portal" }).click();
+  await expect(sara.getByText(/Only the client.s lead \(Rohan Mehta\) or the Admin/)).toBeVisible();
+  await expect(sara.getByRole("button", { name: "Generate link" })).toHaveCount(0);
 
   // The full page lists it too.
   await sara.goto("/app/notifications");

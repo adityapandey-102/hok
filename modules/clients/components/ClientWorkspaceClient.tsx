@@ -3,10 +3,13 @@
 import { useState } from "react";
 import {
   CLIENT_STATUS_LABELS,
+  CLIENT_TEAM_MAX,
   formatDateOnly,
+  ROLE_LABELS,
   SOCIAL_PLATFORM_LABELS,
   timeZoneLabel,
   type Client,
+  type ClientTeamMember,
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { clientsApi, type CreateClientPayload, type UpdateClientPayload } from "../api/clientsApi";
@@ -54,9 +57,12 @@ export function ClientWorkspaceClient({
   isAdmin,
   viewerTimeZone = "Asia/Kolkata",
   initialTab = "overview",
+  viewerId,
 }: {
   initialClient: Client;
   isAdmin: boolean;
+  /** The signed-in person: the client's lead (or the Admin) manages its portal link. */
+  viewerId: string;
   viewerTimeZone?: string;
   /** From the `?tab=` link parameter. */
   initialTab?: TabId;
@@ -68,7 +74,7 @@ export function ClientWorkspaceClient({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
-  const [reassignOpen, setReassignOpen] = useState(false);
+  const [teamOpen, setTeamOpen] = useState(false);
 
   const archived = client.status === "archived";
 
@@ -142,7 +148,8 @@ export function ClientWorkspaceClient({
 
   const facts = [
     client.industry ? { icon: "briefcase" as IconName, text: client.industry } : null,
-    { icon: "user" as IconName, text: `Owner: ${client.ownerName}` },
+    { icon: "user" as IconName, text: `Lead: ${client.ownerName}` },
+    client.team.length > 1 ? { icon: "users" as IconName, text: `Team of ${client.team.length}` } : null,
     { icon: "clock" as IconName, text: timeZoneLabel(client.timeZone) },
     client.contractEnd ? { icon: "calendar" as IconName, text: `Contract ends ${formatDateOnly(client.contractEnd)}` } : null,
   ].filter((x): x is { icon: IconName; text: string } => x !== null);
@@ -210,7 +217,15 @@ export function ClientWorkspaceClient({
       <div key={tab} className="animate-fade-in">
         {tab === "events" && <EventsTab clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
         {tab === "calendar" && <CalendarView clientId={client.id} viewerTimeZone={viewerTimeZone} isAdmin={isAdmin} readOnly={archived} />}
-        {tab === "portal" && <PortalTab clientId={client.id} archived={archived} viewerTimeZone={viewerTimeZone} />}
+        {tab === "portal" && (
+          <PortalTab
+            clientId={client.id}
+            archived={archived}
+            viewerTimeZone={viewerTimeZone}
+            canManage={isAdmin || client.ownerId === viewerId}
+            leadName={client.ownerName}
+          />
+        )}
         {tab === "assets" && <AssetsPanel clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
         {tab === "todos" && <ClientTodosPanel clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
 
@@ -275,6 +290,20 @@ export function ClientWorkspaceClient({
                 {client.socialAccounts.length === 0 && <p className="border-t border-border-light px-5 py-4 text-sm text-text-muted">None added.</p>}
               </Panel>
 
+              <Panel icon="users" title="Team" subtitle="Who works on this client">
+                <ul className="divide-y divide-border-light border-t border-border-light">
+                  {client.team.map((m) => (
+                    <li key={m.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
+                      <span className="min-w-0 truncate text-text-primary">{m.fullName}</span>
+                      <span className="flex shrink-0 items-center gap-2 text-xs text-text-muted">
+                        {ROLE_LABELS[m.role]}
+                        {m.isLead && <StatusPill label="Lead" tone="green" />}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+
               <Panel icon="edit" title="Notes" subtitle="Internal only">
                 <p className="border-t border-border-light px-5 py-4 text-sm break-words whitespace-pre-wrap text-text-primary">{client.notes || "No notes."}</p>
               </Panel>
@@ -282,22 +311,28 @@ export function ClientWorkspaceClient({
 
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               {archived ? (
-                <Button disabled={busy} onClick={handleUnarchive}>
-                  <Icon name="refresh" size={16} /> Unarchive
-                </Button>
+                isAdmin ? (
+                  <Button disabled={busy} onClick={handleUnarchive}>
+                    <Icon name="refresh" size={16} /> Unarchive
+                  </Button>
+                ) : (
+                  <p className="text-sm text-text-muted">This client is archived. Ask the Admin to unarchive it.</p>
+                )
               ) : (
                 <>
                   <Button onClick={() => setEditing(true)} disabled={busy}>
                     <Icon name="edit" size={16} /> Edit client
                   </Button>
                   {isAdmin && (
-                    <Button variant="outline" disabled={busy} onClick={() => setReassignOpen(true)}>
-                      <Icon name="users" size={16} /> Reassign owner
+                    <Button variant="outline" disabled={busy} onClick={() => setTeamOpen(true)}>
+                      <Icon name="users" size={16} /> Edit team
                     </Button>
                   )}
-                  <Button variant="danger" disabled={busy} onClick={handleArchive}>
-                    <Icon name="ban" size={16} /> Archive
-                  </Button>
+                  {isAdmin && (
+                    <Button variant="danger" disabled={busy} onClick={handleArchive}>
+                      <Icon name="ban" size={16} /> Archive
+                    </Button>
+                  )}
                 </>
               )}
             </div>
@@ -305,16 +340,16 @@ export function ClientWorkspaceClient({
         )}
       </div>
 
-      {reassignOpen && (
-        <ReassignModal
+      {teamOpen && (
+        <TeamModal
           client={client}
-          onClose={() => setReassignOpen(false)}
+          onClose={() => setTeamOpen(false)}
           onDone={(saved) => {
             setClient(saved);
-            setReassignOpen(false);
-            showToast(`Reassigned to ${saved.ownerName}.`, "success");
+            setTeamOpen(false);
+            showToast("Team saved.", "success");
           }}
-          onError={(err) => showToast(describe(err, "Failed to reassign the client"), "error")}
+          onError={(err) => showToast(describe(err, "Failed to save the team"), "error")}
         />
       )}
     </div>
@@ -342,7 +377,10 @@ function Row({ label, value, href, external = false }: { label: string; value: s
   );
 }
 
-function ReassignModal({
+type TeamRow = Pick<ClientTeamMember, "id" | "fullName" | "role">;
+
+/** Admin: who works on the client, and which of them leads it (FR-CLI-05, client teams). */
+function TeamModal({
   client,
   onClose,
   onDone,
@@ -353,13 +391,16 @@ function ReassignModal({
   onDone: (client: Client) => void;
   onError: (err: unknown) => void;
 }) {
-  const [ownerId, setOwnerId] = useState(client.ownerId);
+  const [members, setMembers] = useState<TeamRow[]>(client.team.map(({ id, fullName, role }) => ({ id, fullName, role })));
+  const [leadId, setLeadId] = useState(client.ownerId);
   const [saving, setSaving] = useState(false);
+  const unchanged =
+    leadId === client.ownerId && members.length === client.team.length && members.every((m) => client.team.some((t) => t.id === m.id));
 
   async function submit() {
     setSaving(true);
     try {
-      const { client: saved } = await clientsApi.reassign(client.id, ownerId, client.version);
+      const { client: saved } = await clientsApi.setTeam(client.id, { leadId, memberIds: members.map((m) => m.id), version: client.version });
       onDone(saved);
     } catch (err) {
       onError(err);
@@ -368,25 +409,57 @@ function ReassignModal({
   }
 
   return (
-    <Modal open onClose={onClose} labelledBy="reassign-title" panelClassName="max-w-sm p-6">
-      <h2 id="reassign-title" className="font-serif text-lg font-bold text-text-primary">
-        Reassign {client.businessName}
+    <Modal open onClose={onClose} labelledBy="team-title" panelClassName="sm:max-w-md p-6">
+      <h2 id="team-title" className="font-serif text-lg font-bold text-text-primary">
+        Team for {client.businessName}
       </h2>
-      <p className="mt-1 text-xs text-text-muted">The new owner takes over the client and everything under it.</p>
-      <div className="mt-4">
-        <FieldLabel htmlFor="reassign-owner">New owner</FieldLabel>
-        <SearchSelect
-          id="reassign-owner"
-          placeholder="Search managers…"
-          value={ownerId}
-          selectedLabel={client.ownerName}
-          load={clientsApi.searchOwnerOptions}
-          onChange={(id) => id && setOwnerId(id)}
-        />
-      </div>
+      <p className="mt-1 text-xs text-text-muted">Everyone here sees and works on this client. The lead also manages its portal link.</p>
+
+      <fieldset className="mt-4">
+        <legend className="mb-2 text-xs font-medium text-text-secondary">Members (pick the lead)</legend>
+        <ul className="flex flex-col gap-1.5">
+          {members.map((m) => (
+            <li key={m.id} className="flex items-center gap-3 rounded-app border border-border-light px-3 py-2 text-sm">
+              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                <input type="radio" name="team-lead" checked={leadId === m.id} onChange={() => setLeadId(m.id)} aria-label={`Make ${m.fullName} the lead`} />
+                <span className="min-w-0 truncate text-text-primary">{m.fullName}</span>
+                <span className="shrink-0 text-xs text-text-muted">{ROLE_LABELS[m.role]}</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setMembers(members.filter((x) => x.id !== m.id))}
+                disabled={m.id === leadId}
+                title={m.id === leadId ? "Pick another lead first" : undefined}
+                aria-label={`Remove ${m.fullName}`}
+                className="rounded-app p-1 text-text-muted hover:bg-accent-bg hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Icon name="x" size={15} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </fieldset>
+
+      {members.length < CLIENT_TEAM_MAX && (
+        <div className="mt-3">
+          <FieldLabel htmlFor="team-add">Add someone</FieldLabel>
+          <SearchSelect
+            id="team-add"
+            placeholder="Search managers…"
+            value={null}
+            clearOnSelect
+            excludeIds={members.map((m) => m.id)}
+            load={clientsApi.searchOwnerOptions}
+            onChange={(id, item) => {
+              if (id && item?.data) setMembers([...members, { id, fullName: item.data.fullName, role: item.data.role }]);
+            }}
+          />
+        </div>
+      )}
+
       <div className="mt-5 flex gap-2">
-        <Button onClick={submit} disabled={saving || ownerId === client.ownerId}>
-          {saving ? "Reassigning…" : "Reassign"}
+        <Button onClick={submit} disabled={saving || unchanged}>
+          {saving ? "Saving…" : "Save team"}
         </Button>
         <Button variant="outline" onClick={onClose}>
           Cancel

@@ -1,3 +1,4 @@
+import type { Role } from "../constants/roles";
 /** Client portfolio types. Mirror hok-api's clients module responses (FR-CLI-01..07). */
 export const CLIENT_STATUSES = ["active", "paused", "archived"] as const;
 export type ClientStatus = (typeof CLIENT_STATUSES)[number];
@@ -65,7 +66,20 @@ export interface ClientSummary {
   createdAt: string;
 }
 
+/** One person on a client's team; exactly one is the lead (= `ownerId`). */
+export interface ClientTeamMember {
+  id: string;
+  fullName: string;
+  role: Role;
+  isLead: boolean;
+}
+
+/** Most people on one client's team (hok-api enforces the same). */
+export const CLIENT_TEAM_MAX = 20;
+
 export interface Client extends Omit<ClientSummary, "contactPerson"> {
+  /** Everyone assigned, lead first. A manager sees the client only while on it. */
+  team: ClientTeamMember[];
   /** The business's own email; people have theirs in `contacts`. */
   email: string | null;
   address: string | null;

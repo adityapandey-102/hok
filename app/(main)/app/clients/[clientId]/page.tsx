@@ -26,6 +26,7 @@ export default async function ClientWorkspacePage({
     <ClientWorkspaceClient
       initialClient={result.client}
       isAdmin={profile.role === "admin"}
+      viewerId={profile.id}
       viewerTimeZone={profile.timeZone}
       initialTab={typeof tab === "string" && isWorkspaceTab(tab) ? tab : undefined}
     />

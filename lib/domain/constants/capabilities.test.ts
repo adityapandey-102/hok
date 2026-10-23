@@ -3,7 +3,7 @@ import { CAPABILITIES, getCapabilityScope, hasCapability, isScopedToOwnRecords, 
 import { ROLES, isClientManager, type Role } from "./roles";
 
 const TASK_ONLY: Role[] = ["marketing_agent", "developer", "editor"];
-const MANAGERS: Role[] = ["social_media_manager", "marketing_manager"];
+const MANAGERS: Role[] = ["social_media_manager", "marketing_manager", "project_manager"];
 
 const CLIENT_SIDE: Capability[] = [
   "clients:read",

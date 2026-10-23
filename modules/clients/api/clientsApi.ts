@@ -47,7 +47,7 @@ export interface UpdateClientPayload extends Partial<ClientFields> {
   version: number;
 }
 
-const OWNER_ROLES: Role[] = ["admin", "social_media_manager", "marketing_manager"];
+const OWNER_ROLES: Role[] = ["admin", "social_media_manager", "marketing_manager", "project_manager"];
 
 /** All HTTP calls the Clients module makes against hok-api. */
 export const clientsApi = {
@@ -82,8 +82,9 @@ export const clientsApi = {
     return apiFetch(`/clients/${id}/unarchive`, { method: "POST", body: JSON.stringify({ version }) });
   },
 
-  reassign(id: string, ownerId: string, version: number): Promise<{ client: Client }> {
-    return apiFetch(`/clients/${id}/reassign`, { method: "POST", body: JSON.stringify({ ownerId, version }) });
+  /** Admin: the whole team and its lead (the lead is added to the team if missing). */
+  setTeam(id: string, body: { leadId: string; memberIds: string[]; version: number }): Promise<{ client: Client }> {
+    return apiFetch(`/clients/${id}/team`, { method: "PUT", body: JSON.stringify(body) });
   },
 
   /** SearchSelect loader: clients matching `search` (the API scopes a manager to their own), at most 20. */
