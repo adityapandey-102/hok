@@ -29,9 +29,9 @@ describe("assertPersonalVisible", () => {
 
 describe("assertClientLinkable", () => {
   it("only the owner's own client can be linked (even for an Admin-owned entry)", () => {
-    expect(codeOf(() => assertClientLinkable("rohan", { ownerId: "rohan" }))).toBeNull();
-    expect(codeOf(() => assertClientLinkable("rohan", { ownerId: "sara" }))).toBe("CLIENT_NOT_FOUND");
-    expect(codeOf(() => assertClientLinkable("admin", { ownerId: "sara" }))).toBe("CLIENT_NOT_FOUND");
+    expect(codeOf(() => assertClientLinkable("rohan", { teamIds: ["rohan"] }))).toBeNull();
+    expect(codeOf(() => assertClientLinkable("rohan", { teamIds: ["sara"] }))).toBe("CLIENT_NOT_FOUND");
+    expect(codeOf(() => assertClientLinkable("admin", { teamIds: ["sara"] }))).toBe("CLIENT_NOT_FOUND");
     expect(codeOf(() => assertClientLinkable("rohan", null))).toBe("CLIENT_NOT_FOUND");
   });
 });

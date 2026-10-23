@@ -5,7 +5,7 @@ import type { CalendarItem, CalendarScope } from "./calendar.entity";
 
 /**
  * The merged calendar feed (REQUIREMENTS §5.6). Who sees what:
- *  - a manager: events of the clients they own + their own personal entries
+ *  - a manager: events of the clients whose team they're on + their own personal entries
  *    (FR-CAL-02); an `ownerId` filter is ignored;
  *  - the Admin: every client event (FR-CAL-06), narrowed by `ownerId` if
  *    given; personal entries of `ownerId` if given, else the Admin's own --

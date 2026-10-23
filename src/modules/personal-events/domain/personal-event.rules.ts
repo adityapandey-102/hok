@@ -18,12 +18,13 @@ export function assertPersonalVisible<T extends { ownerId: string }>(scope: Pers
 }
 
 /**
- * The optional client link must be one of the OWNER's clients: an entry is
- * the owner's, so linking someone else's client would leak it into their
- * calendar. Missing or not theirs -> 404 CLIENT_NOT_FOUND (no existence leak).
+ * The optional client link must be a client the entry's OWNER is on the team
+ * of: an entry is the owner's, so linking another team's client would leak it
+ * into their calendar. Missing or not theirs -> 404 CLIENT_NOT_FOUND (no
+ * existence leak).
  */
-export function assertClientLinkable(ownerId: string, client: { ownerId: string } | null): void {
-  if (!client || client.ownerId !== ownerId) {
+export function assertClientLinkable(ownerId: string, client: { teamIds: readonly string[] } | null): void {
+  if (!client || !client.teamIds.includes(ownerId)) {
     throw new NotFoundError("Client not found", ERROR_CODES.CLIENT_NOT_FOUND);
   }
 }

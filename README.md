@@ -197,7 +197,7 @@ src/
   modules/
     auth/                  login, refresh, logout, password reset/update, exchange-code, /me (+ self-edit), bootstrap
     users/                 Admin-managed staff accounts; owns the `profiles` schema
-    clients/               client profiles, owner row scope, archive, reassign; owns the `clients` schema
+    clients/               client profiles, team row scope (client_members), archive, team; owns the `clients` + `client_members` schema
     stage-templates/       Admin-made templates (name + ordered stages); owns `stage_templates`, `stage_template_stages`
     assets/                asset link library: links + tags + search; owns `assets`, `tags`, `asset_tags`
     client-todos/          client to-do lists (Phase 2): a manager's internal to-dos per client; owns `client_todos`
@@ -343,38 +343,43 @@ Six roles (`src/domain/roles.ts`, REQUIREMENTS §3):
 
 | Role | Access |
 | --- | --- |
-| `admin` | Everything, all data. Manages users and stage templates. The only role that assigns staff tasks. Can own clients like a manager |
-| `social_media_manager` | Their own clients, events, assets, calendars, portal, comments. Receives staff tasks |
+| `admin` | Everything, all data. Manages users, stage templates and client teams. The only role that assigns staff tasks, archives clients and sets teams. Can be on a client's team like a manager |
+| `social_media_manager` | The clients whose team they're on: events, assets, calendars, portal, comments. Receives staff tasks |
 | `marketing_manager` | Same as Social Media Manager |
+| `project_manager` | Same as Social Media Manager (added 2026-10-23) |
 | `marketing_agent`, `developer`, `editor` | Staff tasks assigned to them only |
 
 `profiles.role` is the authorization source of truth. `requireCapability(cap)`
 gates each route against the flat capability matrix in
 `src/domain/capabilities.ts`, where each role's scope is `true` (any record),
-`"own"` (only the caller's records: clients they own and everything under
-them, their personal events, tasks assigned to them) or `false`. The middleware
+`"own"` (only the caller's records: clients whose team they're on and
+everything under them, their personal events, tasks assigned to them) or `false`. The middleware
 records the scope on `req.capabilityScope`; repositories apply the row filter.
 
-| Capability | admin | SMM / MM | agent / developer / editor |
+| Capability | admin | SMM / MM / PM | agent / developer / editor |
 | --- | --- | --- | --- |
 | `users:manage`, `stage_templates:manage`, `clients:reassign`, `staff_tasks:assign`, `dashboard:global` | ✓ | -- | -- |
 | `clients:read/write`, `events:read/write`, `personal_events:manage`, `assets:read/write`, `portal:manage`, `comments:read/manage` | ✓ | own | -- |
 | `staff_tasks:read/update` | ✓ | own | own |
 
 In use today: `users:manage` (all of `/users`); `clients:read` (every
-`/clients` route), `clients:write` (create, edit, archive, unarchive) and
-`clients:reassign` (Admin only); `events:read` / `events:write` (`/events`,
+`/clients` route), `clients:write` (create, edit; archive / unarchive need the Admin, `403 CLIENT_ADMIN_ONLY`) and
+`clients:reassign` (`PUT /clients/:id/team`, Admin only); `events:read` / `events:write` (`/events`,
 and reading `/stage-templates`, active only for managers) and
 `stage_templates:manage` (template writes, Admin only); `staff_tasks:read` (every `/staff-tasks`
 route; own tasks for non-admins), `staff_tasks:update` (status, comments) and
 `staff_tasks:assign` (create, edit, reassign, reopen, delete; Admin only). Every authenticated role may read and edit its
-own profile (`/auth/me`). `npm run test:rbac` proves it over HTTP for all six
+own profile (`/auth/me`). `npm run test:rbac` proves it over HTTP for all seven
 roles (74 checks at M2, 124 at M3; M4 adds the template and event cases).
 
 **Row scope (clients).** The capability says *whether* a role may touch
-clients; the scope says *which*. `ClientsService` turns `"own"` into
-`owner_id = caller`: a manager's list is pinned to their own clients (their
-`ownerId` filter is ignored), and reading or writing another manager's client
+clients; the scope says *which*. HOK owns every client; each has a **team**
+(`client_members`, one of them the **lead** = `clients.owner_id`). `"own"`
+means "on the client's team": one shared condition, `isOnTeam()` in
+`clients/infrastructure/client-team.sql.ts`, used by every module that scopes by
+client (list filters), plus `teamIdsOf()` for guards that check a locked row.
+A manager's list is pinned to their clients (their `ownerId` filter is
+ignored), and reading or writing a client whose team they're not on
 is **404 `CLIENT_NOT_FOUND`**, the same answer as for a missing id, so
 existence never leaks (needleye's leads pattern). Writes re-check the scope
 on the locked row, before the version check, so even a stale version on
@@ -427,11 +432,11 @@ with a password generated on the spot and returned once.
 REQUIREMENTS §5.2. One table, `clients` (`supabase/migrations/20261013000003_clients.sql`),
 owned by the Clients module.
 
-- **Ownership.** Exactly one owner, a client manager (admin, social_media_manager, marketing_manager). The creator owns a new client; only the Admin may pass `ownerId` to create for someone else. `owner_id` is `ON DELETE RESTRICT`: staff are deactivated, never deleted, and a client never disappears with a person. Everything later modules hang off a client (events, assets, portal links, comments) references `client_id`, so a reassign moves "the client and all its data" in one update.
-- **Status.** `active <-> paused` through `PATCH`; `archive` (status `archived` + `archived_at`, hidden from the default list, data kept) and `unarchive` (back to `active`) are their own actions. An archived client is read-only until unarchived; reassign still works on it. A CHECK keeps `status = archived` and `archived_at` in step. (From M8, archiving also disables the portal link.)
-- **Optimistic lock.** `version` (needleye's pattern): every write bumps it; `PATCH` **requires** the version the form loaded, archive / unarchive / reassign accept it optionally; a stale one is `409 CLIENT_MODIFIED`. Every write is one transaction: `SELECT … FOR UPDATE OF clients`, then the service's guard callback (scope, version, state, contract dates against the stored values), then the update.
+- **Teams (2026-10-23).** HOK owns every client; who works on it is its team (`client_members`, migration `20261023000001`, PK `(client_id, profile_id)`, index `(profile_id, client_id)`), up to 20 client managers (admin, social_media / marketing / project manager). One is the **lead** (`clients.owner_id`, always on the team): they manage the portal link (`403 PORTAL_LEAD_ONLY` for other members). The creator leads a new client; only the Admin may pass `ownerId` to create for someone else. `PUT /clients/:id/team` (Admin) replaces the team and lead in one transaction; people added get a `client_reassigned` notification. Every team member sees and edits the client and everything under it; archive / unarchive / team are the Admin's (`403 CLIENT_ADMIN_ONLY`). New portal comments and event reminders go to the whole team. `owner_id` is `ON DELETE RESTRICT`: staff are deactivated, never deleted.
+- **Status.** `active <-> paused` through `PATCH`; `archive` (status `archived` + `archived_at`, hidden from the default list, data kept) and `unarchive` (back to `active`) are their own actions. An archived client is read-only until unarchived; the team can still be changed. A CHECK keeps `status = archived` and `archived_at` in step. (From M8, archiving also disables the portal link.)
+- **Optimistic lock.** `version` (needleye's pattern): every write bumps it; `PATCH` **requires** the version the form loaded, archive / unarchive / team accept it optionally; a stale one is `409 CLIENT_MODIFIED`. Every write is one transaction: `SELECT … FOR UPDATE OF clients`, then the service's guard callback (scope, version, state, contract dates against the stored values), then the update.
 - **Fields.** A client has lists (migration `20261022000002`): `websites text[]` (≤ 10), `phones text[]` (≤ 10), `contacts jsonb` (≤ 20 people: a name, optional phone, optional email) and `social_accounts jsonb` (≤ 20 `{ platform, handle }`). The platform comes from a fixed list (instagram, facebook, tiktok, youtube, linkedin, x, threads, pinterest, snapchat) and may repeat; the handle is a handle or an http(s) link. The lists live on the client row, not in child tables: they're always read and edited with the client, never queried alone, and the client `version` guards edits. Each list sent replaces the whole list, and exact duplicates are dropped. The list row's `contactPerson` is the first contact's name. `services` is `text[]`, a flat list of labels (trimmed, case-insensitive de-duplicated, max 20 × 60 chars): no structure to model, and `= any(services)` or a GIN index work on it directly if it's ever filtered on. Websites are stored with a scheme (`acme.com` → `https://acme.com`); logo URLs must be full http(s) links; `timeZone` is a named IANA zone (default `DEFAULT_TIMEZONE`); contract dates are `YYYY-MM-DD` and the end can't precede the start (API rule + DB CHECK). `notes` are internal and will never reach the portal.
-- **Lists.** `GET /clients` returns a summary row (no notes, address, handles, services), newest first, one page query (joined to the owner's name) + one `count(*)`. Filters: `search` (business name, trigram-indexed), `status`, `industry` (case-insensitive exact), `ownerId` (Admin only). Indexes: `(owner_id, created_at desc, id desc)`, `(status, created_at desc, id desc)`, `lower(industry)`, a GIN trigram index on `business_name`.
+- **Lists.** `GET /clients` returns a summary row (no notes, address, handles, services), newest first, one page query (joined to the owner's name) + one `count(*)`. Filters: `search` (business name, trigram-indexed), `status`, `industry` (case-insensitive exact), `ownerId` (Admin only: clients whose team includes this person). Indexes: `client_members (profile_id, client_id)`, `(owner_id, created_at desc, id desc)`, `(status, created_at desc, id desc)`, `lower(industry)`, a GIN trigram index on `business_name`.
 
 ### Stage templates and events (M4, ADR 0006)
 
@@ -450,7 +455,7 @@ REQUIREMENTS §5.3. Migration `20261013000004_stage_templates_events.sql`.
 REQUIREMENTS §5.5. Migration `20261014100001_assets.sql` (tables `assets`, `tags`, `asset_tags`).
 
 - **Links only, never files.** `url` must be http(s) (zod `isValidHttpUrl` + a DB CHECK backstop, so a `javascript:` / `data:` URL can never be stored). Type: photo / video / document / design / audio / other. Comment up to 2000 characters.
-- **Row scope through the client**: an asset belongs to a client; the Admin sees all, a Social Media / Marketing Manager only assets of clients they own (anything else is `404 ASSET_NOT_FOUND`), task-only staff `403`. Capabilities `assets:read` / `assets:write`. Never shown on the portal.
+- **Row scope through the client**: an asset belongs to a client; the Admin sees all, a manager only assets of clients whose team they're on (anything else is `404 ASSET_NOT_FOUND`), task-only staff `403`. Capabilities `assets:read` / `assets:write`. Never shown on the portal.
 - **Tags** are per client and matched ignoring case (unique index on `(client_id, lower(name))`; the first spelling is kept). Up to 10 per asset, 30 characters each; a PATCH `tags` replaces the whole set. `GET /assets/tags` auto-suggests tags in use by live assets (with counts), for one client or the caller's whole scope.
 - **Event link**: optional `eventId` must be one of the asset's own client's events (`400 ASSET_EVENT_INVALID`; checked in the API because events never change client). FK `ON DELETE SET NULL`.
 - **Writes**: `version` required on PATCH (`409 ASSET_MODIFIED`); DELETE is a **soft delete** (`deleted_at`, version bumped) with an optional `?version=`. An archived client's assets are read-only (`409 CLIENT_ARCHIVED`) but still readable. Create locks the client row FOR SHARE and re-checks scope and status there.
@@ -475,7 +480,7 @@ REQUIREMENTS §5.9 (FR-TSK-01..10; reminders FR-TSK-11 are Phase 2). Migration `
 REQUIREMENTS §5.4 (FR-CTSK-01..04). Migration `20261017000003_client_todos.sql` (table `client_todos`).
 
 - **What**: a manager's internal to-dos for one client, optionally about one of the client's events. Separate from staff tasks (which the Admin assigns to people). **Never on the portal**: no portal route, nothing in the portal presenters.
-- **RBAC**: reuses `clients:read` (list) and `clients:write` (create / edit / delete). Row scope is the client's owner: the Admin sees all, a Social Media / Marketing Manager only their own clients' (the list/create routes answer `404 CLIENT_NOT_FOUND` for a client they cannot see, the `/client-todos/:id` routes `404 CLIENT_TODO_NOT_FOUND`; visibility is checked before the version), task-only staff `403`.
+- **RBAC**: reuses `clients:read` (list) and `clients:write` (create / edit / delete). Row scope is the client's team: the Admin sees all, a manager only those of clients whose team they're on (the list/create routes answer `404 CLIENT_NOT_FOUND` for a client they cannot see, the `/client-todos/:id` routes `404 CLIENT_TODO_NOT_FOUND`; visibility is checked before the version), task-only staff `403`.
 - **Status** `todo` / `in_progress` / `done`; `done` stamps `completed_at` and reopening clears it (the DB CHECK ties them together). Priority `low`/`medium`/`high`/`urgent`. `dueAt` is an instant with an offset.
 - **Writes**: `version` required on PATCH (`409 CLIENT_TODO_MODIFIED`), locked FOR UPDATE with the guard-callback pattern; DELETE is a **hard delete** with an optional `?version=` (the audit entry `client_todo.deleted` is the trace). An archived client's to-dos are readable but read-only (`409 CLIENT_ARCHIVED`). `eventId` must be one of the same client's events (`400 CLIENT_TODO_EVENT_INVALID`). Audit: `client_todo.created/updated/deleted`, ids and field names only.
 - **List**: `GET /clients/:clientId/todos`, page cap 100 with `total`. No `status` = the open list (not done); `status=all` = every status. Filters `status`, `priority`, `overdue=true`, `dueFrom`/`dueTo` (inclusive/exclusive instants), `search` (title, escaped ILIKE). Order: open before done, soonest due first (no due date last), newest; `status=done` is most recently completed first. Queries: client lookup + one page query (joined to client, event title, creator) + one `count(*)`.
@@ -499,7 +504,7 @@ REQUIREMENTS §5.7–5.8. Migration `20261014400001_portal_comments.sql` (`porta
 ### Dashboards (M10)
 
 REQUIREMENTS §5.11. The module owns no table.
-- `GET /api/v1/dashboard?view=overview|mine`, every staff role. `overview` (default): everyone gets their own work (`tasks`, plus `clients` for SMM / MM), except the **Admin, whose overview is the firm alone** (`firm`: totals incl. overdue, this week's events and team size; tasks by status; the 5 most overdue tasks; this week's events; the 5 newest unresolved comments; the 5 busiest people). `mine`: the caller's own clients and tasks -- the Admin's "My clients" page; the same as `overview` for other roles.
+- `GET /api/v1/dashboard?view=overview|mine`, every staff role. `overview` (default): everyone gets their own work (`tasks`, plus `clients` for SMM / MM / PM: the clients whose team they're on), except the **Admin, whose overview is the firm alone** (`firm`: totals incl. overdue, this week's events and team size; tasks by status; the 5 most overdue tasks; this week's events; the 5 newest unresolved comments; the 5 busiest people). `mine`: the caller's own clients and tasks -- the Admin's "My clients" page; the same as `overview` for other roles.
 - Every list is a **preview of at most 5** with a total, so the web links "View all N" to the full, paged page.
 - `GET /api/v1/dashboard/team` (`dashboard:global`): the whole team's workload, busiest first; name `search`, `role` (never admin), paged (≤ 50). Two queries.
 - Figures are `count(*) filter (…)` aggregates; the query count is **fixed per role and view** (task-only staff 3, managers 7, the Admin's overview 5 and "My clients" 7, plus the auth lookup), whatever the data size (query-budget test). "Today" and "this week" are the caller's own time zone (`src/domain/zoned-day.ts`, DST-safe).
@@ -522,7 +527,7 @@ FR-RPT-01..04. The module owns no table; every endpoint is `dashboard:global` (A
 
 ### Reminders and last seen (Phase 2)
 
-- **Reminders** (`src/modules/reminders`): one per active event (to the client's owner) and per open task with a due time (to the assignee), about **2 hours** ahead. An in-process runner (started in `src/index.ts`, never in tests) checks **every 10 minutes**: one transaction claims due rows through partial "still waiting" indexes with `FOR UPDATE SKIP LOCKED`, stamps `events.reminded_at` / `staff_tasks.due_reminded_at` and writes the bell rows; pushes go out after the commit. Two API instances never send the same reminder; moments already past are skipped; a new start/due time, a reassignment or a reopen clears the stamp. Types `event_reminder`, `task_due_reminder` (mutable in preferences); `GET /notifications/unread-count` also returns `reminders` (the bell's alert animation).
+- **Reminders** (`src/modules/reminders`): one per active event (to everyone on the client's team) and per open task with a due time (to the assignee), about **2 hours** ahead. An in-process runner (started in `src/index.ts`, never in tests) checks **every 10 minutes**: one transaction claims due rows through partial "still waiting" indexes with `FOR UPDATE SKIP LOCKED`, stamps `events.reminded_at` / `staff_tasks.due_reminded_at` and writes the bell rows; pushes go out after the commit. Two API instances never send the same reminder; moments already past are skipped; a new start/due time, a reassignment or a reopen clears the stamp. Types `event_reminder`, `task_due_reminder` (mutable in preferences); `GET /notifications/unread-count` also returns `reminders` (the bell's alert animation).
 - **Last seen**: `requireAuth` writes `profiles.last_seen_at` at most every 5 minutes per person (in-memory note + the same condition in SQL), fire-and-forget. Exposed on users and the team workload; the web reads anything older than 45 days as "not seen".
 
 ### Global search (Phase 2)
@@ -727,7 +732,7 @@ sequenceDiagram
     end
 ```
 
-### Reassign a client (Admin)
+### Set a client's team (Admin)
 
 ```mermaid
 sequenceDiagram
@@ -736,20 +741,21 @@ sequenceDiagram
     participant Svc as ClientsService
     participant Repo as DrizzleClientsRepository
 
-    Admin->>API: POST /clients/:id/reassign { ownerId, version? }
+    Admin->>API: PUT /clients/:id/team { leadId, memberIds, version? }
     Note over API: requireCapability(clients:reassign) -- managers 403
-    Svc->>Repo: findOwnerCandidate(ownerId)
-    alt not an active admin / SMM / MM
+    Svc->>Svc: normalizeTeam (lead added, duplicates dropped, max 20)
+    Svc->>Repo: findTeamCandidates(ids) -- one query
+    alt someone isn't an active client manager
         API-->>Admin: 400 CLIENT_OWNER_INVALID
     else valid
         Svc->>Repo: update(id, guard) [FOR UPDATE; version check]
-        alt already the owner
+        alt same team and lead
             API-->>Admin: 200 { client } (unchanged, no audit)
         else
-            Repo->>Repo: owner_id = new owner, version + 1
-            Svc->>Svc: audit client.reassigned { from, to }
+            Repo->>Repo: owner_id = lead; client_members replaced; bell rows for people added; version + 1
+            Svc->>Svc: audit client.reassigned { added, removed, leadFrom, leadTo }
             API-->>Admin: 200 { client }
-            Note over Admin: the old owner now gets 404 on this client
+            Note over Admin: people taken off now get 404 on this client
         end
     end
 ```

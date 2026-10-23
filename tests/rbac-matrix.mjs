@@ -11,8 +11,9 @@
  *       (list, get, create, edit, generate-password, deactivate, reactivate)
  *       and the Admin self-protection rules.
  *   M3: /clients (list, get, create incl. owner choice, edit + stale version,
- *       archive/unarchive, reassign): Admin all, SMM/MM own (others are 404),
- *       task-only 403. Needs migration 20261013000003_clients.sql. Its fixture
+ *       archive/unarchive, team): Admin all, SMM/MM/PM the clients whose team
+ *       they're on (others are 404), archive and team Admin only, portal
+ *       link lead only, task-only 403. Needs migration 20261013000003_clients.sql. Its fixture
  *       clients are archived at the end (no delete endpoint).
  *   M4: /stage-templates (Admin writes; managers read) and /events (create,
  *       list, get, edit, stage move + stale version) for all six roles. Needs
@@ -74,7 +75,7 @@ function check(label, actual, expected) {
   console.log(`${pass ? "PASS" : "FAIL"}  ${label}  (expected ${expected}, got ${actual})`);
 }
 
-const NON_ADMIN_ROLES = ["social_media_manager", "marketing_manager", "marketing_agent", "developer", "editor"];
+const NON_ADMIN_ROLES = ["social_media_manager", "marketing_manager", "project_manager", "marketing_agent", "developer", "editor"];
 
 async function main() {
   const stamp = Date.now();
@@ -166,7 +167,7 @@ async function main() {
 
   // One client (the SMM's), every role, every action. Admin acts last so versions stay predictable.
   const cid = smmClient.id;
-  const readExpect = { admin: 200, social_media_manager: 200, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  const readExpect = { admin: 200, social_media_manager: 200, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
   for (const [role, token] of everyone) {
     check(`GET /clients/:id (SMM's) as ${role} -> ${readExpect[role]}`, (await req(`/clients/${cid}`, {}, token)).status, readExpect[role]);
   }
@@ -184,32 +185,31 @@ async function main() {
     (await req(`/clients/${cid}`, { method: "PATCH", body: JSON.stringify({ notes: "again", version: 1 }) }, smm.token)).status,
     409,
   );
-  check("POST /clients/:id/archive (own) as SMM -> 200", (await req(`/clients/${cid}/archive`, { method: "POST", body: "{}" }, smm.token)).status, 200);
-  check("POST /clients/:id/unarchive (own) as SMM -> 200", (await req(`/clients/${cid}/unarchive`, { method: "POST", body: "{}" }, smm.token)).status, 200);
+  check("POST /clients/:id/archive (own team) as SMM -> 403 (Admin only)", (await req(`/clients/${cid}/archive`, { method: "POST", body: "{}" }, smm.token)).status, 403);
+  check("POST /clients/:id/archive as admin -> 200", (await req(`/clients/${cid}/archive`, { method: "POST", body: "{}" }, admin.token)).status, 200);
+  check("POST /clients/:id/unarchive as admin -> 200", (await req(`/clients/${cid}/unarchive`, { method: "POST", body: "{}" }, admin.token)).status, 200);
   check(
     "PATCH /clients/:id (SMM's) as admin -> 200",
     (await req(`/clients/${cid}`, { method: "PATCH", body: JSON.stringify({ industry: "Retail", version: 4 }) }, admin.token)).status,
     200,
   );
 
+  const pm = staff.project_manager;
+  const team = (body) => ({ method: "PUT", body: JSON.stringify(body) });
   for (const [role, token] of everyone.filter(([r]) => r !== "admin")) {
-    check(
-      `POST /clients/:id/reassign as ${role} -> 403`,
-      (await req(`/clients/${cid}/reassign`, { method: "POST", body: JSON.stringify({ ownerId: mm.id }) }, token)).status,
-      403,
-    );
+    check(`PUT /clients/:id/team as ${role} -> 403`, (await req(`/clients/${cid}/team`, team({ leadId: mm.id, memberIds: [] }), token)).status, 403);
   }
-  check(
-    "POST /clients/:id/reassign to an editor as admin -> 400",
-    (await req(`/clients/${cid}/reassign`, { method: "POST", body: JSON.stringify({ ownerId: target.id }) }, admin.token)).status,
-    400,
-  );
-  check(
-    "POST /clients/:id/reassign to the MM as admin -> 200",
-    (await req(`/clients/${cid}/reassign`, { method: "POST", body: JSON.stringify({ ownerId: mm.id }) }, admin.token)).status,
-    200,
-  );
+  check("PUT /clients/:id/team with an editor as admin -> 400", (await req(`/clients/${cid}/team`, team({ leadId: smm.id, memberIds: [target.id] }), admin.token)).status, 400);
+  check("PUT /clients/:id/team (SMM leads, + project manager) as admin -> 200", (await req(`/clients/${cid}/team`, team({ leadId: smm.id, memberIds: [pm.id] }), admin.token)).status, 200);
+  check("... the project manager now sees it -> 200", (await req(`/clients/${cid}`, {}, pm.token)).status, 200);
+  const pmView = await req(`/clients/${cid}`, {}, pm.token);
+  check("... and may edit it -> 200", (await req(`/clients/${cid}`, { method: "PATCH", body: JSON.stringify({ notes: "pm was here", version: pmView.body?.client?.version }) }, pm.token)).status, 200);
+  check("... but not change its portal link (lead only) -> 403", (await req(`/portal-links/${cid}`, { method: "POST" }, pm.token)).status, 403);
+  check("... while the lead can -> 201", (await req(`/portal-links/${cid}`, { method: "POST" }, smm.token)).status, 201);
+  check("... the MM (not on the team) still gets 404", (await req(`/clients/${cid}`, {}, mm.token)).status, 404);
+  check("PUT /clients/:id/team (MM leads alone) as admin -> 200", (await req(`/clients/${cid}/team`, team({ leadId: mm.id, memberIds: [] }), admin.token)).status, 200);
   check("... the SMM no longer sees it -> 404", (await req(`/clients/${cid}`, {}, smm.token)).status, 404);
+  check("... nor the project manager -> 404", (await req(`/clients/${cid}`, {}, pm.token)).status, 404);
   check("... the MM now does -> 200", (await req(`/clients/${cid}`, {}, mm.token)).status, 200);
   // Fixture clients are archived, not deleted (there is no client delete endpoint).
   for (const c of [...Object.values(created), adminForMm.body?.client].filter(Boolean)) {
@@ -239,7 +239,7 @@ async function main() {
   console.log("\n--- events (admin: all; SMM / MM: their clients' events, others' are 404; task-only: 403) ---");
   const evClient = (await req("/clients", { method: "POST", body: newClient("events-client") }, smm.token)).body?.client;
   const evBody = JSON.stringify({ clientId: evClient?.id, templateId: tplId, title: `RBAC event ${stamp}`, type: "shoot", startsAt: "2026-12-01T10:00:00+05:30", endsAt: "2026-12-01T12:00:00+05:30" });
-  const evCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  const evCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
   let ev = null;
   for (const [role, token] of everyone) {
     const r = await req("/events", { method: "POST", body: evBody }, token);
@@ -337,7 +337,7 @@ async function main() {
 
   console.log("\n--- portal links + client comments (admin: all; SMM / MM: own clients, others' 404; task-only: 403; public: token only) ---");
   const porClient = (await req("/clients", { method: "POST", body: newClient("portal-client") }, smm.token)).body?.client;
-  const linkExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  const linkExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
   let porToken = null;
   for (const [role, token] of everyone) {
     const r = await req(`/portal-links/${porClient?.id}`, { method: "POST" }, token);
@@ -353,12 +353,12 @@ async function main() {
     const listExpect = TASK_ONLY.includes(role) ? 403 : 200;
     check(`GET /client-comments as ${role} -> ${listExpect}`, (await req("/client-comments", {}, token)).status, listExpect);
     check(`GET /client-comments/counts as ${role} -> ${listExpect}`, (await req("/client-comments/counts", {}, token)).status, listExpect);
-    const oneExpect = { admin: 200, social_media_manager: 200, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 }[role];
+    const oneExpect = { admin: 200, social_media_manager: 200, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 }[role];
     check(`GET /client-comments/:id (SMM's) as ${role} -> ${oneExpect}`, (await req(`/client-comments/${commentId}`, {}, token)).status, oneExpect);
   }
   for (const [role, token] of everyone) {
     if (role === "admin" || role === "social_media_manager") continue; // writers checked below
-    const expected = role === "marketing_manager" ? 404 : 403;
+    const expected = (role === "marketing_manager" || role === "project_manager") ? 404 : 403;
     const r = await req(`/client-comments/${commentId}`, { method: "PATCH", body: JSON.stringify({ status: "in_progress", version: 1 }) }, token);
     check(`PATCH /client-comments/:id (SMM's) as ${role} -> ${expected}`, r.status, expected);
   }
@@ -373,7 +373,7 @@ async function main() {
   console.log("\n--- assets (admin: all; SMM / MM: their clients' assets, others' are 404; task-only: 403) ---");
   const astClient = (await req("/clients", { method: "POST", body: newClient("assets-client") }, smm.token)).body?.client;
   const astBody = JSON.stringify({ clientId: astClient?.id, title: `RBAC asset ${stamp}`, url: "https://drive.google.com/drive/folders/rbac", type: "photo", tags: ["rbac"] });
-  const astCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  const astCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
   let asset = null;
   for (const [role, token] of everyone) {
     const r = await req("/assets", { method: "POST", body: astBody }, token);
@@ -412,7 +412,7 @@ async function main() {
   console.log("\n--- client to-dos (admin: all; SMM / MM: their clients' to-dos, others' are 404; task-only: 403) ---");
   const tdClient = (await req("/clients", { method: "POST", body: newClient("todos-client") }, smm.token)).body?.client;
   const tdBody = JSON.stringify({ title: `RBAC todo ${stamp}`, priority: "high", dueAt: "2031-01-01T10:00:00Z" });
-  const tdCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  const tdCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
   let todo = null;
   for (const [role, token] of everyone) {
     const r = await req(`/clients/${tdClient?.id}/todos`, { method: "POST", body: tdBody }, token);
@@ -457,7 +457,7 @@ async function main() {
   const taskRes = await req("/staff-tasks", { method: "POST", body: taskBody() }, admin.token);
   check("POST /staff-tasks (to the editor) as admin -> 201", taskRes.status, 201);
   const tid = taskRes.body?.task?.id;
-  const taskReadExpect = { admin: 200, social_media_manager: 404, marketing_manager: 404, marketing_agent: 404, developer: 404, editor: 200 };
+  const taskReadExpect = { admin: 200, social_media_manager: 404, marketing_manager: 404, project_manager: 404, marketing_agent: 404, developer: 404, editor: 200 };
   for (const [role, token] of everyone) {
     check(`GET /staff-tasks/:id (editor's) as ${role} -> ${taskReadExpect[role]}`, (await req(`/staff-tasks/${tid}`, {}, token)).status, taskReadExpect[role]);
   }
@@ -504,7 +504,7 @@ async function main() {
     const r = await req("/dashboard", {}, token);
     check(`GET /dashboard as ${role} -> 200`, r.status, 200);
     // The Admin's overview is the firm alone; their own clients are on view=mine.
-    const managesClients = ["social_media_manager", "marketing_manager"].includes(role);
+    const managesClients = ["social_media_manager", "marketing_manager", "project_manager"].includes(role);
     check(`  ${role}: clients section ${managesClients ? "present" : "absent"}`, r.body?.clients != null, managesClients);
     check(`  ${role}: firm section ${role === "admin" ? "present" : "absent"}`, r.body?.firm != null, role === "admin");
     if (role === "admin") {

@@ -46,9 +46,9 @@ class FakeRepo implements PersonalEventsRepositoryPort {
   findById(id: string) {
     return Promise.resolve(this.rows.get(id) ?? null);
   }
-  findClientOwner(id: string) {
+  findClientTeam(id: string) {
     const ownerId = this.clientOwners.get(id);
-    return Promise.resolve(ownerId ? { ownerId } : null);
+    return Promise.resolve(ownerId ? { teamIds: [ownerId] } : null);
   }
   create(r: NewPersonalEvent) {
     this.rows.set("new", entry({ ...r, id: "new" }));

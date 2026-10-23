@@ -25,6 +25,7 @@ function event(o: Partial<EventEntity> = {}): EventEntity {
     clientId: "c1",
     clientName: "Acme",
     ownerId: "rohan",
+    teamIds: ["rohan"],
     clientStatus: "active",
     title: "Diwali shoot",
     type: "shoot",
@@ -50,9 +51,9 @@ class FakeRepo implements EventsRepositoryPort {
   events = new Map<string, EventEntity>([["e1", event()]]);
   history: (StageMoveEntry & { from: string; to: string })[] = [];
   clients = new Map<string, EventClient>([
-    ["c1", { id: "c1", ownerId: "rohan", status: "active", timeZone: "Asia/Kolkata" }],
-    ["c2", { id: "c2", ownerId: "sara", status: "active", timeZone: "Asia/Dubai" }],
-    ["c3", { id: "c3", ownerId: "rohan", status: "archived", timeZone: "UTC" }],
+    ["c1", { id: "c1", teamIds: ["rohan"], status: "active", timeZone: "Asia/Kolkata" }],
+    ["c2", { id: "c2", teamIds: ["sara"], status: "active", timeZone: "Asia/Dubai" }],
+    ["c3", { id: "c3", teamIds: ["rohan"], status: "archived", timeZone: "UTC" }],
   ]);
   templates = new Map<string, EventTemplate>([
     ["t1", { id: "t1", name: "Photo Shoot", active: true, stageNames: ["Planned", "Shoot", "Editing"] }],
@@ -86,7 +87,7 @@ class FakeRepo implements EventsRepositoryPort {
     guard(this.clients.get(record.clientId)!);
     this.created.push(record);
     const client = this.clients.get(record.clientId)!;
-    this.events.set("new", event({ id: "new", clientId: record.clientId, ownerId: client.ownerId, timeZone: record.timeZone, title: record.title }));
+    this.events.set("new", event({ id: "new", clientId: record.clientId, teamIds: client.teamIds, timeZone: record.timeZone, title: record.title }));
     return Promise.resolve("new");
   }
   update(id: string, decide: (current: EventEntity) => EventChanges) {

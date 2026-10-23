@@ -16,7 +16,7 @@ declare global {
  * Rejects the request if the caller's role has no access to `capability` at
  * all. When the role's access is scoped to "own" records, the
  * controller/service is responsible for filtering/verifying ownership
- * (a client's owner_id, a staff task's assignee_id) -- this
+ * (a client's team, a staff task's assignee_id) -- this
  * middleware only gates the all-or-nothing role check and records the
  * scope on `req` so downstream layers don't have to re-derive it.
  */

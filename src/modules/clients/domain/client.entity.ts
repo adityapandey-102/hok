@@ -1,3 +1,5 @@
+import type { Role } from "../../../domain";
+
 /**
  * Pure domain shapes for a client (REQUIREMENTS FR-CLI-02) -- no persistence
  * or HTTP concerns. Dates (`contractStart`/`contractEnd`) are calendar days,
@@ -47,12 +49,29 @@ export interface ClientProfileFields {
   notes: string | null;
 }
 
+/** Most people on one client's team. */
+export const CLIENT_TEAM_MAX = 20;
+
+/** One person on a client's team; exactly one is the lead. */
+export interface ClientTeamMember {
+  id: string;
+  fullName: string;
+  role: Role;
+  isLead: boolean;
+}
+
 /** A client in full (GET /clients/:id and every write's response). */
 export interface ClientEntity extends ClientProfileFields {
   id: string;
+  /**
+   * The client's LEAD (column `owner_id`). HOK owns every client; the lead is
+   * the team member who runs it (and manages its portal link).
+   */
   ownerId: string;
-  /** The owning manager's name, joined in the same query. */
+  /** The lead's name, joined in the same query. */
   ownerName: string;
+  /** Everyone assigned, lead first. A manager sees the client only while on it. */
+  team: ClientTeamMember[];
   status: ClientStatus;
   archivedAt: string | null;
   /** Optimistic-lock token: send it back with a write; a stale one is 409 CLIENT_MODIFIED. */

@@ -14,7 +14,8 @@ export type ClientTodoScope = { kind: "all" } | { kind: "own"; userId: string };
 /** The client a to-do belongs to, as stored. */
 export interface TodoClient {
   id: string;
-  ownerId: string;
+  /** The client's team: who may see this (internal, never sent to the browser). */
+  teamIds: string[];
   status: "active" | "paused" | "archived";
 }
 
@@ -24,15 +25,15 @@ export interface TodoEvent {
   clientId: string;
 }
 
-export function assertTodoVisible(scope: ClientTodoScope, todo: Pick<ClientTodoEntity, "ownerId"> | null): void {
-  if (!todo || (scope.kind === "own" && todo.ownerId !== scope.userId)) {
+export function assertTodoVisible(scope: ClientTodoScope, todo: Pick<ClientTodoEntity, "teamIds"> | null): void {
+  if (!todo || (scope.kind === "own" && !todo.teamIds.includes(scope.userId))) {
     throw new NotFoundError("To-do not found", ERROR_CODES.CLIENT_TODO_NOT_FOUND);
   }
 }
 
 /** The client a list/create goes under: must exist and be visible (else 404 CLIENT_NOT_FOUND). */
 export function assertClientVisible(scope: ClientTodoScope, client: TodoClient | null): TodoClient {
-  if (!client || (scope.kind === "own" && client.ownerId !== scope.userId)) {
+  if (!client || (scope.kind === "own" && !client.teamIds.includes(scope.userId))) {
     throw new NotFoundError("Client not found", ERROR_CODES.CLIENT_NOT_FOUND);
   }
   return client;

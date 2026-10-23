@@ -217,7 +217,7 @@ describe("client to-dos (integration)", () => {
     const c = await as("social_media_manager", request(app).post("/api/v1/clients")).send({ businessName: `IT Todos Archive ${stamp}` });
     const cid = (c.body as { client: { id: string } }).client.id;
     const t = await create({}, "social_media_manager", cid);
-    expect((await as("social_media_manager", request(app).post(`/api/v1/clients/${cid}/archive`)).send({})).status).toBe(200);
+    expect((await as("admin", request(app).post(`/api/v1/clients/${cid}/archive`)).send({})).status).toBe(200);
     expect((await list("", "social_media_manager", cid)).total).toBe(1);
     const edit = await as("social_media_manager", request(app).patch(`/api/v1/client-todos/${t.id}`)).send({ title: "x", version: t.version });
     expect(edit.status).toBe(409);
@@ -226,7 +226,7 @@ describe("client to-dos (integration)", () => {
     const add = await as("social_media_manager", request(app).post(`/api/v1/clients/${cid}/todos`)).send({ title: "x" });
     expect(add.status).toBe(409);
     expect((add.body as { code: string }).code).toBe("CLIENT_ARCHIVED");
-    await as("social_media_manager", request(app).post(`/api/v1/clients/${cid}/unarchive`)).send({});
+    await as("admin", request(app).post(`/api/v1/clients/${cid}/unarchive`)).send({});
     expect((await as("social_media_manager", request(app).patch(`/api/v1/client-todos/${t.id}`)).send({ title: "ok", version: t.version })).status).toBe(200);
   });
 

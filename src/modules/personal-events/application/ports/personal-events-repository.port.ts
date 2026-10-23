@@ -25,8 +25,8 @@ export interface PersonalEventsRepositoryPort {
   findMany(filters: PersonalEventFilters, page: { limit: number; offset: number }): Promise<PersonalEventEntity[]>;
   countMany(filters: PersonalEventFilters): Promise<number>;
   findById(id: string): Promise<PersonalEventEntity | null>;
-  /** The client a personal event would link to (its owner decides whether it may), or null. */
-  findClientOwner(clientId: string): Promise<{ ownerId: string } | null>;
+  /** The team of the client an entry would be linked to (the entry owner must be on it). */
+  findClientTeam(clientId: string): Promise<{ teamIds: string[] } | null>;
   create(record: NewPersonalEvent): Promise<string>;
   /** Locks the row, lets `decide` check it and return the changes, applies them and bumps the version. 404 if missing. */
   update(id: string, decide: (current: PersonalEventEntity) => PersonalEventChanges): Promise<void>;

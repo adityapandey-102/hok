@@ -5,7 +5,8 @@ export interface AssetRow {
   id: string;
   clientId: string;
   clientName: string;
-  ownerId: string;
+  /** The client's team: who may see this (internal, never sent to the browser). */
+  teamIds: string[];
   clientStatus: "active" | "paused" | "archived";
   eventId: string | null;
   eventTitle: string | null;

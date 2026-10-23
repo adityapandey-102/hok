@@ -32,7 +32,7 @@ tags:
   - name: Users
     description: Staff accounts and roles. Admin only (`users:manage`).
   - name: Clients
-    description: Client profiles and ownership. Admin sees all; Social Media / Marketing Managers only their own (another manager's client is a 404). `clients:read` / `clients:write`; reassign is Admin only (`clients:reassign`).
+    description: Client profiles and teams. HOK owns every client; each has an assigned team with one lead (`ownerId`). Admin sees all; Social Media / Marketing / Project Managers only clients whose team they're on (any other client is a 404). `clients:read` / `clients:write` for team members; archive, unarchive and team changes are Admin only (`403 CLIENT_ADMIN_ONLY`; the team endpoint needs `clients:reassign`).
   - name: Stage templates
     description: Admin-made templates (name + ordered stages). Admin edits (`stage_templates:manage`); managers read active ones to create events.
   - name: Events
@@ -605,8 +605,8 @@ paths:
         only between `active` and `paused`. Refused with
         `409 CLIENT_MODIFIED` (stale version), `409 CLIENT_ARCHIVED` (unarchive
         first) and `400 CLIENT_CONTRACT_DATES_INVALID` (end before start,
-        checked against the stored dates). Ownership changes only through
-        reassign.
+        checked against the stored dates). The team changes only through
+        PUT /clients/{id}/team.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -628,7 +628,7 @@ paths:
     post:
       tags: [Clients]
       summary: Archive a client (hidden from active lists, data kept)
-      description: "`clients:write`. Sets `status: archived` and `archivedAt`. `409 CLIENT_ARCHIVED` if it already is; `409 CLIENT_MODIFIED` for a stale `version`."
+      description: "Admin only (a team member gets `403 CLIENT_ADMIN_ONLY`). Sets `status: archived` and `archivedAt`, and turns off the portal link. `409 CLIENT_ARCHIVED` if it already is; `409 CLIENT_MODIFIED` for a stale `version`."
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ClientId"
@@ -672,16 +672,20 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/ClientNotFound" }
         "409": { $ref: "#/components/responses/ClientConflict" }
-  /api/v1/clients/{id}/reassign:
-    post:
+  /api/v1/clients/{id}/team:
+    put:
       tags: [Clients]
-      summary: Move a client (and all its data) to another manager
+      summary: Set a client's team and its lead (Admin)
       description: |
-        Admin only (`clients:reassign`). The new owner must be an active admin,
-        social_media_manager or marketing_manager (`400 CLIENT_OWNER_INVALID`).
-        Works on archived clients too. Reassigning to the current owner
-        changes nothing (same `version`, no audit row). Audited as
-        `client.reassigned` with `{ from, to }`.
+        Admin only (`clients:reassign`; a team member gets `403 CLIENT_ADMIN_ONLY`).
+        `memberIds` becomes the whole team; the lead is added if missing,
+        duplicates are dropped, at most 20 people. Everyone must be an active
+        admin, social_media_manager, marketing_manager or project_manager
+        (`400 CLIENT_OWNER_INVALID`). Works on archived clients too. People
+        added are notified (`client_reassigned`), except the Admin adding
+        themselves. An unchanged team changes nothing (same `version`, no
+        audit row). Audited as `client.reassigned` with
+        `{ added, removed, leadFrom, leadTo }`.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/ClientId"
@@ -691,13 +695,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [ownerId]
+              required: [leadId, memberIds]
               properties:
-                ownerId: { type: string, format: uuid }
+                leadId: { type: string, format: uuid }
+                memberIds: { type: array, maxItems: 20, items: { type: string, format: uuid } }
                 version: { type: integer, minimum: 1, description: Optional; a stale one is `409 CLIENT_MODIFIED`. }
       responses:
         "200":
-          description: The client with its new owner.
+          description: The client with its new team.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ClientEnvelope" }
@@ -1220,7 +1225,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: search, in: query, description: Name, case-insensitive (max 80)., schema: { type: string, maxLength: 80 } }
-        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, marketing_agent, developer, editor] } }
+        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor] } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
@@ -1331,7 +1336,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: search, in: query, description: Name, case-insensitive (max 80)., schema: { type: string, maxLength: 80 } }
-        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, marketing_agent, developer, editor] } }
+        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor] } }
         - { name: status, in: query, schema: { type: string, enum: [working, idle] } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
@@ -2693,9 +2698,9 @@ components:
       type: string
       description: |
         admin -- everything, all data, the only role that assigns staff tasks.
-        social_media_manager / marketing_manager -- their own clients, events, assets, calendars, portal and comments.
+        social_media_manager / marketing_manager / project_manager -- the clients whose team they're on: their events, assets, calendars, portal and comments.
         marketing_agent / developer / editor -- staff tasks only.
-      enum: [admin, social_media_manager, marketing_manager, marketing_agent, developer, editor]
+      enum: [admin, social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor]
     TimeZone:
       type: string
       maxLength: 64
@@ -2830,7 +2835,7 @@ components:
       type: object
       required:
         [id, ownerId, ownerName, businessName, logoUrl, industry, email, address, websites, phones, contacts,
-         socialAccounts, services, contractStart, contractEnd, timeZone, notes, status, archivedAt, version, createdAt, updatedAt]
+         socialAccounts, services, contractStart, contractEnd, timeZone, notes, team, status, archivedAt, version, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         ownerId: { type: string, format: uuid }
@@ -2844,6 +2849,17 @@ components:
         phones: { type: array, items: { type: string } }
         contacts: { type: array, items: { $ref: "#/components/schemas/ClientContact" } }
         socialAccounts: { type: array, items: { $ref: "#/components/schemas/SocialAccount" } }
+        team:
+          type: array
+          description: Everyone assigned, lead first. `ownerId` / `ownerName` are the lead.
+          items:
+            type: object
+            required: [id, fullName, role, isLead]
+            properties:
+              id: { type: string, format: uuid }
+              fullName: { type: string }
+              role: { $ref: "#/components/schemas/Role" }
+              isLead: { type: boolean }
         services: { type: array, items: { type: string } }
         contractStart: { type: string, format: date, nullable: true }
         contractEnd: { type: string, format: date, nullable: true }

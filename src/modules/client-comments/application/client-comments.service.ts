@@ -73,7 +73,7 @@ export class ClientCommentsService {
     return this.repo.listForPortal(ctx.clientId, limit, offset);
   }
 
-  /** FR-CMT-01/02: post a comment (general or about one of the client's events), then notify the manager. */
+  /** FR-CMT-01/02: post a comment (general or about one of the client's events), then notify the client's whole team. */
   async post(ctx: PortalContext, input: { body: string; eventId?: string | null }): Promise<PortalCommentEntity> {
     const eventId = input.eventId ?? null;
     if (eventId && !(await this.repo.eventBelongsToClient(ctx.clientId, eventId))) {
@@ -81,7 +81,7 @@ export class ClientCommentsService {
     }
     const comment = await this.repo.createFromPortal({ clientId: ctx.clientId, portalLinkId: ctx.linkId, eventId, body: input.body });
     await this.notifier.newClientComment({
-      ownerId: ctx.ownerId,
+      recipientIds: ctx.teamIds,
       clientId: ctx.clientId,
       clientName: ctx.businessName,
       commentId: comment.id,

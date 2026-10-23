@@ -18,7 +18,7 @@ function todo(o: Partial<ClientTodoEntity> = {}): ClientTodoEntity {
   return {
     id: "t1",
     clientId: "c1",
-    ownerId: "rohan",
+    teamIds: ["rohan"],
     clientStatus: "active",
     eventId: null,
     eventTitle: null,
@@ -40,8 +40,8 @@ function todo(o: Partial<ClientTodoEntity> = {}): ClientTodoEntity {
 class FakeRepo implements ClientTodosRepositoryPort {
   rows = new Map<string, ClientTodoEntity>();
   clients = new Map<string, TodoClient>([
-    ["c1", { id: "c1", ownerId: "rohan", status: "active" }],
-    ["c9", { id: "c9", ownerId: "rohan", status: "archived" }],
+    ["c1", { id: "c1", teamIds: ["rohan"], status: "active" }],
+    ["c9", { id: "c9", teamIds: ["rohan"], status: "archived" }],
   ]);
   eventsById = new Map<string, TodoEvent>([
     ["e1", { id: "e1", clientId: "c1" }],
@@ -66,7 +66,7 @@ class FakeRepo implements ClientTodosRepositoryPort {
   }
   create(r: NewClientTodoRecord, guard: (c: TodoClient) => void) {
     guard(this.clients.get(r.clientId)!);
-    const row = todo({ ...r, id: `t${this.rows.size + 1}`, ownerId: this.clients.get(r.clientId)!.ownerId });
+    const row = todo({ ...r, id: `t${this.rows.size + 1}`, teamIds: this.clients.get(r.clientId)!.teamIds });
     this.rows.set(row.id, row);
     return Promise.resolve(row.id);
   }

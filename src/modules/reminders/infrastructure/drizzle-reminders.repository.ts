@@ -11,7 +11,8 @@ interface EventRow extends Record<string, unknown> {
   starts_at: string | Date;
   time_zone: string;
   business_name: string;
-  owner_id: string;
+  /** Everyone on the client's team (client teams, 2026-10-23): they're all reminded. */
+  team_ids: string[];
 }
 
 interface TaskRow extends Record<string, unknown> {
@@ -49,7 +50,8 @@ export class DrizzleRemindersRepository implements RemindersRepositoryPort {
         set reminded_at = ${now}
         from due, public.clients c
         where e.id = due.id and c.id = e.client_id
-        returning e.id, e.title, e.starts_at, e.time_zone, c.business_name, c.owner_id`);
+        returning e.id, e.title, e.starts_at, e.time_zone, c.business_name,
+          array_to_json(array(select m.profile_id from public.client_members m where m.client_id = c.id)) as team_ids`);
 
       const tasks = await tx.execute<TaskRow>(sql`
         with due as (
@@ -74,7 +76,7 @@ export class DrizzleRemindersRepository implements RemindersRepositoryPort {
         ...events.rows.map(
           (e): ReminderPush => ({
             type: "event_reminder",
-            recipientIds: [e.owner_id],
+            recipientIds: e.team_ids,
             actorId: null,
             payload: eventReminderPayload({ eventId: e.id, title: e.title, clientName: e.business_name, startsAt: asDate(e.starts_at), timeZone: e.time_zone, now }),
           }),

@@ -6,6 +6,7 @@ import { scanLowerBound } from "../../../domain";
 // Cross-module Infrastructure-only reads (ADR 0003): the client, its events,
 // their stages and client-visible history, and the link creator's name.
 import { clients } from "../../clients/infrastructure/clients.schema";
+import { teamIdsOf } from "../../clients/infrastructure/client-team.sql";
 import { eventStageHistory, eventStages, events } from "../../events/infrastructure/events.schema";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { portalLinks } from "./portal.schema";
@@ -50,7 +51,7 @@ async function currentLink(ex: Executor, clientId: string): Promise<PortalLinkEn
 export class DrizzlePortalLinksRepository implements PortalLinksRepositoryPort {
   findClient(clientId: string) {
     return guarded("load the client", async (): Promise<PortalClient | null> => {
-      const [row] = await db.select({ id: clients.id, ownerId: clients.ownerId, status: clients.status }).from(clients).where(eq(clients.id, clientId)).limit(1);
+      const [row] = await db.select({ id: clients.id, ownerId: clients.ownerId, teamIds: teamIdsOf(clients.id), status: clients.status }).from(clients).where(eq(clients.id, clientId)).limit(1);
       return row ?? null;
     });
   }
@@ -63,7 +64,7 @@ export class DrizzlePortalLinksRepository implements PortalLinksRepositoryPort {
     return guarded("generate the portal link", () =>
       db.transaction(async (tx) => {
         const [client] = await tx
-          .select({ id: clients.id, ownerId: clients.ownerId, status: clients.status })
+          .select({ id: clients.id, ownerId: clients.ownerId, teamIds: teamIdsOf(clients.id), status: clients.status })
           .from(clients)
           .where(eq(clients.id, clientId))
           .for("share");

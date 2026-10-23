@@ -64,7 +64,7 @@ export class PersonalEventsService {
     this.scopeOf(caller);
     assertPersonalTimes(dto.startsAt, dto.endsAt);
     const clientId = dto.clientId ?? null;
-    if (clientId) assertClientLinkable(caller.userId, await this.repo.findClientOwner(clientId));
+    if (clientId) assertClientLinkable(caller.userId, await this.repo.findClientTeam(clientId));
 
     const id = await this.repo.create({
       ownerId: caller.userId,
@@ -86,7 +86,7 @@ export class PersonalEventsService {
     if (fields.length === 0) throw new BadRequestError("No fields to update", ERROR_CODES.VALIDATION_NO_FIELDS);
 
     // Who owns the client is fixed, so it can be read before the lock; the entry's owner is checked against it inside.
-    const linkTo = changes.clientId ? await this.repo.findClientOwner(changes.clientId) : null;
+    const linkTo = changes.clientId ? await this.repo.findClientTeam(changes.clientId) : null;
     const scope = this.scopeOf(caller);
     await this.repo.update(id, (current) => {
       assertPersonalVisible(scope, current);

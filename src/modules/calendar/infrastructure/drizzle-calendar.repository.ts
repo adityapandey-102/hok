@@ -5,6 +5,7 @@ import { scanLowerBound } from "../../../domain";
 // The Calendar module owns no table: it reads the Events and Personal-events
 // modules' tables Infrastructure-to-Infrastructure (ADR 0003), read-only.
 import { clients } from "../../clients/infrastructure/clients.schema";
+import { isOnTeam } from "../../clients/infrastructure/client-team.sql";
 import { eventStages, events } from "../../events/infrastructure/events.schema";
 import { personalEvents } from "../../personal-events/infrastructure/personal-events.schema";
 // The subscribe link's hash lives on the person's profile (Users' table, ADR 0003).
@@ -34,7 +35,8 @@ export class DrizzleCalendarRepository implements CalendarRepositoryPort, Calend
         gt(events.endsAt, new Date(range.from)),
         gte(events.startsAt, scanLowerBound(range.from)),
       ];
-      if (f.ownerId) c.push(eq(clients.ownerId, f.ownerId));
+      // Events of clients whose team includes this person (a manager: always themselves).
+      if (f.ownerId) c.push(isOnTeam(clients.id, f.ownerId));
       if (f.clientId) c.push(eq(events.clientId, f.clientId));
       if (f.eventType) c.push(eq(events.type, f.eventType));
       if (f.state) c.push(eq(events.state, f.state));

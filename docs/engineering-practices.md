@@ -35,7 +35,8 @@ arrives in M11; until then the query budget below is the check.)
 | `profiles (role)` | Bootstrap's "does an admin exist", the users list's role filter |
 | `profiles (calendar_feed_token_hash)` unique, partial (`where … is not null`) | The public calendar feed's lookup by token hash (FR-CAL-08); only people with a link are indexed |
 | `audit_log (created_at desc)`, `(entity_type, entity_id)`, `(actor_id, created_at desc)` | Activity views, an entity's history, "last seen" per person |
-| `clients (owner_id, created_at desc, id desc)` | A manager's client list (newest first), the Admin's owner filter, the `owner_id` FK check |
+| `clients (owner_id, created_at desc, id desc)` | The lead's FK check, newest-first order |
+| `client_members` PK `(client_id, profile_id)`, `(profile_id, client_id)`, `(added_by)` partial | Client teams (2026-10-23): "is this person on this client's team" (`isOnTeam` / `teamIdsOf`, every module's row scope), a manager's client list, the Admin's "assigned to" filter, the `added_by` FK check |
 | `clients (status, created_at desc, id desc)` | The Admin's all-clients list and the status filter (default list = `status <> 'archived'`) |
 | `clients (lower(industry))` | Industry filter (case-insensitive exact match) |
 | `clients using gin (business_name gin_trgm_ops)` | Client name search (`ILIKE '%term%'`, escaped by `containsPattern`) |

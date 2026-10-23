@@ -1,7 +1,7 @@
 import type { EventDetail, EventEntity, EventStage, EventState, EventSummaryEntity, EventType } from "../../domain/event.entity";
 import type { EventClient, EventTemplate } from "../../domain/event.rules";
 
-/** List filters; `ownerId` already resolved from the caller's scope by the service. */
+/** List filters; `ownerId` (events of clients whose team includes this person) already resolved from the caller's scope by the service. */
 export interface EventListFilters {
   ownerId?: string;
   clientId?: string;

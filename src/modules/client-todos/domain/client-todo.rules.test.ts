@@ -21,20 +21,20 @@ const code = (fn: () => unknown) => {
 
 describe("row scope", () => {
   it("an admin sees every to-do; a manager only their own clients' (else 404)", () => {
-    expect(code(() => assertTodoVisible({ kind: "all" }, { ownerId: "a" }))).toBe("none");
-    expect(code(() => assertTodoVisible({ kind: "own", userId: "a" }, { ownerId: "a" }))).toBe("none");
-    expect(code(() => assertTodoVisible({ kind: "own", userId: "b" }, { ownerId: "a" }))).toBe("404:CLIENT_TODO_NOT_FOUND");
+    expect(code(() => assertTodoVisible({ kind: "all" }, { teamIds: ["a"] }))).toBe("none");
+    expect(code(() => assertTodoVisible({ kind: "own", userId: "a" }, { teamIds: ["a"] }))).toBe("none");
+    expect(code(() => assertTodoVisible({ kind: "own", userId: "b" }, { teamIds: ["a"] }))).toBe("404:CLIENT_TODO_NOT_FOUND");
     expect(code(() => assertTodoVisible({ kind: "all" }, null))).toBe("404:CLIENT_TODO_NOT_FOUND");
   });
   it("a client that is missing or someone else's is CLIENT_NOT_FOUND", () => {
     expect(code(() => assertClientVisible({ kind: "all" }, null))).toBe("404:CLIENT_NOT_FOUND");
-    expect(code(() => assertClientVisible({ kind: "own", userId: "b" }, { id: "c", ownerId: "a", status: "active" }))).toBe("404:CLIENT_NOT_FOUND");
+    expect(code(() => assertClientVisible({ kind: "own", userId: "b" }, { id: "c", teamIds: ["a"], status: "active" }))).toBe("404:CLIENT_NOT_FOUND");
   });
 });
 
 describe("archived clients", () => {
   it("are visible but not usable for new to-dos", () => {
-    const archived = { id: "c", ownerId: "a", status: "archived" as const };
+    const archived = { id: "c", teamIds: ["a"], status: "archived" as const };
     expect(code(() => assertClientVisible({ kind: "all" }, archived))).toBe("none");
     expect(code(() => assertClientUsable({ kind: "all" }, archived))).toBe("409:CLIENT_ARCHIVED");
     expect(code(() => assertClientUsable({ kind: "all" }, { ...archived, status: "paused" }))).toBe("none");

@@ -6,6 +6,7 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only reads (ADR 0003): the client a to-do
 // belongs to, its optional event, and staff names.
 import { clients } from "../../clients/infrastructure/clients.schema";
+import { teamIdsOf } from "../../clients/infrastructure/client-team.sql";
 import { events } from "../../events/infrastructure/events.schema";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { clientTodos } from "./client-todos.schema";
@@ -25,7 +26,7 @@ type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 const TODO_SELECT = {
   id: clientTodos.id,
   clientId: clientTodos.clientId,
-  ownerId: clients.ownerId,
+  teamIds: teamIdsOf(clients.id),
   clientStatus: clients.status,
   eventId: clientTodos.eventId,
   eventTitle: events.title,
@@ -136,7 +137,7 @@ export class DrizzleClientTodosRepository implements ClientTodosRepositoryPort {
 
   findClient(id: string) {
     return guarded("load the client", async (): Promise<TodoClient | null> => {
-      const [row] = await db.select({ id: clients.id, ownerId: clients.ownerId, status: clients.status }).from(clients).where(eq(clients.id, id)).limit(1);
+      const [row] = await db.select({ id: clients.id, teamIds: teamIdsOf(clients.id), status: clients.status }).from(clients).where(eq(clients.id, id)).limit(1);
       return row ?? null;
     });
   }
@@ -152,7 +153,7 @@ export class DrizzleClientTodosRepository implements ClientTodosRepositoryPort {
     return guarded("create the to-do", () =>
       db.transaction(async (tx) => {
         const [client] = await tx
-          .select({ id: clients.id, ownerId: clients.ownerId, status: clients.status })
+          .select({ id: clients.id, teamIds: teamIdsOf(clients.id), status: clients.status })
           .from(clients)
           .where(eq(clients.id, record.clientId))
           .for("share");

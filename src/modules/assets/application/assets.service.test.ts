@@ -19,7 +19,7 @@ function asset(o: Partial<AssetEntity> = {}): AssetEntity {
     id: "a1",
     clientId: "c1",
     clientName: "Acme",
-    ownerId: "rohan",
+    teamIds: ["rohan"],
     clientStatus: "active",
     eventId: null,
     eventTitle: null,
@@ -41,8 +41,8 @@ function asset(o: Partial<AssetEntity> = {}): AssetEntity {
 class FakeRepo implements AssetsRepositoryPort {
   rows = new Map<string, AssetEntity>();
   clients = new Map<string, AssetClient>([
-    ["c1", { id: "c1", ownerId: "rohan", status: "active" }],
-    ["c9", { id: "c9", ownerId: "rohan", status: "archived" }],
+    ["c1", { id: "c1", teamIds: ["rohan"], status: "active" }],
+    ["c9", { id: "c9", teamIds: ["rohan"], status: "archived" }],
   ]);
   eventsById = new Map<string, AssetEvent>([
     ["e1", { id: "e1", clientId: "c1" }],
@@ -67,7 +67,7 @@ class FakeRepo implements AssetsRepositoryPort {
   }
   create(r: NewAssetRecord, guard: (c: AssetClient) => void) {
     guard(this.clients.get(r.clientId)!);
-    const row = asset({ ...r, id: `a${this.rows.size + 1}`, ownerId: this.clients.get(r.clientId)!.ownerId });
+    const row = asset({ ...r, id: `a${this.rows.size + 1}`, teamIds: this.clients.get(r.clientId)!.teamIds });
     this.rows.set(row.id, row);
     return Promise.resolve(row.id);
   }

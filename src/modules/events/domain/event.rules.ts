@@ -15,7 +15,8 @@ export type EventScope = { kind: "all" } | { kind: "own"; userId: string };
 /** The client a new event goes under, as stored. */
 export interface EventClient {
   id: string;
-  ownerId: string;
+  /** The client's team: a manager may use the client only while on it. */
+  teamIds: string[];
   status: "active" | "paused" | "archived";
   timeZone: string;
 }
@@ -28,8 +29,8 @@ export interface EventTemplate {
   stageNames: string[];
 }
 
-export function assertEventVisible<T extends { ownerId: string }>(scope: EventScope, event: T | null): T {
-  if (!event || (scope.kind === "own" && event.ownerId !== scope.userId)) {
+export function assertEventVisible<T extends { teamIds: readonly string[] }>(scope: EventScope, event: T | null): T {
+  if (!event || (scope.kind === "own" && !event.teamIds.includes(scope.userId))) {
     throw new NotFoundError("Event not found", ERROR_CODES.EVENT_NOT_FOUND);
   }
   return event;
@@ -37,7 +38,7 @@ export function assertEventVisible<T extends { ownerId: string }>(scope: EventSc
 
 /** The client for a new event: must be visible (else 404 CLIENT_NOT_FOUND) and not archived (409 CLIENT_ARCHIVED). */
 export function assertClientUsable(scope: EventScope, client: EventClient | null): EventClient {
-  if (!client || (scope.kind === "own" && client.ownerId !== scope.userId)) {
+  if (!client || (scope.kind === "own" && !client.teamIds.includes(scope.userId))) {
     throw new NotFoundError("Client not found", ERROR_CODES.CLIENT_NOT_FOUND);
   }
   assertClientWritable(client.status);

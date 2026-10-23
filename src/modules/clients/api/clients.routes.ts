@@ -12,10 +12,10 @@ import type { ClientNotifier } from "../application/ports/client-notifier.port";
 import { createClientDtoSchema, type CreateClientDto } from "./dto/create-client.dto";
 import {
   clientVersionDtoSchema,
-  reassignClientDtoSchema,
+  setClientTeamDtoSchema,
   updateClientDtoSchema,
   type ClientVersionDto,
-  type ReassignClientDto,
+  type SetClientTeamDto,
   type UpdateClientDto,
 } from "./dto/update-client.dto";
 import { clientQueryDtoSchema, type ClientQueryDto } from "./dto/client-query.dto";
@@ -28,7 +28,7 @@ const clientNotifier: ClientNotifier = {
   clientReassigned: (n) =>
     notifier.push({
       type: "client_reassigned",
-      recipientIds: [n.toOwnerId],
+      recipientIds: n.recipientIds,
       actorId: n.actorId,
       payload: clientReassignedPayload({ clientId: n.clientId, clientName: n.clientName }),
     }),
@@ -98,12 +98,12 @@ clientsRouter.post(
   }),
 );
 
-/** Admin only (FR-CLI-05). */
-clientsRouter.post(
-  "/:id/reassign",
+/** Admin only (FR-CLI-05): the whole team and its lead. Replaces the old single-owner reassign. */
+clientsRouter.put(
+  "/:id/team",
   requireCapability("clients:reassign"),
-  validateBody(reassignClientDtoSchema),
+  validateBody(setClientTeamDtoSchema),
   asyncHandler(async (req, res) => {
-    res.json({ client: await clientsService.reassign(callerOf(req), req.params.id!, req.body as ReassignClientDto) });
+    res.json({ client: await clientsService.setTeam(callerOf(req), req.params.id!, req.body as SetClientTeamDto) });
   }),
 );

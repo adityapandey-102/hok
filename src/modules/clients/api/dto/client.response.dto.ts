@@ -1,4 +1,4 @@
-import type { ClientContact, ClientStatus, SocialAccount } from "../../domain/client.entity";
+import type { ClientContact, ClientStatus, ClientTeamMember, SocialAccount } from "../../domain/client.entity";
 
 /** GET /clients/:id and every write's `{ client }`. */
 export interface ClientResponseDto {
@@ -19,6 +19,8 @@ export interface ClientResponseDto {
   contractEnd: string | null;
   timeZone: string;
   notes: string | null;
+  /** Everyone assigned, lead first (`ownerId` / `ownerName` are the lead). */
+  team: ClientTeamMember[];
   status: ClientStatus;
   archivedAt: string | null;
   version: number;

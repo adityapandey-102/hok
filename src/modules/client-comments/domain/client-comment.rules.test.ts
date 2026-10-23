@@ -3,7 +3,7 @@ import { assertCommentVisible, assertHasChange, assertStatusTransition, assertVe
 import type { ClientCommentEntity } from "./client-comment.entity";
 
 const comment = (ownerId: string): ClientCommentEntity => ({
-  id: "c1", clientId: "cl1", clientName: "Cafe", ownerId, eventId: null, eventTitle: null, body: "Hi",
+  id: "c1", clientId: "cl1", clientName: "Cafe", ownerId, teamIds: [ownerId], eventId: null, eventTitle: null, body: "Hi",
   status: "received", reply: null, repliedAt: null, repliedByName: null, version: 1, createdAt: "", updatedAt: "",
 });
 

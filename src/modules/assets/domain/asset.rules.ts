@@ -14,7 +14,8 @@ export type AssetScope = { kind: "all" } | { kind: "own"; userId: string };
 /** The client a new asset goes under, as stored. */
 export interface AssetClient {
   id: string;
-  ownerId: string;
+  /** The client's team: who may see this (internal, never sent to the browser). */
+  teamIds: string[];
   status: "active" | "paused" | "archived";
 }
 
@@ -24,15 +25,15 @@ export interface AssetEvent {
   clientId: string;
 }
 
-export function assertAssetVisible(scope: AssetScope, asset: Pick<AssetEntity, "ownerId"> | null): void {
-  if (!asset || (scope.kind === "own" && asset.ownerId !== scope.userId)) {
+export function assertAssetVisible(scope: AssetScope, asset: Pick<AssetEntity, "teamIds"> | null): void {
+  if (!asset || (scope.kind === "own" && !asset.teamIds.includes(scope.userId))) {
     throw new NotFoundError("Asset not found", ERROR_CODES.ASSET_NOT_FOUND);
   }
 }
 
 /** The client for a new asset: must be visible (else 404 CLIENT_NOT_FOUND) and not archived (409 CLIENT_ARCHIVED). */
 export function assertClientUsable(scope: AssetScope, client: AssetClient | null): AssetClient {
-  if (!client || (scope.kind === "own" && client.ownerId !== scope.userId)) {
+  if (!client || (scope.kind === "own" && !client.teamIds.includes(scope.userId))) {
     throw new NotFoundError("Client not found", ERROR_CODES.CLIENT_NOT_FOUND);
   }
   assertClientWritable(client.status);

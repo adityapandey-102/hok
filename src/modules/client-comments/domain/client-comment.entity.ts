@@ -10,7 +10,10 @@ export interface ClientCommentEntity {
   id: string;
   clientId: string;
   clientName: string;
+  /** The client's lead. */
   ownerId: string;
+  /** The client's team: who may see this comment (internal, not sent to the browser). */
+  teamIds: string[];
   eventId: string | null;
   eventTitle: string | null;
   body: string;

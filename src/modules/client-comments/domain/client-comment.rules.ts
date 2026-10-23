@@ -23,7 +23,7 @@ export function assertStatusTransition(from: CommentStatus, to: CommentStatus): 
 
 /** Another manager's comment is the same 404 as a missing one (no existence leak). */
 export function assertCommentVisible(scope: CommentScope, comment: ClientCommentEntity | null): ClientCommentEntity {
-  if (!comment || (scope.kind === "own" && comment.ownerId !== scope.userId)) {
+  if (!comment || (scope.kind === "own" && !comment.teamIds.includes(scope.userId))) {
     throw new NotFoundError("Comment not found", ERROR_CODES.COMMENT_NOT_FOUND);
   }
   return comment;

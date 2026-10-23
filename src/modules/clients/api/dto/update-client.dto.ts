@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EDITABLE_CLIENT_STATUSES } from "../../domain/client.entity";
+import { CLIENT_TEAM_MAX, EDITABLE_CLIENT_STATUSES } from "../../domain/client.entity";
 import { clientFieldSchemas } from "./client-fields.dto";
 
 /** The optimistic-lock token from the copy the caller loaded (every client response carries it). */
@@ -27,9 +27,13 @@ export type UpdateClientDto = z.infer<typeof updateClientDtoSchema>;
 export const clientVersionDtoSchema = z.object({ version: versionSchema.optional() });
 export type ClientVersionDto = z.infer<typeof clientVersionDtoSchema>;
 
-/** POST /clients/:id/reassign (Admin). */
-export const reassignClientDtoSchema = z.object({
-  ownerId: z.string().uuid("ownerId must be a user id"),
+/**
+ * PUT /clients/:id/team (Admin): the whole team and its lead. The lead is
+ * added to `memberIds` if missing; duplicates are dropped.
+ */
+export const setClientTeamDtoSchema = z.object({
+  leadId: z.string().uuid("leadId must be a user id"),
+  memberIds: z.array(z.string().uuid("Each team member must be a user id")).max(CLIENT_TEAM_MAX, `At most ${CLIENT_TEAM_MAX} people`),
   version: versionSchema.optional(),
 });
-export type ReassignClientDto = z.infer<typeof reassignClientDtoSchema>;
+export type SetClientTeamDto = z.infer<typeof setClientTeamDtoSchema>;

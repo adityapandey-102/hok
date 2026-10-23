@@ -6,7 +6,7 @@ export const CAPABILITIES = [
   // Stage templates: Admin creates and edits them; managers only pick one
   // when creating an event (that read is part of events:write).
   "stage_templates:manage",
-  // Clients. "own" = clients whose owner_id is the caller.
+  // Clients. "own" = clients whose team (client_members) includes the caller.
   "clients:read",
   "clients:write",
   "clients:reassign",
@@ -36,7 +36,7 @@ export type Capability = (typeof CAPABILITIES)[number];
 
 /**
  * `true`  -> allowed on any record.
- * `"own"` -> allowed only on the caller's own records: clients they own (and
+ * `"own"` -> allowed only on the caller's own records: clients whose team they're on (and
  *            everything under those clients), personal events they own, or
  *            staff tasks assigned to them.
  * `false` -> never allowed.
@@ -50,16 +50,18 @@ const ADMIN_ONLY: Record<Role, CapabilityScope> = {
   admin: true,
   social_media_manager: false,
   marketing_manager: false,
+  project_manager: false,
   marketing_agent: false,
   developer: false,
   editor: false,
 };
 
-/** Admin sees everything; Social Media / Marketing Managers only their own; task-only staff nothing. */
+/** Admin sees everything; Social Media / Marketing / Project Managers only clients they're assigned to; task-only staff nothing. */
 const CLIENT_MANAGERS_OWN: Record<Role, CapabilityScope> = {
   admin: true,
   social_media_manager: "own",
   marketing_manager: "own",
+  project_manager: "own",
   marketing_agent: false,
   developer: false,
   editor: false,
@@ -70,6 +72,7 @@ const EVERYONE_OWN_TASKS: Record<Role, CapabilityScope> = {
   admin: true,
   social_media_manager: "own",
   marketing_manager: "own",
+  project_manager: "own",
   marketing_agent: "own",
   developer: "own",
   editor: "own",

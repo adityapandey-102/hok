@@ -1,7 +1,7 @@
 /**
  * Reminders (REQUIREMENTS FR-EVT-10, FR-TSK-11, FR-NTF-07; ARCHITECTURE §9).
  *
- * One reminder per event (to the client's owner) and per open task with a due
+ * One reminder per event (to everyone on the client's team) and per open task with a due
  * time (to the assignee), about 2 hours ahead. A background check inside the
  * API looks every 10 minutes, so a reminder arrives within 10 minutes after
  * its moment (between 2 h and 1 h 50 min ahead). Anything whose moment has

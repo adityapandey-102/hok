@@ -78,8 +78,12 @@ async function unread(role: string): Promise<number> {
   return (res.body as { count: number }).count;
 }
 
+/** Make `ownerId` the client's only team member and lead (the old single-owner reassign). */
 async function reassign(ownerId: string, version?: number) {
-  return request(app).post(`/api/v1/clients/${clientId}/reassign`).set("Authorization", auth.admin!).send({ ownerId, ...(version ? { version } : {}) });
+  return request(app)
+    .put(`/api/v1/clients/${clientId}/team`)
+    .set("Authorization", auth.admin!)
+    .send({ leadId: ownerId, memberIds: [], ...(version ? { version } : {}) });
 }
 
 describe("client reassigned -> the new owner's bell", () => {

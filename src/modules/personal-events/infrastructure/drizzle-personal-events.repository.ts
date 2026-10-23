@@ -6,6 +6,7 @@ import { scanLowerBound } from "../../../domain";
 // Cross-module Infrastructure-only reads (ADR 0003): owner and client names.
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { clients } from "../../clients/infrastructure/clients.schema";
+import { teamIdsOf } from "../../clients/infrastructure/client-team.sql";
 import { personalEvents } from "./personal-events.schema";
 import type { PersonalEventEntity } from "../domain/personal-event.entity";
 import type {
@@ -90,9 +91,9 @@ export class DrizzlePersonalEventsRepository implements PersonalEventsRepository
     return guarded("load the personal event", () => selectOne(db, id));
   }
 
-  findClientOwner(clientId: string) {
+  findClientTeam(clientId: string) {
     return guarded("load the client", async () => {
-      const [row] = await db.select({ ownerId: clients.ownerId }).from(clients).where(eq(clients.id, clientId)).limit(1);
+      const [row] = await db.select({ teamIds: teamIdsOf(clients.id) }).from(clients).where(eq(clients.id, clientId)).limit(1);
       return row ?? null;
     });
   }

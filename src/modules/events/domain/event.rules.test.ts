@@ -28,14 +28,16 @@ const ROHAN: EventScope = { kind: "own", userId: "rohan" };
 
 describe("row scope", () => {
   it("events follow their client's owner: others' are 404 EVENT_NOT_FOUND", () => {
-    expect(codeOf(() => assertEventVisible(ROHAN, { ownerId: "rohan" }))).toBeNull();
-    expect(codeOf(() => assertEventVisible(ALL, { ownerId: "sara" }))).toBeNull();
-    expect(codeOf(() => assertEventVisible(ROHAN, { ownerId: "sara" }))).toBe("EVENT_NOT_FOUND");
+    expect(codeOf(() => assertEventVisible(ROHAN, { teamIds: ["rohan"] }))).toBeNull();
+    expect(codeOf(() => assertEventVisible(ALL, { teamIds: ["sara"] }))).toBeNull();
+    expect(codeOf(() => assertEventVisible(ROHAN, { teamIds: ["sara"] }))).toBe("EVENT_NOT_FOUND");
+    // On the team but not the lead: still visible.
+    expect(codeOf(() => assertEventVisible(ROHAN, { teamIds: ["sara", "rohan"] }))).toBeNull();
     expect(codeOf(() => assertEventVisible(ROHAN, null))).toBe("EVENT_NOT_FOUND");
   });
 
   it("a new event needs a visible, non-archived client", () => {
-    const client = (ownerId: string, status: "active" | "paused" | "archived" = "active") => ({ id: "c", ownerId, status, timeZone: "UTC" });
+    const client = (member: string, status: "active" | "paused" | "archived" = "active") => ({ id: "c", teamIds: [member], status, timeZone: "UTC" });
     expect(codeOf(() => assertClientUsable(ROHAN, client("rohan")))).toBeNull();
     expect(codeOf(() => assertClientUsable(ROHAN, client("rohan", "paused")))).toBeNull();
     expect(codeOf(() => assertClientUsable(ROHAN, client("sara")))).toBe("CLIENT_NOT_FOUND");

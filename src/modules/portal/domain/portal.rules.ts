@@ -1,23 +1,37 @@
-import { BadRequestError, ConflictError, NotFoundError } from "../../../common/errors/app-error";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { rangeProblem } from "../../../domain";
 import type { PortalEvent } from "./portal.entity";
 
-/** portal:manage -- the Admin manages every client's link, a manager only their own clients'. */
+/**
+ * portal:manage -- the Admin manages every client's link. A manager on the
+ * client's team sees the link's status; only the client's LEAD makes or turns
+ * off the link (client teams, 2026-10-23).
+ */
 export type PortalScope = { kind: "all" } | { kind: "own"; userId: string };
 
 export interface PortalClient {
   id: string;
+  /** The lead. */
   ownerId: string;
+  /** The client's team. */
+  teamIds: string[];
   status: "active" | "paused" | "archived";
 }
 
-/** The client whose link is managed: visible (else 404 CLIENT_NOT_FOUND, no existence leak). */
+/** The client whose link is looked at: on the caller's team (else 404 CLIENT_NOT_FOUND, no existence leak). */
 export function assertClientManageable(scope: PortalScope, client: PortalClient | null): PortalClient {
-  if (!client || (scope.kind === "own" && client.ownerId !== scope.userId)) {
+  if (!client || (scope.kind === "own" && !client.teamIds.includes(scope.userId))) {
     throw new NotFoundError("Client not found", ERROR_CODES.CLIENT_NOT_FOUND);
   }
   return client;
+}
+
+/** Making or turning off the link: the lead (or the Admin). Other team members see the client, so this is a 403. */
+export function assertLead(scope: PortalScope, client: PortalClient): void {
+  if (scope.kind === "own" && client.ownerId !== scope.userId) {
+    throw new ForbiddenError("Only the client's lead can change its portal link. Ask them, or the Admin.", ERROR_CODES.PORTAL_LEAD_ONLY);
+  }
 }
 
 /** No new link for an archived client (FR-CLI-07: archiving disables the portal). Unarchive first. */

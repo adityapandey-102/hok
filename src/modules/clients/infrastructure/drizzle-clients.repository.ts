@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, ne, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, ne, notInArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
 import { NotFoundError } from "../../../common/errors/app-error";
@@ -14,9 +14,10 @@ import { clientReassignedPayload, insertNotificationsInTransaction } from "../..
 // portal link in the same transaction (FR-CLI-07: archive disables the portal;
 // an unarchive must never bring an old link back). See docs/adr/0003.
 import { portalLinks } from "../../portal/infrastructure/portal.schema";
-import { clients } from "./clients.schema";
+import { clientMembers, clients } from "./clients.schema";
+import { isOnTeam } from "./client-team.sql";
 import { ClientMapper, type ClientRow, type ClientSummaryRow } from "./client.mapper";
-import type { ClientEntity } from "../domain/client.entity";
+import type { ClientEntity, ClientTeamMember } from "../domain/client.entity";
 import type { OwnerCandidate } from "../domain/client-ownership.rules";
 import type {
   ClientChangeDecision,
@@ -47,6 +48,12 @@ const CLIENT_SELECT = {
   contractEnd: clients.contractEnd,
   timeZone: clients.timeZone,
   notes: clients.notes,
+  // The team, lead first: one correlated read on the client_members primary key.
+  team: sql<ClientTeamMember[]>`coalesce((
+    select json_agg(json_build_object('id', p.id, 'fullName', p.full_name, 'role', p.role, 'isLead', p.id = ${clients.ownerId})
+                    order by (p.id = ${clients.ownerId}) desc, p.full_name)
+    from ${clientMembers} m join ${profiles} p on p.id = m.profile_id
+    where m.client_id = ${clients.id}), '[]'::json)`,
   status: clients.status,
   archivedAt: clients.archivedAt,
   version: clients.version,
@@ -98,7 +105,7 @@ export class DrizzleClientsRepository implements ClientsRepositoryPort {
     const conditions: SQL[] = [];
     // No status = the working list: archived clients are hidden (FR-CLI-07).
     conditions.push(filters.status ? eq(clients.status, filters.status) : ne(clients.status, "archived"));
-    if (filters.ownerId) conditions.push(eq(clients.ownerId, filters.ownerId));
+    if (filters.ownerId) conditions.push(isOnTeam(clients.id, filters.ownerId));
     if (filters.search) conditions.push(ilike(clients.businessName, containsPattern(filters.search)));
     if (filters.industry) conditions.push(sql`lower(${clients.industry}) = lower(${filters.industry})`);
     return and(...conditions);
@@ -135,28 +142,15 @@ export class DrizzleClientsRepository implements ClientsRepositoryPort {
 
   create(record: NewClientRecord) {
     return guarded("create the client", async () => {
-      const [inserted] = await db
-        .insert(clients)
-        .values({
-          ownerId: record.ownerId,
-          businessName: record.businessName,
-          logoUrl: record.logoUrl,
-          industry: record.industry,
-          email: record.email,
-          address: record.address,
-          websites: record.websites,
-          phones: record.phones,
-          contacts: record.contacts,
-          socialAccounts: record.socialAccounts,
-          services: record.services,
-          contractStart: record.contractStart,
-          contractEnd: record.contractEnd,
-          timeZone: record.timeZone,
-          notes: record.notes,
-        })
-        .returning({ id: clients.id });
-      // Re-read with the owner's name (one more indexed lookup, on create only).
-      return (await selectClient(db, inserted!.id))!;
+      const { addedBy, ...fields } = record;
+      const inserted = await db.transaction(async (tx) => {
+        const [row] = await tx.insert(clients).values(fields).returning({ id: clients.id });
+        // The lead is always on the team.
+        await tx.insert(clientMembers).values({ clientId: row!.id, profileId: fields.ownerId, addedBy });
+        return row!;
+      });
+      // Re-read with the lead's name and the team (one more indexed lookup, on create only).
+      return (await selectClient(db, inserted.id))!;
     });
   }
 
@@ -169,9 +163,18 @@ export class DrizzleClientsRepository implements ClientsRepositoryPort {
 
         const set: Partial<typeof clients.$inferInsert> = { ...changes.fields };
         if (changes.status !== undefined) set.status = changes.status;
-        if (changes.ownerId !== undefined) set.ownerId = changes.ownerId;
+        if (changes.team) set.ownerId = changes.team.leadId;
         if (changes.archivedAt === null) set.archivedAt = null;
         if (Object.keys(set).length === 0 && changes.archivedAt === undefined) return; // nothing to write
+
+        if (changes.team) {
+          const { memberIds, addedBy } = changes.team;
+          await tx.delete(clientMembers).where(and(eq(clientMembers.clientId, id), notInArray(clientMembers.profileId, memberIds)));
+          await tx
+            .insert(clientMembers)
+            .values(memberIds.map((profileId) => ({ clientId: id, profileId, addedBy })))
+            .onConflictDoNothing();
+        }
 
         await tx
           .update(clients)
@@ -189,11 +192,11 @@ export class DrizzleClientsRepository implements ClientsRepositoryPort {
             .where(and(eq(portalLinks.clientId, id), eq(portalLinks.active, true)));
         }
 
-        const notice = changes.reassignedNotice;
-        if (notice) {
+        const notice = changes.addedNotice;
+        if (notice && notice.recipientIds.length > 0) {
           await insertNotificationsInTransaction(tx, {
             type: "client_reassigned",
-            recipientIds: [notice.toOwnerId],
+            recipientIds: notice.recipientIds,
             actorId: notice.actorId,
             payload: clientReassignedPayload({ clientId: notice.clientId, clientName: notice.clientName }),
           });
@@ -203,14 +206,13 @@ export class DrizzleClientsRepository implements ClientsRepositoryPort {
     });
   }
 
-  findOwnerCandidate(userId: string) {
-    return guarded("load the new owner", async (): Promise<OwnerCandidate | null> => {
-      const [row] = await db
+  findTeamCandidates(userIds: readonly string[]) {
+    return guarded("load the team", async (): Promise<OwnerCandidate[]> => {
+      if (userIds.length === 0) return [];
+      return db
         .select({ id: profiles.id, role: profiles.role, active: profiles.active })
         .from(profiles)
-        .where(eq(profiles.id, userId))
-        .limit(1);
-      return row ?? null;
+        .where(inArray(profiles.id, [...userIds]));
     });
   }
 }

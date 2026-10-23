@@ -223,7 +223,7 @@ describe("events", () => {
     const c = await as("social_media_manager", request(app).post("/api/v1/clients")).send({ businessName: `IT Archived Events ${stamp}` });
     const clientId = (c.body as { client: { id: string } }).client.id;
     const e = await createEvent({ clientId });
-    await as("social_media_manager", request(app).post(`/api/v1/clients/${clientId}/archive`)).send({});
+    await as("admin", request(app).post(`/api/v1/clients/${clientId}/archive`)).send({});
     const edit = await as("social_media_manager", request(app).patch(`/api/v1/events/${e.id}`)).send({ title: "x", version: 1 });
     expect([edit.status, (edit.body as { code: string }).code]).toEqual([409, "CLIENT_ARCHIVED"]);
     const move = await as("social_media_manager", request(app).post(`/api/v1/events/${e.id}/stage`)).send({ stageId: e.stages[1]!.id, version: 1 });

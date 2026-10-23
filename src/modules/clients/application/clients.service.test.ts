@@ -31,7 +31,7 @@ const SARA: ClientsCaller = { userId: "sara", role: "marketing_manager" };
 const EDITOR: ClientsCaller = { userId: "meera", role: "editor" };
 
 function client(overrides: Partial<ClientEntity> = {}): ClientEntity {
-  return {
+  const base: Omit<ClientEntity, "team"> = {
     id: "c1",
     ownerId: "rohan",
     ownerName: "Rohan",
@@ -56,6 +56,7 @@ function client(overrides: Partial<ClientEntity> = {}): ClientEntity {
     updatedAt: "2026-10-13T00:00:00.000Z",
     ...overrides,
   };
+  return { ...base, team: overrides.team ?? [{ id: base.ownerId, fullName: base.ownerName, role: "social_media_manager", isLead: true }] };
 }
 
 class FakeClientsRepository implements ClientsRepositoryPort {
@@ -64,6 +65,7 @@ class FakeClientsRepository implements ClientsRepositoryPort {
     ["admin", { id: "admin", role: "admin", active: true }],
     ["rohan", { id: "rohan", role: "social_media_manager", active: true }],
     ["sara", { id: "sara", role: "marketing_manager", active: true }],
+    ["kiran", { id: "kiran", role: "project_manager", active: true }],
     ["meera", { id: "meera", role: "editor", active: true }],
     ["gone", { id: "gone", role: "social_media_manager", active: false }],
   ]);
@@ -92,23 +94,28 @@ class FakeClientsRepository implements ClientsRepositoryPort {
     if (!current) return Promise.reject(new AppError(404, "Client not found", "CLIENT_NOT_FOUND"));
     const changes = decide(current);
     const empty =
-      Object.keys(changes.fields ?? {}).length === 0 && !changes.status && !changes.ownerId && changes.archivedAt === undefined;
+      Object.keys(changes.fields ?? {}).length === 0 && !changes.status && !changes.team && changes.archivedAt === undefined;
     if (empty) return Promise.resolve(current); // like the real repository: nothing written, version unchanged
     this.writes += 1;
-    if (changes.reassignedNotice) this.notices.push(changes.reassignedNotice);
+    if (changes.addedNotice) this.notices.push(changes.addedNotice);
     const next: ClientEntity = {
       ...current,
       ...changes.fields,
       ...(changes.status ? { status: changes.status } : {}),
-      ...(changes.ownerId ? { ownerId: changes.ownerId } : {}),
+      ...(changes.team
+        ? {
+            ownerId: changes.team.leadId,
+            team: changes.team.memberIds.map((id) => ({ id, fullName: id, role: this.people.get(id)!.role, isLead: id === changes.team!.leadId })),
+          }
+        : {}),
       ...(changes.archivedAt === "now" ? { archivedAt: "2026-10-14T00:00:00.000Z" } : changes.archivedAt === null ? { archivedAt: null } : {}),
       version: current.version + 1,
     };
     this.rows.set(id, next);
     return Promise.resolve(next);
   }
-  findOwnerCandidate(userId: string) {
-    return Promise.resolve(this.people.get(userId) ?? null);
+  findTeamCandidates(userIds: readonly string[]) {
+    return Promise.resolve(userIds.flatMap((id) => this.people.get(id) ?? []));
   }
 }
 
@@ -233,18 +240,23 @@ describe("ClientsService", () => {
 
   describe("archive / unarchive", () => {
     it("archives (stamping archived_at), then unarchives back to active", async () => {
-      const archived = await service.archive(ROHAN, "c1", { version: 1 });
+      const archived = await service.archive(ADMIN, "c1", { version: 1 });
       expect(archived).toMatchObject({ status: "archived", version: 2 });
       expect(archived.archivedAt).not.toBeNull();
-      const back = await service.unarchive(ROHAN, "c1", {});
+      const back = await service.unarchive(ADMIN, "c1", {});
       expect(back).toMatchObject({ status: "active", archivedAt: null, version: 3 });
       expect(audit.events.map((e) => e.action)).toEqual([AUDIT_ACTIONS.CLIENT_ARCHIVED, AUDIT_ACTIONS.CLIENT_UNARCHIVED]);
     });
 
     it("refuses archiving twice and unarchiving an active client", async () => {
-      await service.archive(ROHAN, "c1", {});
-      expect(await codeOf(service.archive(ROHAN, "c1", {}))).toBe("CLIENT_ARCHIVED");
-      expect(await codeOf(service.unarchive(SARA, "c2", {}))).toBe("CLIENT_NOT_ARCHIVED");
+      await service.archive(ADMIN, "c1", {});
+      expect(await codeOf(service.archive(ADMIN, "c1", {}))).toBe("CLIENT_ARCHIVED");
+      expect(await codeOf(service.unarchive(ADMIN, "c2", {}))).toBe("CLIENT_NOT_ARCHIVED");
+    });
+
+    it("a team member can't archive or unarchive (403 CLIENT_ADMIN_ONLY)", async () => {
+      expect(await codeOf(service.archive(ROHAN, "c1", {}))).toBe("CLIENT_ADMIN_ONLY");
+      expect(await codeOf(service.unarchive(ROHAN, "c1", {}))).toBe("CLIENT_ADMIN_ONLY");
     });
 
     it("is a 404 for another manager's client", async () => {
@@ -252,54 +264,65 @@ describe("ClientsService", () => {
     });
   });
 
-  describe("reassign", () => {
-    it("moves the client to another active manager and audits from/to", async () => {
-      const moved = await service.reassign(ADMIN, "c1", { ownerId: "sara", version: 1 });
-      expect(moved).toMatchObject({ ownerId: "sara", version: 2 });
+  describe("setTeam", () => {
+    it("sets the team and lead, and audits who was added / removed", async () => {
+      const done = await service.setTeam(ADMIN, "c1", { leadId: "sara", memberIds: ["rohan", "kiran"], version: 1 });
+      expect(done).toMatchObject({ ownerId: "sara", version: 2 });
+      expect(done.team.map((m) => m.id).sort()).toEqual(["kiran", "rohan", "sara"]);
       expect(audit.events).toEqual([
-        expect.objectContaining({ action: AUDIT_ACTIONS.CLIENT_REASSIGNED, entityId: "c1", metadata: { from: "rohan", to: "sara" } }),
+        expect.objectContaining({
+          action: AUDIT_ACTIONS.CLIENT_REASSIGNED,
+          entityId: "c1",
+          metadata: { added: ["sara", "kiran"], removed: [], leadFrom: "rohan", leadTo: "sara" },
+        }),
       ]);
     });
 
-    it("tells the new owner: a bell entry in the write, then a push after it (M9)", async () => {
-      await service.reassign(ADMIN, "c1", { ownerId: "sara", version: 1 });
-      const notice = { clientId: "c1", clientName: "Acme", toOwnerId: "sara", actorId: "admin" };
+    it("a manager on the team sees the client; one taken off it no longer does", async () => {
+      await service.setTeam(ADMIN, "c1", { leadId: "rohan", memberIds: ["kiran"] });
+      const kiran: ClientsCaller = { userId: "kiran", role: "project_manager" };
+      expect((await service.get(kiran, "c1")).id).toBe("c1");
+      await service.setTeam(ADMIN, "c1", { leadId: "sara", memberIds: [] });
+      expect(await codeOf(service.get(ROHAN, "c1"))).toBe("CLIENT_NOT_FOUND");
+    });
+
+    it("tells the people added: a bell entry in the write, then a push after it (M9)", async () => {
+      await service.setTeam(ADMIN, "c1", { leadId: "rohan", memberIds: ["sara", "kiran"], version: 1 });
+      const notice = { clientId: "c1", clientName: "Acme", recipientIds: ["sara", "kiran"], actorId: "admin" };
       expect(repo.notices).toEqual([notice]);
       expect(pushed).toEqual([notice]);
     });
 
-    it("notifies nobody when nothing moved, or the Admin takes the client themselves", async () => {
-      await service.reassign(ADMIN, "c1", { ownerId: "rohan" });
-      await service.reassign(ADMIN, "c1", { ownerId: "admin" });
-      expect(repo.notices).toEqual([]);
+    it("doesn't notify the Admin adding themselves", async () => {
+      await service.setTeam(ADMIN, "c1", { leadId: "rohan", memberIds: ["admin"] });
       expect(pushed).toEqual([]);
     });
 
-    it("works on an archived client", async () => {
-      repo.rows.set("c1", client({ status: "archived", archivedAt: "2026-10-13T00:00:00.000Z" }));
-      expect((await service.reassign(ADMIN, "c1", { ownerId: "admin" })).ownerId).toBe("admin");
-    });
-
-    it("reassigning to the current owner writes nothing and audits nothing", async () => {
-      const same = await service.reassign(ADMIN, "c1", { ownerId: "rohan" });
+    it("an unchanged team writes nothing and audits nothing", async () => {
+      const same = await service.setTeam(ADMIN, "c1", { leadId: "rohan", memberIds: [] });
       expect(same.version).toBe(1);
       expect(repo.writes).toBe(0);
       expect(audit.events).toEqual([]);
     });
 
-    it("refuses an invalid target (task-only, deactivated, unknown)", async () => {
-      expect(await codeOf(service.reassign(ADMIN, "c1", { ownerId: "meera" }))).toBe("CLIENT_OWNER_INVALID");
-      expect(await codeOf(service.reassign(ADMIN, "c1", { ownerId: "gone" }))).toBe("CLIENT_OWNER_INVALID");
-      expect(await codeOf(service.reassign(ADMIN, "c1", { ownerId: "nobody" }))).toBe("CLIENT_OWNER_INVALID");
+    it("works on an archived client", async () => {
+      repo.rows.set("c1", client({ status: "archived", archivedAt: "2026-10-13T00:00:00.000Z" }));
+      expect((await service.setTeam(ADMIN, "c1", { leadId: "admin", memberIds: [] })).ownerId).toBe("admin");
     });
 
-    it("refuses a manager (Admin only) and a stale version", async () => {
-      expect(await codeOf(service.reassign(ROHAN, "c1", { ownerId: "sara" }))).toBe("FORBIDDEN");
-      expect(await codeOf(service.reassign(ADMIN, "c1", { ownerId: "sara", version: 5 }))).toBe("CLIENT_MODIFIED");
+    it("refuses an invalid member or lead (task-only, deactivated, unknown)", async () => {
+      expect(await codeOf(service.setTeam(ADMIN, "c1", { leadId: "rohan", memberIds: ["meera"] }))).toBe("CLIENT_OWNER_INVALID");
+      expect(await codeOf(service.setTeam(ADMIN, "c1", { leadId: "gone", memberIds: [] }))).toBe("CLIENT_OWNER_INVALID");
+      expect(await codeOf(service.setTeam(ADMIN, "c1", { leadId: "rohan", memberIds: ["nobody"] }))).toBe("CLIENT_OWNER_INVALID");
+    });
+
+    it("refuses a manager (403 CLIENT_ADMIN_ONLY) and a stale version", async () => {
+      expect(await codeOf(service.setTeam(ROHAN, "c1", { leadId: "sara", memberIds: [] }))).toBe("CLIENT_ADMIN_ONLY");
+      expect(await codeOf(service.setTeam(ADMIN, "c1", { leadId: "sara", memberIds: [], version: 5 }))).toBe("CLIENT_MODIFIED");
     });
 
     it("is a 404 for a client that doesn't exist", async () => {
-      expect(await codeOf(service.reassign(ADMIN, "nope", { ownerId: "sara" }))).toBe("CLIENT_NOT_FOUND");
+      expect(await codeOf(service.setTeam(ADMIN, "nope", { leadId: "sara", memberIds: [] }))).toBe("CLIENT_NOT_FOUND");
     });
   });
 });

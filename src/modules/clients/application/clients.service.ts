@@ -7,7 +7,16 @@ import type { AuditLogger } from "../../../common/audit/audit-logger";
 import { getCapabilityScope, type Role } from "../../../domain";
 import { assertContractDates } from "../domain/client-profile.rules";
 import { assertArchivable, assertEditable, assertUnarchivable, assertVersion } from "../domain/client-status.rules";
-import { assertValidOwner, assertVisible, resolveNewOwner, type ClientScope } from "../domain/client-ownership.rules";
+import {
+  assertAdmin,
+  assertValidOwner,
+  assertValidTeam,
+  assertVisible,
+  normalizeTeam,
+  resolveNewOwner,
+  teamDiff,
+  type ClientScope,
+} from "../domain/client-ownership.rules";
 import { toClientResponseDto, toClientSummaryResponseDto } from "../api/client.presenter";
 import type { ClientProfileFields } from "../domain/client.entity";
 import type { ClientChanges, ClientReassignedNotice, ClientsRepositoryPort } from "./ports/clients-repository.port";
@@ -15,7 +24,7 @@ import { noopClientNotifier, type ClientNotifier } from "./ports/client-notifier
 import type { ClientListResponseDto, ClientResponseDto } from "../api/dto/client.response.dto";
 import type { ClientQueryDto } from "../api/dto/client-query.dto";
 import type { CreateClientDto } from "../api/dto/create-client.dto";
-import type { ClientVersionDto, ReassignClientDto, UpdateClientDto } from "../api/dto/update-client.dto";
+import type { ClientVersionDto, SetClientTeamDto, UpdateClientDto } from "../api/dto/update-client.dto";
 
 /** The signed-in person acting on clients. */
 export interface ClientsCaller {
@@ -45,8 +54,10 @@ const PROFILE_KEYS = [
  * Client portfolio management (REQUIREMENTS §5.2). The route has already
  * checked the capability (clients:read / clients:write / clients:reassign);
  * this service applies the row scope: the Admin sees every client, a Social
- * Media / Marketing Manager only those they own, and anyone else's client is
- * a 404. Every write runs its rules against the locked row (guard callback).
+ * Media / Marketing / Project Manager only those whose team they're on, and
+ * any other client is a 404. Team members edit the profile; archiving and
+ * team changes are the Admin's. Every write runs its rules against the
+ * locked row (guard callback).
  */
 export class ClientsService {
   constructor(
@@ -69,7 +80,7 @@ export class ClientsService {
   async list(caller: ClientsCaller, query: ClientQueryDto): Promise<ClientListResponseDto> {
     const scope = this.scopeOf(caller);
     const filters = {
-      // A manager's list is their own clients, full stop: their ownerId filter is ignored.
+      // A manager's list is the clients they're assigned to, full stop: their ownerId filter is ignored.
       ownerId: scope.kind === "all" ? query.ownerId : scope.userId,
       search: query.search,
       status: query.status,
@@ -91,7 +102,7 @@ export class ClientsService {
     const scope = this.scopeOf(caller);
     const ownerId = resolveNewOwner(scope, caller.userId, dto.ownerId);
     // The caller is a client manager (the route's capability guarantees it); anyone else must be checked.
-    if (ownerId !== caller.userId) assertValidOwner(await this.repo.findOwnerCandidate(ownerId));
+    if (ownerId !== caller.userId) assertValidOwner((await this.repo.findTeamCandidates([ownerId]))[0] ?? null);
 
     const fields: ClientProfileFields = {
       businessName: dto.businessName,
@@ -111,7 +122,7 @@ export class ClientsService {
     };
     assertContractDates(fields.contractStart, fields.contractEnd);
 
-    const client = await this.repo.create({ ...fields, ownerId });
+    const client = await this.repo.create({ ...fields, ownerId, addedBy: caller.userId });
     await this.audit.record({
       action: AUDIT_ACTIONS.CLIENT_CREATED,
       entityType: AUDIT_ENTITIES.CLIENT,
@@ -158,6 +169,7 @@ export class ClientsService {
     const scope = this.scopeOf(caller);
     const client = await this.repo.update(id, (current) => {
       assertVisible(scope, current);
+      assertAdmin(scope, "archive a client");
       assertVersion(current.version, dto.version);
       assertArchivable(current.status);
       return { status: "archived", archivedAt: "now" };
@@ -171,6 +183,7 @@ export class ClientsService {
     const scope = this.scopeOf(caller);
     const client = await this.repo.update(id, (current) => {
       assertVisible(scope, current);
+      assertAdmin(scope, "unarchive a client");
       assertVersion(current.version, dto.version);
       assertUnarchivable(current.status);
       return { status: "active", archivedAt: null };
@@ -180,41 +193,45 @@ export class ClientsService {
   }
 
   /**
-   * FR-CLI-05: the Admin moves a client -- and, because everything under it
-   * hangs off client_id, all its data -- to another active client manager.
-   * Allowed on an archived client too (ownership isn't part of the profile).
-   * Reassigning to the current owner is a no-op: nothing written, no audit.
-   * The new owner is notified (M9): bell entry in the same transaction, web
-   * push after the commit -- unless the Admin gave the client to themselves.
+   * FR-CLI-05 (client teams, 2026-10-23): the Admin sets who works on a
+   * client and who leads it. Everything under the client hangs off
+   * client_id, so the new team sees all its data at once. Allowed on an
+   * archived client too. People added are notified (bell entry in the same
+   * transaction, web push after the commit) -- except the Admin adding
+   * themselves. An unchanged team writes nothing and isn't audited.
    */
-  async reassign(caller: ClientsCaller, id: string, dto: ReassignClientDto): Promise<ClientResponseDto> {
-    if (getCapabilityScope(caller.role, "clients:reassign") !== true) {
-      throw new ForbiddenError("Only the Admin can reassign clients");
-    }
-    assertValidOwner(await this.repo.findOwnerCandidate(dto.ownerId));
+  async setTeam(caller: ClientsCaller, id: string, dto: SetClientTeamDto): Promise<ClientResponseDto> {
+    const scope = this.scopeOf(caller);
+    assertAdmin(scope, "change a client's team");
+    const memberIds = normalizeTeam(dto.leadId, dto.memberIds);
+    assertValidTeam(memberIds, await this.repo.findTeamCandidates(memberIds));
 
     // Filled in by the guard (from the locked row), read after the commit.
-    const moved: { from?: string; notice?: ClientReassignedNotice } = {};
+    const change: { diff?: { added: string[]; removed: string[] }; fromLead?: string; notice?: ClientReassignedNotice } = {};
     const client = await this.repo.update(id, (current) => {
-      assertVisible({ kind: "all" }, current);
+      assertVisible(scope, current);
       assertVersion(current.version, dto.version);
-      if (current.ownerId === dto.ownerId) return {};
-      moved.from = current.ownerId;
-      if (dto.ownerId !== caller.userId) {
-        moved.notice = { clientId: current.id, clientName: current.businessName, toOwnerId: dto.ownerId, actorId: caller.userId };
-      }
-      return { ownerId: dto.ownerId, reassignedNotice: moved.notice };
+      const diff = teamDiff(
+        current.team.map((m) => m.id),
+        memberIds,
+      );
+      if (diff.added.length === 0 && diff.removed.length === 0 && current.ownerId === dto.leadId) return {};
+      change.diff = diff;
+      change.fromLead = current.ownerId;
+      const told = diff.added.filter((m) => m !== caller.userId);
+      if (told.length > 0) change.notice = { clientId: current.id, clientName: current.businessName, recipientIds: told, actorId: caller.userId };
+      return { team: { leadId: dto.leadId, memberIds, addedBy: caller.userId }, addedNotice: change.notice };
     });
 
-    if (moved.from !== undefined) {
+    if (change.diff) {
       await this.audit.record({
         action: AUDIT_ACTIONS.CLIENT_REASSIGNED,
         entityType: AUDIT_ENTITIES.CLIENT,
         entityId: id,
-        metadata: { from: moved.from, to: dto.ownerId },
+        metadata: { added: change.diff.added, removed: change.diff.removed, leadFrom: change.fromLead, leadTo: dto.leadId },
       });
     }
-    if (moved.notice) await this.notifier.clientReassigned(moved.notice);
+    if (change.notice) await this.notifier.clientReassigned(change.notice);
     return toClientResponseDto(client);
   }
 }

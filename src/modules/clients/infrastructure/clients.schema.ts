@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, jsonb, date, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, jsonb, date, integer, timestamp, primaryKey } from "drizzle-orm/pg-core";
 import type { ClientContact, ClientStatus, SocialAccount } from "../domain/client.entity";
 
 /**
@@ -34,3 +34,19 @@ export const clients = pgTable("clients", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * A client's assigned team (migration 20261023000001). The lead
+ * (`clients.owner_id`) is always one of them. A manager sees a client only
+ * while they're on its team; the Admin sees every client.
+ */
+export const clientMembers = pgTable(
+  "client_members",
+  {
+    clientId: uuid("client_id").notNull(),
+    profileId: uuid("profile_id").notNull(),
+    addedBy: uuid("added_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.clientId, t.profileId] })],
+);

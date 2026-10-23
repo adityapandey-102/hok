@@ -38,7 +38,10 @@ export interface EventEntity {
   id: string;
   clientId: string;
   clientName: string;
+  /** The client's lead. */
   ownerId: string;
+  /** The client's team: who may see and work on this event (internal, never sent to the browser). */
+  teamIds: string[];
   clientStatus: "active" | "paused" | "archived";
   title: string;
   type: EventType;

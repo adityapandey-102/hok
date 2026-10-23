@@ -7,6 +7,7 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only reads (docs/adr/0003): the client's name and
 // owner (Clients), event titles (Events), the replier's name (Users).
 import { clients } from "../../clients/infrastructure/clients.schema";
+import { isOnTeam, teamIdsOf } from "../../clients/infrastructure/client-team.sql";
 import { events } from "../../events/infrastructure/events.schema";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { clientCommentHistory, clientComments } from "./client-comments.schema";
@@ -22,6 +23,7 @@ const STAFF_SELECT = {
   clientId: clientComments.clientId,
   clientName: clients.businessName,
   ownerId: clients.ownerId,
+  teamIds: teamIdsOf(clients.id),
   eventId: clientComments.eventId,
   eventTitle: events.title,
   body: clientComments.body,
@@ -47,7 +49,7 @@ const PORTAL_SELECT = {
 };
 
 type StaffRow = {
-  id: string; clientId: string; clientName: string; ownerId: string; eventId: string | null; eventTitle: string | null;
+  id: string; clientId: string; clientName: string; ownerId: string; teamIds: string[]; eventId: string | null; eventTitle: string | null;
   body: string; status: ClientCommentEntity["status"]; reply: string | null; repliedAt: Date | null; repliedByName: string | null;
   version: number; createdAt: Date; updatedAt: Date;
 };
@@ -71,7 +73,7 @@ const toPortal = (r: { id: string; eventId: string | null; eventTitle: string | 
 });
 
 function scopeCondition(scope: CommentScope): SQL | undefined {
-  return scope.kind === "own" ? eq(clients.ownerId, scope.userId) : undefined;
+  return scope.kind === "own" ? isOnTeam(clients.id, scope.userId) : undefined;
 }
 
 function staffQuery() {

@@ -1,4 +1,4 @@
-import type { ClientContact, ClientEntity, ClientStatus, ClientSummaryEntity, SocialAccount } from "../domain/client.entity";
+import type { ClientContact, ClientEntity, ClientStatus, ClientSummaryEntity, ClientTeamMember, SocialAccount } from "../domain/client.entity";
 
 /** Raw shape of the repository's CLIENT_SELECT projection (pg returns timestamptz as Date; `date` columns are read as strings). */
 export interface ClientRow {
@@ -21,6 +21,7 @@ export interface ClientRow {
   contractEnd: string | null;
   timeZone: string;
   notes: string | null;
+  team: ClientTeamMember[];
   status: ClientStatus;
   archivedAt: Date | null;
   version: number;
@@ -56,6 +57,7 @@ export const ClientMapper = {
       contacts: row.contacts ?? [],
       socialAccounts: row.socialAccounts ?? [],
       services: row.services ?? [],
+      team: row.team ?? [],
       archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

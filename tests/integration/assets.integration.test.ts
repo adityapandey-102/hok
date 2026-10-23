@@ -194,7 +194,7 @@ describe("assets (integration)", () => {
     const c = await as("social_media_manager", request(app).post("/api/v1/clients")).send({ businessName: `IT Assets Archive ${stamp}` });
     const cid = (c.body as { client: { id: string } }).client.id;
     const a = await create({ clientId: cid });
-    const arch = await as("social_media_manager", request(app).post(`/api/v1/clients/${cid}/archive`)).send({});
+    const arch = await as("admin", request(app).post(`/api/v1/clients/${cid}/archive`)).send({});
     expect(arch.status).toBe(200);
     expect((await as("social_media_manager", request(app).get(`/api/v1/assets/${a.id}`))).status).toBe(200);
     const edit = await as("social_media_manager", request(app).patch(`/api/v1/assets/${a.id}`)).send({ title: "x", version: a.version });
@@ -203,7 +203,7 @@ describe("assets (integration)", () => {
     expect((await as("social_media_manager", request(app).delete(`/api/v1/assets/${a.id}`))).status).toBe(409);
     const add = await as("social_media_manager", request(app).post("/api/v1/assets")).send({ clientId: cid, title: "x", url: "https://a.test", type: "other" });
     expect(add.status).toBe(409);
-    await as("social_media_manager", request(app).post(`/api/v1/clients/${cid}/unarchive`)).send({});
+    await as("admin", request(app).post(`/api/v1/clients/${cid}/unarchive`)).send({});
     expect((await as("social_media_manager", request(app).patch(`/api/v1/assets/${a.id}`)).send({ title: "ok", version: a.version })).status).toBe(200);
   });
 });

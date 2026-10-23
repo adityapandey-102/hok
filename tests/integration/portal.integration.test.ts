@@ -16,6 +16,8 @@ let owner: FixtureUser;
 let other: FixtureUser;
 let editor: FixtureUser;
 let ownerAuth: string;
+let adminAuth: string;
+let admin: FixtureUser;
 let otherAuth: string;
 let editorAuth: string;
 let clientId: string;
@@ -28,7 +30,8 @@ beforeAll(async () => {
   owner = await createFixtureUser("social_media_manager", "Portal Owner");
   other = await createFixtureUser("marketing_manager", "Other Manager");
   editor = await createFixtureUser("editor", "Portal Editor");
-  [ownerAuth, otherAuth, editorAuth] = await Promise.all([bearerFor(owner), bearerFor(other), bearerFor(editor)]);
+  admin = await createFixtureUser("admin", "Portal Admin");
+  [ownerAuth, otherAuth, editorAuth, adminAuth] = await Promise.all([bearerFor(owner), bearerFor(other), bearerFor(editor), bearerFor(admin)]);
   const res = await request(app).post("/api/v1/clients").set("Authorization", ownerAuth).send({ businessName: "Portal Test Bakery" });
   expect(res.status).toBe(201);
   clientId = (body(res).client as Json).id as string;
@@ -36,7 +39,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await deleteClientsOwnedBy([owner.id, other.id]); // portal_links + comments cascade with the client
-  for (const u of [owner, other, editor]) await deleteFixtureUser(u.id);
+  for (const u of [owner, other, editor, admin]) await deleteFixtureUser(u.id);
   await closeDb();
 });
 
@@ -178,10 +181,10 @@ describe("link lifecycle", () => {
     const live = body(regen).token as string;
     const client = await request(app).get(`/api/v1/clients/${clientId}`).set("Authorization", ownerAuth);
     const v = ((body(client).client as Json).version as number);
-    expect((await request(app).post(`/api/v1/clients/${clientId}/archive`).set("Authorization", ownerAuth).send({ version: v })).status).toBe(200);
+    expect((await request(app).post(`/api/v1/clients/${clientId}/archive`).set("Authorization", adminAuth).send({ version: v })).status).toBe(200);
     expect((await request(app).get(`/api/v1/portal/${live}`)).status).toBe(404);
     expect((await request(app).post(`/api/v1/portal-links/${clientId}`).set("Authorization", ownerAuth)).status).toBe(409);
-    expect((await request(app).post(`/api/v1/clients/${clientId}/unarchive`).set("Authorization", ownerAuth).send({})).status).toBe(200);
+    expect((await request(app).post(`/api/v1/clients/${clientId}/unarchive`).set("Authorization", adminAuth).send({})).status).toBe(200);
     expect((await request(app).get(`/api/v1/portal/${live}`)).status).toBe(404);
   });
 });

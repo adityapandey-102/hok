@@ -7,6 +7,7 @@ import { scanLowerBound } from "../../../domain";
 // Events, Staff-tasks, Client-comments and Users modules' tables,
 // Infrastructure-to-Infrastructure (ADR 0003).
 import { clients } from "../../clients/infrastructure/clients.schema";
+import { isOnTeam } from "../../clients/infrastructure/client-team.sql";
 import { clientComments } from "../../client-comments/infrastructure/client-comments.schema";
 import { eventStages, events } from "../../events/infrastructure/events.schema";
 import { staffTaskUpdates, staffTasks } from "../../staff-tasks/infrastructure/staff-tasks.schema";
@@ -30,7 +31,7 @@ const unresolved = ne(clientComments.status, "solved");
 /** Events overlapping [todayStart, weekEnd), bounded below on starts_at (index-friendly), optionally one owner's. */
 const weekEventCount = (w: Window, ownerId?: string) =>
   sql<number>`(select count(*)::int from ${events}${
-    ownerId ? sql` join ${clients} on ${clients.id} = ${events.clientId} and ${clients.ownerId} = ${ownerId}` : sql``
+    ownerId ? sql` join ${clients} on ${clients.id} = ${events.clientId} and ${isOnTeam(clients.id, ownerId)}` : sql``
   } where ${events.startsAt} < ${w.weekEnd} and ${events.endsAt} > ${w.todayStart} and ${events.startsAt} >= ${scanLowerBound(w.todayStart.toISOString())})`;
 
 /** Active non-admin staff, optionally by name and role. */
@@ -124,14 +125,14 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
     return guarded("load client summary", async () => {
       const [r] = await db
         .select({
-          clientCount: sql<number>`(select count(*)::int from ${clients} where ${clients.ownerId} = ${ownerId} and ${clients.archivedAt} is null)`,
+          clientCount: sql<number>`(select count(*)::int from ${clients} where ${isOnTeam(clients.id, ownerId)} and ${clients.archivedAt} is null)`,
           received: countWhere(eq(clientComments.status, "received")),
           inProgress: countWhere(eq(clientComments.status, "in_progress")),
           weekEventCount: weekEventCount(w, ownerId),
         })
         .from(clientComments)
         .innerJoin(clients, eq(clients.id, clientComments.clientId))
-        .where(and(eq(clients.ownerId, ownerId), unresolved));
+        .where(and(isOnTeam(clients.id, ownerId), unresolved));
       return r!;
     });
   }
@@ -143,7 +144,7 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
         gt(events.endsAt, range.from),
         gte(events.startsAt, scanLowerBound(range.from.toISOString())),
       ];
-      if (ownerId) c.push(eq(clients.ownerId, ownerId));
+      if (ownerId) c.push(isOnTeam(clients.id, ownerId));
       const rows = await db
         .select({
           id: events.id,
@@ -176,7 +177,7 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
         .from(events)
         .innerJoin(clients, eq(clients.id, events.clientId))
         .innerJoin(currentStage, eq(currentStage.id, events.currentStageId))
-        .where(and(eq(clients.ownerId, ownerId), eq(events.state, "active"), gt(events.endsAt, now)))
+        .where(and(isOnTeam(clients.id, ownerId), eq(events.state, "active"), gt(events.endsAt, now)))
         .groupBy(currentStage.name)
         .orderBy(sql`count(*) desc`, asc(currentStage.name))
         .limit(limit);
@@ -187,7 +188,7 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
   latestComments(ownerId: string | undefined, limit: number) {
     return guarded("load latest comments", async () => {
       const c: SQL[] = [unresolved];
-      if (ownerId) c.push(eq(clients.ownerId, ownerId));
+      if (ownerId) c.push(isOnTeam(clients.id, ownerId));
       const rows = await db
         .select({
           id: clientComments.id,

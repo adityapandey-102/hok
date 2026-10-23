@@ -60,10 +60,14 @@ export const ERROR_CODES = {
   CLIENT_ARCHIVED: "CLIENT_ARCHIVED",
   /** Unarchiving a client that isn't archived (409). */
   CLIENT_NOT_ARCHIVED: "CLIENT_NOT_ARCHIVED",
-  /** The chosen owner isn't an active admin / social_media_manager / marketing_manager (400). */
+  /** A chosen lead or team member isn't an active client manager (admin / social media / marketing / project manager), or the team is too big (400). */
   CLIENT_OWNER_INVALID: "CLIENT_OWNER_INVALID",
-  /** A manager tried to create a client owned by someone else -- only the Admin may (403). */
+  /** A manager tried to create a client led by someone else -- only the Admin may (403). */
   CLIENT_OWNER_FORBIDDEN: "CLIENT_OWNER_FORBIDDEN",
+  /** Archive, unarchive and team changes are the Admin's; a team member who tries gets this (403). */
+  CLIENT_ADMIN_ONLY: "CLIENT_ADMIN_ONLY",
+  /** Only the client's lead (or the Admin) manages its portal link; another team member gets this (403). */
+  PORTAL_LEAD_ONLY: "PORTAL_LEAD_ONLY",
   /** contract_end is before contract_start (400). */
   CLIENT_CONTRACT_DATES_INVALID: "CLIENT_CONTRACT_DATES_INVALID",
 

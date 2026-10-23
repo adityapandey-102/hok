@@ -24,7 +24,7 @@ import { db } from "../common/database/drizzle-client";
 import { authProvider } from "../common/auth/supabase-auth-provider";
 import { logger } from "../common/logger/logger";
 import { profiles } from "../modules/users/infrastructure/profile.schema";
-import { clients } from "../modules/clients/infrastructure/clients.schema";
+import { clientMembers, clients } from "../modules/clients/infrastructure/clients.schema";
 import type { ClientStatus, SocialPlatform } from "../modules/clients/domain/client.entity";
 import { stageTemplateStages, stageTemplates } from "../modules/stage-templates/infrastructure/stage-templates.schema";
 import { eventStageHistory, eventStages, events } from "../modules/events/infrastructure/events.schema";
@@ -43,6 +43,7 @@ const STAFF: { fullName: string; email: string; role: Role; timeZone: string }[]
   { fullName: "Rohan Mehta", email: "rohan.smm@hok.test", role: "social_media_manager", timeZone: "Asia/Kolkata" },
   { fullName: "Sara Ali", email: "sara.smm@hok.test", role: "social_media_manager", timeZone: "Asia/Dubai" },
   { fullName: "Vikram Rao", email: "vikram.mm@hok.test", role: "marketing_manager", timeZone: "Europe/London" },
+  { fullName: "Kiran Desai", email: "kiran.pm@hok.test", role: "project_manager", timeZone: "Asia/Kolkata" },
   { fullName: "Neha Joshi", email: "neha.agent@hok.test", role: "marketing_agent", timeZone: "Asia/Kolkata" },
   { fullName: "Arjun Das", email: "arjun.dev@hok.test", role: "developer", timeZone: "Asia/Kolkata" },
   { fullName: "Meera Nair", email: "meera.editor@hok.test", role: "editor", timeZone: "Asia/Kolkata" },
@@ -123,7 +124,7 @@ async function seedClients(): Promise<void> {
     }
     // The sample data keeps one of each for readability; the table stores lists.
     const { contactPerson, phone, website, socialHandles, ...rest } = client;
-    await db.insert(clients).values({
+    const [created] = await db.insert(clients).values({
       ...rest,
       contacts: [{ name: contactPerson, phone: null, email: null }],
       phones: [phone],
@@ -132,10 +133,23 @@ async function seedClients(): Promise<void> {
       ownerId,
       notes: client.notes ?? null,
       archivedAt: client.status === "archived" ? new Date() : null,
-    });
+    }).returning({ id: clients.id });
+    // The lead is always on the client's team.
+    await db.insert(clientMembers).values({ clientId: created!.id, profileId: ownerId }).onConflictDoNothing();
     logger.info({ businessName: client.businessName, ownerEmail, status: client.status }, "seed: client created");
   }
+
+  // A sample multi-person team: the Project Manager also works on Chai Point Cafe (led by Rohan).
+  for (const [businessName, emails] of Object.entries(EXTRA_TEAM)) {
+    const [client] = await db.select({ id: clients.id }).from(clients).where(eq(clients.businessName, businessName)).limit(1);
+    const people = await db.select({ id: profiles.id }).from(profiles).where(inArray(profiles.email, emails));
+    if (!client || people.length === 0) continue;
+    await db.insert(clientMembers).values(people.map((p) => ({ clientId: client.id, profileId: p.id }))).onConflictDoNothing();
+  }
 }
+
+/** Extra team members (besides the lead) for some sample clients. */
+const EXTRA_TEAM: Record<string, string[]> = { "Chai Point Cafe": ["kiran.pm@hok.test"] };
 
 const TEMPLATES: { name: string; stages: string[] }[] = [
   { name: "Photo Shoot", stages: ["Planned", "Pre-production", "Shoot", "Editing", "Client Review", "Completed"] },

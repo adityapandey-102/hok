@@ -6,6 +6,7 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only reads (ADR 0003): the client an asset
 // belongs to, its optional event, and staff names.
 import { clients } from "../../clients/infrastructure/clients.schema";
+import { isOnTeam, teamIdsOf } from "../../clients/infrastructure/client-team.sql";
 import { events } from "../../events/infrastructure/events.schema";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { assetTags, assets, tags } from "./assets.schema";
@@ -28,7 +29,7 @@ const ASSET_SELECT = {
   id: assets.id,
   clientId: assets.clientId,
   clientName: clients.businessName,
-  ownerId: clients.ownerId,
+  teamIds: teamIdsOf(clients.id),
   clientStatus: clients.status,
   eventId: assets.eventId,
   eventTitle: events.title,
@@ -124,7 +125,7 @@ export class DrizzleAssetsRepository implements AssetsRepositoryPort {
   /** Shared by findMany and countMany so the page and its total can never disagree. */
   private listConditions(filters: AssetListFilters): SQL | undefined {
     const conditions: SQL[] = [isNull(assets.deletedAt)];
-    if (filters.ownerId) conditions.push(eq(clients.ownerId, filters.ownerId));
+    if (filters.ownerId) conditions.push(isOnTeam(clients.id, filters.ownerId));
     if (filters.clientId) conditions.push(eq(assets.clientId, filters.clientId));
     if (filters.eventId) conditions.push(eq(assets.eventId, filters.eventId));
     if (filters.type) conditions.push(eq(assets.type, filters.type));
@@ -182,7 +183,7 @@ export class DrizzleAssetsRepository implements AssetsRepositoryPort {
 
   findClient(id: string) {
     return guarded("load the client", async (): Promise<AssetClient | null> => {
-      const [row] = await db.select({ id: clients.id, ownerId: clients.ownerId, status: clients.status }).from(clients).where(eq(clients.id, id)).limit(1);
+      const [row] = await db.select({ id: clients.id, teamIds: teamIdsOf(clients.id), status: clients.status }).from(clients).where(eq(clients.id, id)).limit(1);
       return row ?? null;
     });
   }
@@ -198,7 +199,7 @@ export class DrizzleAssetsRepository implements AssetsRepositoryPort {
     return guarded("create the asset", () =>
       db.transaction(async (tx) => {
         const [client] = await tx
-          .select({ id: clients.id, ownerId: clients.ownerId, status: clients.status })
+          .select({ id: clients.id, teamIds: teamIdsOf(clients.id), status: clients.status })
           .from(clients)
           .where(eq(clients.id, record.clientId))
           .for("share");
@@ -254,7 +255,7 @@ export class DrizzleAssetsRepository implements AssetsRepositoryPort {
   suggestTags(filters: TagSuggestFilters) {
     return guarded("load tag suggestions", async (): Promise<TagSuggestion[]> => {
       const conditions: SQL[] = [isNull(assets.deletedAt)];
-      if (filters.ownerId) conditions.push(eq(clients.ownerId, filters.ownerId));
+      if (filters.ownerId) conditions.push(isOnTeam(clients.id, filters.ownerId));
       if (filters.clientId) conditions.push(eq(tags.clientId, filters.clientId));
       if (filters.q) conditions.push(ilike(tags.name, containsPattern(filters.q)));
       // Tags in use by live assets only, grouped by lower(name) so one name is one suggestion across clients.

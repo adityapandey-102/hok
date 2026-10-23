@@ -15,8 +15,8 @@ export interface AssetEntity {
   id: string;
   clientId: string;
   clientName: string;
-  /** The client's owner and status: needed for the row scope and the archived rule; not part of the response's asset fields. */
-  ownerId: string;
+  /** The client's team and status: needed for the row scope and the archived rule; not part of the response. */
+  teamIds: string[];
   clientStatus: "active" | "paused" | "archived";
   eventId: string | null;
   /** Joined in the same query, for display. */

@@ -6,6 +6,7 @@ import { guarded as guardedQuery } from "../../../common/database/guarded";
 // module owns no table.
 import { assets } from "../../assets/infrastructure/assets.schema";
 import { clients } from "../../clients/infrastructure/clients.schema";
+import { isOnTeam } from "../../clients/infrastructure/client-team.sql";
 import { clientTodos } from "../../client-todos/infrastructure/client-todos.schema";
 import { events } from "../../events/infrastructure/events.schema";
 import { staffTasks } from "../../staff-tasks/infrastructure/staff-tasks.schema";
@@ -30,7 +31,7 @@ export class DrizzleSearchRepository implements SearchRepositoryPort {
   clients(term: string, scope: SearchScope, limit: number) {
     return guarded("clients", async () => {
       const c: SQL[] = [ilike(clients.businessName, containsPattern(term))];
-      if (scope.kind === "own") c.push(eq(clients.ownerId, scope.userId));
+      if (scope.kind === "own") c.push(isOnTeam(clients.id, scope.userId));
       const rows = await db
         .select({ id: clients.id, name: clients.businessName, industry: clients.industry, status: clients.status })
         .from(clients)
@@ -44,7 +45,7 @@ export class DrizzleSearchRepository implements SearchRepositoryPort {
   events(term: string, scope: SearchScope, limit: number) {
     return guarded("events", async () => {
       const c: SQL[] = [ilike(events.title, containsPattern(term))];
-      if (scope.kind === "own") c.push(eq(clients.ownerId, scope.userId));
+      if (scope.kind === "own") c.push(isOnTeam(clients.id, scope.userId));
       const rows = await db
         .select({ id: events.id, title: events.title, startsAt: events.startsAt, zone: events.timeZone, client: clients.businessName })
         .from(events)
@@ -74,7 +75,7 @@ export class DrizzleSearchRepository implements SearchRepositoryPort {
   todos(term: string, scope: SearchScope, limit: number) {
     return guarded("to-dos", async () => {
       const c: SQL[] = [ilike(clientTodos.title, containsPattern(term))];
-      if (scope.kind === "own") c.push(eq(clients.ownerId, scope.userId));
+      if (scope.kind === "own") c.push(isOnTeam(clients.id, scope.userId));
       const rows = await db
         .select({ id: clientTodos.id, title: clientTodos.title, status: clientTodos.status, clientId: clients.id, client: clients.businessName })
         .from(clientTodos)
@@ -90,7 +91,7 @@ export class DrizzleSearchRepository implements SearchRepositoryPort {
     return guarded("assets", async () => {
       const pattern = containsPattern(term);
       const c: SQL[] = [isNull(assets.deletedAt), or(ilike(assets.title, pattern), ilike(assets.comment, pattern))!];
-      if (scope.kind === "own") c.push(eq(clients.ownerId, scope.userId));
+      if (scope.kind === "own") c.push(isOnTeam(clients.id, scope.userId));
       const rows = await db
         .select({ id: assets.id, title: assets.title, type: assets.type, clientId: clients.id, client: clients.businessName })
         .from(assets)

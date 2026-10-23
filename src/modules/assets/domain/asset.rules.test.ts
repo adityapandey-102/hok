@@ -27,13 +27,13 @@ describe("normalizeTags", () => {
 
 describe("row scope", () => {
   it("an admin sees every asset; a manager only their own clients (else 404)", () => {
-    expect(code(() => assertAssetVisible({ kind: "all" }, { ownerId: "a" }))).toBe("none");
-    expect(code(() => assertAssetVisible({ kind: "own", userId: "a" }, { ownerId: "a" }))).toBe("none");
-    expect(code(() => assertAssetVisible({ kind: "own", userId: "b" }, { ownerId: "a" }))).toBe("404:ASSET_NOT_FOUND");
+    expect(code(() => assertAssetVisible({ kind: "all" }, { teamIds: ["a"] }))).toBe("none");
+    expect(code(() => assertAssetVisible({ kind: "own", userId: "a" }, { teamIds: ["a"] }))).toBe("none");
+    expect(code(() => assertAssetVisible({ kind: "own", userId: "b" }, { teamIds: ["a"] }))).toBe("404:ASSET_NOT_FOUND");
     expect(code(() => assertAssetVisible({ kind: "all" }, null))).toBe("404:ASSET_NOT_FOUND");
   });
   it("a client must be visible and not archived", () => {
-    const c = { id: "c", ownerId: "a", status: "active" as const };
+    const c = { id: "c", teamIds: ["a"], status: "active" as const };
     expect(code(() => assertClientUsable({ kind: "own", userId: "b" }, c))).toBe("404:CLIENT_NOT_FOUND");
     expect(code(() => assertClientUsable({ kind: "own", userId: "a" }, { ...c, status: "archived" }))).toBe("409:CLIENT_ARCHIVED");
     expect(code(() => assertClientUsable({ kind: "own", userId: "a" }, { ...c, status: "paused" }))).toBe("none");

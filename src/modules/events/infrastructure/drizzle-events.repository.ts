@@ -7,6 +7,7 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only reads (ADR 0003): the client an event
 // belongs to, the template it's created from, staff names.
 import { clients } from "../../clients/infrastructure/clients.schema";
+import { isOnTeam, teamIdsOf } from "../../clients/infrastructure/client-team.sql";
 import { stageTemplateStages, stageTemplates } from "../../stage-templates/infrastructure/stage-templates.schema";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { eventStageHistory, eventStages, events } from "./events.schema";
@@ -34,6 +35,7 @@ const EVENT_SELECT = {
   clientId: events.clientId,
   clientName: clients.businessName,
   ownerId: clients.ownerId,
+  teamIds: teamIdsOf(clients.id),
   clientStatus: clients.status,
   title: events.title,
   type: events.type,
@@ -113,7 +115,7 @@ async function selectStages(ex: Executor, eventId: string): Promise<EventStage[]
 export class DrizzleEventsRepository implements EventsRepositoryPort {
   private conditions(f: EventListFilters): SQL | undefined {
     const c: SQL[] = [];
-    if (f.ownerId) c.push(eq(clients.ownerId, f.ownerId));
+    if (f.ownerId) c.push(isOnTeam(clients.id, f.ownerId));
     if (f.clientId) c.push(eq(events.clientId, f.clientId));
     if (f.state) c.push(eq(events.state, f.state));
     if (f.type) c.push(eq(events.type, f.type));
@@ -202,7 +204,7 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
   findClient(clientId: string) {
     return guarded("load the client", async (): Promise<EventClient | null> => {
       const [row] = await db
-        .select({ id: clients.id, ownerId: clients.ownerId, status: clients.status, timeZone: clients.timeZone })
+        .select({ id: clients.id, teamIds: teamIdsOf(clients.id), status: clients.status, timeZone: clients.timeZone })
         .from(clients)
         .where(eq(clients.id, clientId))
         .limit(1);
@@ -242,7 +244,7 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
     return guarded("create the event", () =>
       db.transaction(async (tx) => {
         const [client] = await tx
-          .select({ id: clients.id, ownerId: clients.ownerId, status: clients.status, timeZone: clients.timeZone })
+          .select({ id: clients.id, teamIds: teamIdsOf(clients.id), status: clients.status, timeZone: clients.timeZone })
           .from(clients)
           .where(eq(clients.id, record.clientId))
           .for("share");

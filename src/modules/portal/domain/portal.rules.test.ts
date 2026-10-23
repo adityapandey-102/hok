@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../../../common/errors/app-error";
-import { assertCanIssueLink, assertClientManageable, assertPortalRange, pickCurrent, portalUrl } from "./portal.rules";
+import { assertCanIssueLink, assertClientManageable, assertLead, assertPortalRange, pickCurrent, portalUrl } from "./portal.rules";
 import type { PortalEvent } from "./portal.entity";
 
 function codeOf(fn: () => unknown): string | null {
@@ -14,7 +14,7 @@ function codeOf(fn: () => unknown): string | null {
 }
 
 describe("link management rules", () => {
-  const client = (ownerId: string, status: "active" | "paused" | "archived" = "active") => ({ id: "c", ownerId, status });
+  const client = (ownerId: string, status: "active" | "paused" | "archived" = "active", teamIds = [ownerId]) => ({ id: "c", ownerId, teamIds, status });
 
   it("the owner and the Admin manage a client's link; anyone else gets 404", () => {
     expect(codeOf(() => assertClientManageable({ kind: "own", userId: "rohan" }, client("rohan")))).toBeNull();
@@ -30,6 +30,19 @@ describe("link management rules", () => {
 
   it("builds the shareable URL on the web app", () => {
     expect(portalUrl("http://localhost:3400/", "AbC")).toBe("http://localhost:3400/p/AbC");
+  });
+});
+
+describe("client teams and the portal link", () => {
+  const client = (ownerId: string, teamIds: string[]) => ({ id: "c", ownerId, teamIds, status: "active" as const });
+
+  it("a team member sees the link, but only the lead (or the Admin) changes it", () => {
+    const kiran = { kind: "own" as const, userId: "kiran" };
+    const c = client("rohan", ["rohan", "kiran"]);
+    expect(codeOf(() => assertClientManageable(kiran, c))).toBeNull();
+    expect(codeOf(() => assertLead(kiran, c))).toBe("PORTAL_LEAD_ONLY");
+    expect(codeOf(() => assertLead({ kind: "own", userId: "rohan" }, c))).toBeNull();
+    expect(codeOf(() => assertLead({ kind: "all" }, c))).toBeNull();
   });
 });
 

@@ -21,6 +21,7 @@ export function toClientResponseDto(c: ClientEntity): ClientResponseDto {
     contractEnd: c.contractEnd,
     timeZone: c.timeZone,
     notes: c.notes,
+    team: c.team,
     status: c.status,
     archivedAt: c.archivedAt,
     version: c.version,

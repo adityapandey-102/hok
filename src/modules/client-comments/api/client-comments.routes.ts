@@ -23,12 +23,12 @@ import {
   type UpdateCommentDto,
 } from "./dto/client-comment.dto";
 
-/** M9 hook: a new portal comment → bell + web push to the client's owning manager only (decision D6). */
+/** M9 hook: a new portal comment → bell + web push to everyone on the client's team (client teams, 2026-10-23; was the owner only, D6). */
 const commentNotifier: CommentNotifier = {
   newClientComment: (n) =>
     notifier.notify({
       type: "client_comment",
-      recipientIds: [n.ownerId],
+      recipientIds: n.recipientIds,
       actorId: null, // the client (no staff account)
       payload: clientCommentPayload({
         clientId: n.clientId,

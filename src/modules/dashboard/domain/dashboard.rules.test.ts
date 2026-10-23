@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ROLES } from "../../../domain";
+import { ROLES, isClientManager } from "../../../domain";
 import type { DashboardEvent } from "./dashboard.entity";
 import { dashboardSections, dashboardWindow, splitWeek } from "./dashboard.rules";
 
@@ -25,7 +25,7 @@ describe("dashboardSections (overview, mine)", () => {
 
   it("gives everyone else the same own-work dashboard for either view", () => {
     for (const role of ROLES.filter((r) => r !== "admin")) {
-      const manager = role === "social_media_manager" || role === "marketing_manager";
+      const manager = isClientManager(role);
       for (const view of ["overview", "mine"] as const) expect(dashboardSections(role, view)).toEqual({ tasks: true, clients: manager, firm: false });
     }
   });
