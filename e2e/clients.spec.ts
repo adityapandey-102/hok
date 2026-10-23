@@ -20,12 +20,44 @@ test("a manager creates and edits a client; another manager cannot see it", asyn
   const rohan = await rohanCtx.newPage();
   await login(rohan, "rohan.smm@hok.test");
   await rohan.goto("/app/clients/new");
+  await rohan.waitForLoadState("networkidle"); // typed before the form is interactive, text would be lost
   await rohan.locator("#cf-name").fill(name);
   await rohan.locator("#cf-industry").fill("Testing");
+
+  // Several contact people (phone / email optional), phones, websites and social accounts.
+  await rohan.getByLabel("Contact 1 name").fill("Priya Shah");
+  await rohan.getByLabel("Contact 1 phone", { exact: true }).fill("98200 55555"); // India (+91) is the default code
+  await rohan.getByRole("button", { name: "Add contact person" }).click();
+  await rohan.getByLabel("Contact 2 name").fill("Dev Mehta");
+  await rohan.getByLabel("Contact 2 email").fill("dev@example.com");
+  await rohan.getByLabel("Phone 1", { exact: true }).fill("22 4000 1111");
+  await rohan.getByRole("button", { name: "Add phone number" }).click();
+  await rohan.getByLabel("Phone 2 country code").selectOption("AE"); // pick another country's code
+  await rohan.getByLabel("Phone 2", { exact: true }).fill("04 555 0000"); // the trunk 0 is dropped
+  await rohan.getByLabel("Website 1", { exact: true }).fill("e2e-shop.example.com");
+  await rohan.getByRole("button", { name: "Add website" }).click();
+  await rohan.getByLabel("Website 2", { exact: true }).fill("e2e-blog.example.com");
+  await rohan.getByRole("button", { name: "Add account" }).click();
+  await rohan.getByLabel("Account 1 handle").fill("@e2e_main");
+  await rohan.getByRole("button", { name: "Add account" }).click();
+  await rohan.getByLabel("Account 2 handle").fill("@e2e_store"); // a second Instagram account
+  await rohan.getByRole("button", { name: "Add account" }).click();
+  await rohan.getByLabel("Account 3 platform").selectOption("youtube");
+  await rohan.getByLabel("Account 3 handle").fill("https://youtube.com/@e2e");
+
+  // The time zone picker finds another country's zone by city.
+  await rohan.locator("#cf-tz").click();
+  await rohan.locator("#cf-tz").fill("Dubai");
+  await rohan.getByRole("option", { name: /Dubai/ }).first().click();
+
   await rohan.getByRole("button", { name: "Create client" }).click();
   await expect(rohan.getByRole("heading", { name })).toBeVisible({ timeout: 30_000 });
   const clientUrl = rohan.url();
   expect(clientUrl).toMatch(/\/app\/clients\/[0-9a-f-]{36}$/);
+  for (const shown of ["Priya Shah", "+91 98200 55555", "Dev Mehta", "dev@example.com", "+971 4 555 0000", "https://e2e-blog.example.com", "@e2e_main", "@e2e_store"]) {
+    await expect(rohan.getByText(shown, { exact: true }).first(), shown).toBeVisible();
+  }
+  await expect(rohan.getByText(/Dubai/).first()).toBeVisible();
 
   // Edit it.
   await rohan.getByRole("button", { name: "Edit client" }).click();

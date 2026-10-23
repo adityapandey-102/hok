@@ -11,6 +11,7 @@ import { Icon } from "../../../components/ui/Icon";
 import { Panel } from "../../../components/ui/Panel";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import { FieldLabel, Input } from "../../../components/ui/Field";
+import { PhoneInput } from "../../../components/ui/PhoneInput";
 import { useToast } from "../../../components/ui/Toast";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
 import { CredentialRevealOverlay, type RevealModal } from "./CredentialRevealOverlay";
@@ -147,7 +148,7 @@ export function UserDetailClient({ initialUser, currentUserId }: { initialUser: 
               <InfoRow label="Email" value={user.email} />
               <div>
                 <FieldLabel htmlFor="ud-phone">Phone</FieldLabel>
-                <Input id="ud-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <PhoneInput id="ud-phone" value={phone} onChange={setPhone} />
               </div>
               <div>
                 <FieldLabel htmlFor="ud-tz">Time zone</FieldLabel>

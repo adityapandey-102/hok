@@ -4,8 +4,8 @@ import { useState } from "react";
 import {
   CLIENT_STATUS_LABELS,
   formatDateOnly,
-  SOCIAL_PLATFORMS,
   SOCIAL_PLATFORM_LABELS,
+  timeZoneLabel,
   type Client,
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
@@ -143,7 +143,7 @@ export function ClientWorkspaceClient({
   const facts = [
     client.industry ? { icon: "briefcase" as IconName, text: client.industry } : null,
     { icon: "user" as IconName, text: `Owner: ${client.ownerName}` },
-    { icon: "clock" as IconName, text: client.timeZone },
+    { icon: "clock" as IconName, text: timeZoneLabel(client.timeZone) },
     client.contractEnd ? { icon: "calendar" as IconName, text: `Contract ends ${formatDateOnly(client.contractEnd)}` } : null,
   ].filter((x): x is { icon: IconName; text: string } => x !== null);
 
@@ -221,10 +221,32 @@ export function ClientWorkspaceClient({
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <Panel icon="user" title="Contact" subtitle="Who to talk to">
                 <dl className="divide-y divide-border-light border-t border-border-light">
-                  <Row label="Contact person" value={client.contactPerson} />
-                  <Row label="Phone" value={client.phone} href={client.phone ? `tel:${client.phone}` : undefined} />
+                  {client.contacts.map((c, i) => (
+                    <div key={i} className="flex items-baseline justify-between gap-4 px-5 py-3 transition-colors hover:bg-accent-bg/60">
+                      <dt className="shrink-0 text-sm font-medium text-text-primary">{c.name}</dt>
+                      <dd className="flex min-w-0 flex-col items-end text-right text-sm break-words text-text-secondary">
+                        {c.phone && (
+                          <a href={`tel:${c.phone}`} className="underline-offset-2 hover:text-primary hover:underline">
+                            {c.phone}
+                          </a>
+                        )}
+                        {c.email && (
+                          <a href={`mailto:${c.email}`} className="underline-offset-2 hover:text-primary hover:underline">
+                            {c.email}
+                          </a>
+                        )}
+                        {!c.phone && !c.email && <span className="text-text-muted">No phone or email</span>}
+                      </dd>
+                    </div>
+                  ))}
+                  {client.contacts.length === 0 && <Row label="Contact people" value={null} />}
+                  {(client.phones.length ? client.phones : [null]).map((p, i) => (
+                    <Row key={`p${i}`} label={i === 0 ? "Phone" : ""} value={p} href={p ? `tel:${p}` : undefined} />
+                  ))}
                   <Row label="Email" value={client.email} href={client.email ? `mailto:${client.email}` : undefined} />
-                  <Row label="Website" value={client.website} />
+                  {(client.websites.length ? client.websites : [null]).map((w, i) => (
+                    <Row key={`w${i}`} label={i === 0 ? "Website" : ""} value={w} href={w ?? undefined} external />
+                  ))}
                   <Row label="Address" value={client.address} />
                 </dl>
               </Panel>
@@ -234,17 +256,23 @@ export function ClientWorkspaceClient({
                   <Row label="Services" value={client.services.length ? client.services.join(", ") : null} />
                   <Row label="Contract start" value={client.contractStart ? formatDateOnly(client.contractStart) : null} />
                   <Row label="Contract end" value={client.contractEnd ? formatDateOnly(client.contractEnd) : null} />
-                  <Row label="Time zone" value={client.timeZone} />
+                  <Row label="Time zone" value={timeZoneLabel(client.timeZone)} />
                 </dl>
               </Panel>
 
-              <Panel icon="share" title="Social media" subtitle="Handles">
+              <Panel icon="share" title="Social media" subtitle="Accounts">
                 <dl className="divide-y divide-border-light border-t border-border-light">
-                  {SOCIAL_PLATFORMS.filter((p) => client.socialHandles[p]).map((p) => (
-                    <Row key={p} label={SOCIAL_PLATFORM_LABELS[p]} value={client.socialHandles[p] ?? null} />
+                  {client.socialAccounts.map((a, i) => (
+                    <Row
+                      key={i}
+                      label={SOCIAL_PLATFORM_LABELS[a.platform]}
+                      value={a.handle}
+                      href={/^https?:\/\//.test(a.handle) ? a.handle : undefined}
+                      external
+                    />
                   ))}
                 </dl>
-                {Object.keys(client.socialHandles).length === 0 && <p className="border-t border-border-light px-5 py-4 text-sm text-text-muted">None added.</p>}
+                {client.socialAccounts.length === 0 && <p className="border-t border-border-light px-5 py-4 text-sm text-text-muted">None added.</p>}
               </Panel>
 
               <Panel icon="edit" title="Notes" subtitle="Internal only">
@@ -293,13 +321,17 @@ export function ClientWorkspaceClient({
   );
 }
 
-function Row({ label, value, href }: { label: string; value: string | null; href?: string }) {
+function Row({ label, value, href, external = false }: { label: string; value: string | null; href?: string; external?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-4 px-5 py-3 transition-colors hover:bg-accent-bg/60">
       <dt className="shrink-0 text-xs text-text-muted">{label}</dt>
       <dd className="min-w-0 text-right text-sm break-words text-text-primary">
         {value && href ? (
-          <a href={href} className="underline-offset-2 hover:text-primary hover:underline">
+          <a
+            href={href}
+            {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+            className="underline-offset-2 hover:text-primary hover:underline"
+          >
             {value}
           </a>
         ) : (

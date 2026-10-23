@@ -10,6 +10,7 @@ import { Button, ButtonLink } from "../../../components/ui/Button";
 import { Pager } from "../../../components/ui/Pager";
 import { Icon } from "../../../components/ui/Icon";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
+import { PhoneInput } from "../../../components/ui/PhoneInput";
 import { useToast } from "../../../components/ui/Toast";
 import { TimeZoneInput } from "./TimeZoneInput";
 import { CredentialRevealOverlay, type RevealModal } from "./CredentialRevealOverlay";
@@ -187,7 +188,7 @@ export default function UserManagementClient() {
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <FieldLabel htmlFor="new-user-phone">Phone (optional)</FieldLabel>
-              <Input id="new-user-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <PhoneInput id="new-user-phone" value={phone} onChange={setPhone} />
             </div>
             <div>
               <FieldLabel htmlFor="new-user-tz">Time zone</FieldLabel>

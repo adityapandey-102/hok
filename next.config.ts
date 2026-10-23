@@ -62,6 +62,12 @@ const nextConfig: NextConfig = {
     // because the app has two root layouts ((site) and (main)), so there is
     // no single root layout a plain not-found.tsx could render inside.
     globalNotFound: true,
+    // DEV-ONLY: Next 16 keeps a Turbopack cache on disk (.next/dev/cache/turbopack)
+    // by default. Here it grew to ~1 GB and kept the IDLE dev server busy rewriting
+    // it: 6-7 CPU cores and 2-6 GB of memory with nobody using the site, until the
+    // heap ran out ("JavaScript heap out of memory", measured 2026-10-22). Off, the
+    // first page after a restart compiles a little slower. No effect on builds.
+    turbopackFileSystemCacheForDev: false,
   },
 };
 

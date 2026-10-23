@@ -20,7 +20,21 @@ export const SOCIAL_PLATFORMS = [
   "snapchat",
 ] as const;
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
-export type SocialHandles = Partial<Record<SocialPlatform, string>>;
+/** One account; a business may have several on the same platform. */
+export interface SocialAccount {
+  platform: SocialPlatform;
+  handle: string;
+}
+
+/** A person to talk to at the client; phone and email are optional. */
+export interface ClientContact {
+  name: string;
+  phone: string | null;
+  email: string | null;
+}
+
+/** How many of each a client can list (hok-api enforces the same). */
+export const CLIENT_LIST_MAX = { websites: 10, phones: 10, contacts: 20, socialAccounts: 20 } as const;
 
 export const SOCIAL_PLATFORM_LABELS: Record<SocialPlatform, string> = {
   instagram: "Instagram",
@@ -41,6 +55,7 @@ export interface ClientSummary {
   businessName: string;
   logoUrl: string | null;
   industry: string | null;
+  /** The first contact's name. */
   contactPerson: string | null;
   status: ClientStatus;
   timeZone: string;
@@ -50,12 +65,14 @@ export interface ClientSummary {
   createdAt: string;
 }
 
-export interface Client extends ClientSummary {
-  phone: string | null;
+export interface Client extends Omit<ClientSummary, "contactPerson"> {
+  /** The business's own email; people have theirs in `contacts`. */
   email: string | null;
   address: string | null;
-  website: string | null;
-  socialHandles: SocialHandles;
+  websites: string[];
+  phones: string[];
+  contacts: ClientContact[];
+  socialAccounts: SocialAccount[];
   services: string[];
   contractStart: string | null;
   notes: string | null;

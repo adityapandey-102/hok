@@ -5,6 +5,7 @@ import { updateOwnProfileSchema, type Profile } from "../../../lib/domain";
 import { Panel } from "../../../components/ui/Panel";
 import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
+import { PhoneInput } from "../../../components/ui/PhoneInput";
 import { useToast } from "../../../components/ui/Toast";
 import { TimeZoneInput } from "../../admin-users/components/TimeZoneInput";
 import { authApi } from "../api/authApi";
@@ -69,7 +70,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
           </div>
           <div>
             <FieldLabel htmlFor="pf-phone">Phone</FieldLabel>
-            <Input id="pf-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <PhoneInput id="pf-phone" value={phone} onChange={setPhone} />
           </div>
           <div>
             <FieldLabel htmlFor="pf-tz">Time zone</FieldLabel>

@@ -1,4 +1,4 @@
-import type { Client, ClientStatus, ClientSummary, Role, SocialHandles } from "../../../lib/domain";
+import type { Client, ClientContact, ClientStatus, ClientSummary, Role, SocialAccount } from "../../../lib/domain";
 import { apiFetch } from "../../../lib/api/client";
 import { SEARCH_SELECT_LIMIT, mergeOptions, type SelectOption } from "../../../lib/api/options";
 import { teamMembersApi, type TeamMember } from "../../team-members/api/teamMembersApi";
@@ -24,12 +24,13 @@ export interface ClientFields {
   businessName: string;
   logoUrl?: string | null;
   industry?: string | null;
-  contactPerson?: string | null;
-  phone?: string | null;
   email?: string | null;
   address?: string | null;
-  website?: string | null;
-  socialHandles?: SocialHandles;
+  /** Each list sent replaces the whole list. */
+  websites?: string[];
+  phones?: string[];
+  contacts?: ClientContact[];
+  socialAccounts?: SocialAccount[];
   services?: string[];
   contractStart?: string | null;
   contractEnd?: string | null;

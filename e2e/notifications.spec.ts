@@ -22,6 +22,7 @@ test("reassigning a client puts a notification in the new owner's bell", async (
   const rohan = await rohanCtx.newPage();
   await login(rohan, "rohan.smm@hok.test");
   await rohan.goto("/app/clients/new");
+  await rohan.waitForLoadState("networkidle"); // typed before the form is interactive, text would be lost
   await rohan.locator("#cf-name").fill(name);
   await rohan.getByRole("button", { name: "Create client" }).click();
   await expect(rohan.getByRole("heading", { name })).toBeVisible({
