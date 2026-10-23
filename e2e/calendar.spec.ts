@@ -40,7 +40,7 @@ test("a manager sees an event in the right calendar slot, switches views and sta
 
   // Month view: step to that month and find it in the day's cell.
   await page.goto("/app/calendar");
-  await page.getByRole("button", { name: "Month" }).click();
+  await page.getByRole("tab", { name: "Month" }).click();
   const heading = page.getByTestId("calendar-title");
   for (let i = 0; i < 36 && !(await heading.innerText()).includes(MONTH_TITLE); i++) {
     await page.getByRole("button", { name: "Next", exact: true }).click();
@@ -50,19 +50,19 @@ test("a manager sees an event in the right calendar slot, switches views and sta
   await expect(page.locator(`[data-day="${NEXT_DAY}"]`).getByText(title)).toHaveCount(0);
 
   // List view shows it under the same day.
-  await page.getByRole("button", { name: "List" }).click();
+  await page.getByRole("tab", { name: "List" }).click();
   await expect(page.locator(`section[data-day="${DAY}"]`).getByText(title)).toBeVisible();
 
   // Week view: back to month, then open the event from its chip.
-  await page.getByRole("button", { name: "Week" }).click();
+  await page.getByRole("tab", { name: "Week" }).click();
   await expect(page.getByTestId("calendar-title")).toContainText("–");
-  await page.getByRole("button", { name: "Month" }).click();
+  await page.getByRole("tab", { name: "Month" }).click();
   await page.locator(`[data-day="${DAY}"]`).getByText(title).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible({ timeout: 30_000 });
 
   // An empty day starts a new event prefilled with that date.
   await page.goto("/app/calendar");
-  await page.getByRole("button", { name: "Month" }).click();
+  await page.getByRole("tab", { name: "Month" }).click();
   for (let i = 0; i < 36 && !(await heading.innerText()).includes(MONTH_TITLE); i++) {
     await page.getByRole("button", { name: "Next", exact: true }).click();
   }
@@ -78,7 +78,7 @@ test("a manager creates a personal event from an empty day and sees it in month 
   const title = `E2E Personal ${Date.now()}`;
   await login(page, "rohan.smm@hok.test");
   await page.goto("/app/calendar");
-  await page.getByRole("button", { name: "Month" }).click();
+  await page.getByRole("tab", { name: "Month" }).click();
   const heading = page.getByTestId("calendar-title");
   for (let i = 0; i < 36 && !(await heading.innerText()).includes("December 2026"); i++) {
     await page.getByRole("button", { name: "Next", exact: true }).click();

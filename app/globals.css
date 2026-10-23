@@ -77,13 +77,15 @@
   --color-sidebar: #1a1718;
   --color-ring: #c1202d;
 
-  /* Radii by hierarchy: panels 12, controls 8, chips 6 */
-  --radius-app: 8px;
-  --radius-app-sm: 6px;
-  --radius-app-lg: 12px;
-  --radius-app-xl: 16px;
+  /* Radii by hierarchy (2026-10-23 redesign, Apple-like continuous feel):
+   * sheets 20, grouped lists 14, controls 10, chips 8 (pills are full). */
+  --radius-app: 10px;
+  --radius-app-sm: 8px;
+  --radius-app-lg: 14px;
+  --radius-app-xl: 20px;
 
-  --shadow-app: 0 1px 2px rgba(74, 34, 30, 0.05), 0 2px 8px -2px rgba(74, 34, 30, 0.06);
+  /* Grouped lists sit on the warm page by contrast, not by shadow: a hairline only. */
+  --shadow-app: 0 0 0 0.5px rgba(74, 34, 30, 0.07), 0 1px 1px rgba(74, 34, 30, 0.03);
   --shadow-app-md: 0 10px 24px -8px rgba(74, 34, 30, 0.16), 0 3px 8px -4px rgba(74, 34, 30, 0.08);
   --shadow-app-lg: 0 24px 48px -16px rgba(74, 34, 30, 0.26), 0 8px 16px -8px rgba(74, 34, 30, 0.12);
   --shadow-gold: 0 6px 18px -6px rgba(193, 32, 45, 0.45);
@@ -146,7 +148,7 @@
   --color-sidebar: #0d0b0c;
   --color-ring: #ef4855;
 
-  --shadow-app: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-app: 0 0 0 1px rgba(255, 255, 255, 0.05);
   --shadow-app-md: 0 8px 20px -6px rgba(0, 0, 0, 0.6), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
   --shadow-app-lg: 0 22px 48px -12px rgba(0, 0, 0, 0.75), 0 6px 14px -6px rgba(0, 0, 0, 0.5);
   --shadow-gold: 0 6px 18px -6px rgba(239, 72, 85, 0.45);
@@ -226,12 +228,9 @@
   --animate-toast-slide: toast-slide 0.32s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* A flat, warm page: content carries the screen, not the background (redesign 2026-10-23). */
 body {
-  background:
-    radial-gradient(1100px 520px at 88% -8%, var(--glow-page), transparent 62%),
-    radial-gradient(900px 480px at -10% 110%, color-mix(in srgb, var(--glow-page) 60%, transparent), transparent 60%),
-    var(--color-app-bg);
-  background-attachment: fixed;
+  background: var(--color-app-bg);
   color: var(--color-text-primary);
   /* Native checkboxes, radios and ranges in ink (white in dark mode), never browser blue. */
   accent-color: var(--color-ink);
@@ -348,29 +347,64 @@ html.theme-switching * {
   background: var(--color-primary);
 }
 
-/* Page title: wide Archivo, then a short crimson bar (the H's crossbar). */
+/* Page title: a large title, the way Apple apps open a screen. Size and weight
+ * carry it; no rule underneath (redesign 2026-10-23). */
 .page-title {
   font-family: var(--font-serif);
   font-weight: 600;
-  font-size: 1.75rem;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
+  font-size: 1.95rem;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
   color: var(--color-text-primary);
-}
-.page-title::after {
-  content: "";
-  display: block;
-  width: 2.25rem;
-  height: 3px;
-  margin: 0.65rem 0 0.4rem;
-  border-radius: 3px;
-  background: var(--color-primary);
-  transform-origin: left center;
-  animation: grow-x 0.7s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  margin-bottom: 0.3rem;
 }
 @media (min-width: 1024px) {
   .page-title {
-    font-size: 2.1rem;
+    font-size: 2.35rem;
+  }
+}
+
+/* ---- Grouped lists (iOS Settings style) ----
+ * Rows inside a white group, separated by a hairline that starts at the
+ * row's text (inset), not at the edge. Put .inset-rows on the list. */
+.inset-rows > * + * {
+  background-image: linear-gradient(var(--color-border-light), var(--color-border-light));
+  background-size: calc(100% - var(--inset, 1.25rem)) 1px;
+  background-position: right top;
+  background-repeat: no-repeat;
+}
+
+/* The translucent material of bars that float over content. */
+.material {
+  background-color: color-mix(in srgb, var(--color-app-bg) 78%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+.material-card {
+  background-color: color-mix(in srgb, var(--color-card) 80%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* A sheet rises from the bottom on phones; on wider screens it settles in place. */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.sheet-in {
+  animation: sheet-up 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@media (min-width: 40rem) {
+  .sheet-in {
+    animation: scale-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+/* Room for the phone tab bar (and the home indicator) under the page; the bar
+ * only exists below lg. */
+@media (width < 64rem) {
+  .pb-tabbar {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
   }
 }
 

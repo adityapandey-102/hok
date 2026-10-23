@@ -8,6 +8,7 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 import { Icon } from "../../../components/ui/Icon";
 import { Pager } from "../../../components/ui/Pager";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
+import { Segmented } from "../../../components/ui/Segmented";
 import { todayKey } from "../../../lib/domain";
 import { usersApi } from "../../admin-users/api/usersApi";
 import { ACTIVITY_KINDS, activityApi, type ActivityFilterKind, type ActivityPage } from "../api/activityApi";
@@ -89,24 +90,15 @@ export function ActivityFeed({ defaultRange = "week", timeZone }: { defaultRange
       </div>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div role="tablist" aria-label="Kind of activity" className="flex flex-wrap gap-0.5 rounded-app border border-border bg-card p-0.5 shadow-app sm:inline-flex">
-          {ACTIVITY_KINDS.map((k) => (
-            <button
-              key={k}
-              role="tab"
-              aria-selected={kind === k}
-              onClick={() => {
-                setKind(k);
-                setPage(0);
-              }}
-              className={`rounded-app-sm px-3 py-2 text-[13px] font-medium whitespace-nowrap transition-colors sm:px-4 ${
-                kind === k ? "bg-ink text-on-ink" : "text-text-secondary hover:bg-accent-bg hover:text-text-primary"
-              }`}
-            >
-              {k === "all" ? "All" : KIND_LABELS[k]}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Kind of activity"
+          options={ACTIVITY_KINDS.map((k) => ({ id: k, label: k === "all" ? "All" : KIND_LABELS[k] }))}
+          value={kind}
+          onChange={(k) => {
+            setKind(k);
+            setPage(0);
+          }}
+        />
         <SearchSelect
           className="lg:ml-auto lg:w-64"
           aria-label="Filter by person"

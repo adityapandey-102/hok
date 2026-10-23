@@ -27,6 +27,8 @@ test("an editor's search only offers their own tasks", async ({ page }) => {
   await login(page, "meera.editor@hok.test");
   await page.getByRole("button", { name: /Search/ }).first().click();
   await page.getByRole("combobox", { name: /Search clients, events, tasks/ }).fill("the");
-  await expect(page.getByText("Tasks", { exact: true })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("Clients", { exact: true })).toHaveCount(0);
+  // Within the search window: the page around it (menu, tab bar) has its own "Tasks".
+  const results = page.getByRole("dialog");
+  await expect(results.getByText("Tasks", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(results.getByText("Clients", { exact: true })).toHaveCount(0);
 });

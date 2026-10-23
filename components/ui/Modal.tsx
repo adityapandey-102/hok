@@ -94,7 +94,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="animate-fade-in fixed inset-0 z-900 flex items-end justify-center bg-black/45 backdrop-blur-sm sm:items-center sm:p-6 print:hidden"
+      className="animate-fade-in fixed inset-0 z-900 flex items-end justify-center bg-black/40 sm:items-center sm:p-6 print:hidden"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -106,8 +106,10 @@ export function Modal({
         aria-labelledby={labelledBy}
         aria-describedby={describedBy}
         tabIndex={-1}
-        className={`animate-scale-in flex w-full flex-col overflow-hidden rounded-t-app-xl border border-border bg-card shadow-app-lg outline-none sm:rounded-app-xl ${panelClassName}`}
+        className={`sheet-in flex max-h-[92dvh] w-full flex-col overflow-y-auto rounded-t-app-xl bg-card pb-[env(safe-area-inset-bottom)] shadow-app-lg outline-none sm:max-h-[88vh] sm:rounded-app-xl dark:ring-1 dark:ring-white/8 ${panelClassName}`}
       >
+        {/* The grabber: on phones the dialog is a sheet from the bottom, as on iOS. */}
+        <div aria-hidden className="mx-auto mt-2 mb-1 h-1.5 w-9 shrink-0 rounded-full bg-accent-light sm:hidden" />
         {children}
       </div>
     </div>,

@@ -14,6 +14,7 @@ import {
 } from "../lib/commentStatus";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { Pager } from "../../../components/ui/Pager";
+import { Segmented } from "../../../components/ui/Segmented";
 import { Input } from "../../../components/ui/Field";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
@@ -124,28 +125,17 @@ export function CommentsPageClient({
       </header>
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div
-          role="tablist"
-          aria-label="Comment status"
-          className="grid grid-cols-4 gap-0.5 rounded-app border border-border bg-card p-0.5 shadow-app lg:inline-flex"
-        >
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={tab === t.key}
-              onClick={() => {
-                setTab(t.key);
-                setPage(0);
-              }}
-              className={`rounded-app-sm px-2 py-2 text-[13px] font-medium whitespace-nowrap transition-colors sm:px-4 ${
-                tab === t.key ? "bg-ink text-on-ink" : "text-text-secondary hover:bg-accent-bg hover:text-text-primary"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Comment status"
+          options={TABS.map((t) => ({ id: t.key, label: t.label }))}
+          value={tab}
+          onChange={(k) => {
+            setTab(k);
+            setPage(0);
+          }}
+          stretch
+          className="lg:w-auto"
+        />
         <div className="flex flex-col gap-3 sm:flex-row lg:ml-auto">
           <div className="relative sm:w-64">
             <Icon name="search" size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-text-muted" />
@@ -176,7 +166,7 @@ export function CommentsPageClient({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app">
+      <div className="overflow-hidden rounded-app-lg bg-card shadow-app">
         {loading ? (
           <ul className="divide-y divide-border-light" aria-busy="true" aria-label="Loading comments">
             {Array.from({ length: 5 }, (_, i) => (

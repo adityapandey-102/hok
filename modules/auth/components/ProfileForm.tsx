@@ -49,7 +49,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
     .toUpperCase();
   return (
     <Panel icon="user" title="Your details" subtitle="Shown to your team">
-      <form onSubmit={handleSubmit} className="px-5 pb-5">
+      <form onSubmit={handleSubmit} className="p-5">
         <div className="mb-5 flex items-center gap-3.5 rounded-app-lg bg-accent-bg p-3.5 ring-1 ring-border-light ring-inset">
           <span aria-hidden className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink font-serif text-base text-on-ink">
             {initials}

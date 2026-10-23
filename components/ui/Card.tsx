@@ -1,6 +1,10 @@
 import { Icon } from "./Icon";
 
-/** A panel: white paper (deep graphite in dark mode), a hairline border, a faint shadow. */
+/**
+ * A group: a white surface on the warm page (deep graphite in dark mode). It
+ * stands out by contrast and a hairline, the way grouped lists do on iOS --
+ * no heavy border or drop shadow (redesign 2026-10-23).
+ */
 export function Card({
   children,
   className = "",
@@ -21,7 +25,7 @@ export function Card({
   return (
     <Tag
       aria-label={regionLabel}
-      className={`rounded-app-lg border border-border bg-card shadow-app print:border-neutral-300 print:shadow-none ${
+      className={`rounded-app-lg bg-card shadow-app print:border print:border-neutral-300 print:shadow-none ${
         accent ? "card-accent-top" : ""
       } ${hover ? "lift hover:border-accent-light" : ""} ${className}`}
     >
@@ -38,19 +42,19 @@ export function Card({
 export const CARD_GRID_CELL = "border-t border-border-light first:border-t-0 md:odd:border-r md:nth-2:border-t-0";
 
 const TONES: Record<string, string> = {
-  purple: "bg-accent-bg text-text-secondary ring-border",
-  pink: "bg-accent-bg text-text-secondary ring-border",
-  blue: "bg-accent-bg text-text-secondary ring-border",
-  green: "bg-accent-bg text-text-secondary ring-border",
-  amber: "bg-gold-bg text-gold ring-gold/15",
-  gold: "bg-gold-bg text-gold ring-gold/15",
+  purple: "bg-accent-bg text-text-secondary",
+  pink: "bg-accent-bg text-text-secondary",
+  blue: "bg-accent-bg text-text-secondary",
+  green: "bg-accent-bg text-text-secondary",
+  amber: "bg-gold-bg text-gold",
+  gold: "bg-gold-bg text-gold",
 };
 
 /**
- * Panel heading: a graphite icon badge, the title in the display face, an
- * optional one-line subtitle and a right-aligned action. Badges stay neutral so
- * crimson keeps meaning "look here" (`amber`/`gold` = the crimson tint, for
- * the one panel that needs attention); colour for meaning is kept for statuses.
+ * Group heading: a small muted icon, the title, an optional one-line subtitle
+ * and a right-aligned action. Icons stay quiet so crimson keeps meaning "look
+ * here" (`amber`/`gold` = the crimson tint, for the one group that needs
+ * attention); colour for meaning is kept for statuses.
  *
  * When the action doesn't fit beside the title (a phone), it wraps to its own
  * line instead of squeezing the title; `wideAction` gives it that whole line
@@ -76,14 +80,11 @@ export function CardHeader({
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-3 border-b border-border-light px-5 py-3.5">
       <div className="flex min-w-0 grow items-center gap-3">
-        <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-app ring-1 ring-inset ${TONES[iconTone] ?? TONES.purple}`}
-          aria-hidden
-        >
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${TONES[iconTone] ?? TONES.purple}`} aria-hidden>
           {typeof icon === "string" ? <Icon emoji={icon} size={17} /> : icon}
         </div>
         <div className="min-w-0">
-          <div className="font-serif text-[15.5px] leading-snug text-text-primary">{title}</div>
+          <div className="text-[15px] leading-snug font-semibold text-text-primary">{title}</div>
           {subtitle && <div className="truncate text-xs text-text-muted">{subtitle}</div>}
         </div>
       </div>

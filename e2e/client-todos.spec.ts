@@ -35,11 +35,11 @@ test("a manager adds a to-do to a client, marks it done, finds it under Done, th
   // Mark it done: it leaves Open and shows up under Done (and All).
   await check.click();
   await expect(check).toHaveCount(0, { timeout: 15_000 });
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.getByRole("tab", { name: "Done", exact: true }).click();
   const reopen = page.getByRole("checkbox", { name: `Reopen ${title}` });
   await expect(reopen).toBeVisible({ timeout: 15_000 });
   await expect(reopen).toHaveAttribute("aria-checked", "true");
-  await page.getByRole("button", { name: "All", exact: true }).click();
+  await page.getByRole("tab", { name: "All", exact: true }).click();
   await expect(reopen).toBeVisible({ timeout: 15_000 });
 
   // Clean up: open it and delete it.

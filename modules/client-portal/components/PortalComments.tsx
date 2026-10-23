@@ -75,7 +75,7 @@ export function PortalComments({ token, zone, events }: { token: string; zone: s
 
   return (
     <Panel icon="message" title="Comments for your account manager" subtitle="Write here and your manager is notified straight away">
-      <div className="px-5 pb-5">
+      <div className="p-5">
         <form onSubmit={submit} className="flex flex-col gap-3 rounded-app-lg bg-accent-bg p-4 ring-1 ring-border-light ring-inset">
           <div>
             <FieldLabel htmlFor="portal-comment-event">About</FieldLabel>

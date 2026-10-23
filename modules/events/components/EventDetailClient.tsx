@@ -11,7 +11,7 @@ import {
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { eventsApi } from "../api/eventsApi";
-import { Button, ButtonLink } from "../../../components/ui/Button";
+import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Card } from "../../../components/ui/Card";
 import { Panel } from "../../../components/ui/Panel";
@@ -150,8 +150,14 @@ export function EventDetailClient({
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 basis-72">
+      <header className="flex flex-col gap-3">
+        <Link
+          href={`/app/clients/${event.clientId}`}
+          className="-ml-1 inline-flex w-fit max-w-full items-center gap-0.5 rounded-app-sm px-1 text-[15px] font-medium text-primary hover:opacity-75 focus-visible:ring-4 focus-visible:ring-ring/25 focus-visible:outline-none"
+        >
+          <Icon name="chevron-left" size={17} className="shrink-0" /> <span className="truncate">{event.clientName}</span>
+        </Link>
+        <div className="min-w-0">
           <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
             <h1 className="page-title break-words">{event.title}</h1>
             <span className="mt-2.5 lg:mt-3.5"><StatusPill label={EVENT_STATE_LABELS[event.state]} tone={EVENT_STATE_TONES[event.state]} /></span>
@@ -172,11 +178,6 @@ export function EventDetailClient({
               <span className="truncate">Template {event.templateName}</span>
             </li>
           </ul>
-        </div>
-        <div className="page-actions">
-          <ButtonLink href={`/app/clients/${event.clientId}`} variant="outline">
-            <Icon name="chevron-right" size={15} className="rotate-180" /> Back to client
-          </ButtonLink>
         </div>
       </header>
 
@@ -228,14 +229,14 @@ export function EventDetailClient({
             </div>
           </Card>
 
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-            <Panel icon="calendar" title="When and where" subtitle={`Viewed in ${viewerTimeZone}`} className="lg:col-span-7">
-              <dl className="divide-y divide-border-light border-t border-border-light">
+          <div className="grid grid-cols-1 items-start gap-x-6 gap-y-7 lg:grid-cols-12">
+            <Panel icon="calendar" title="When and where" subtitle={`Times in ${viewerTimeZone}`} className="lg:col-span-7">
+              <dl className="inset-rows">
                 <Row label="Starts" value={start.primary} extra={start.secondary} />
                 <Row label="Ends" value={end.primary} extra={end.secondary} />
-                <Row label="Location" value={event.location} />
-                <Row label="Team" value={event.team.length ? event.team.map((t) => t.fullName).join(", ") : null} />
-                <Row label="Description" value={event.description} />
+                {event.location && <Row label="Location" value={event.location} />}
+                {event.team.length > 0 && <Row label="Team" value={event.team.map((t) => t.fullName).join(", ")} />}
+                {event.description && <Row label="Description" value={event.description} />}
               </dl>
             </Panel>
 
@@ -334,12 +335,13 @@ export function EventDetailClient({
   );
 }
 
-function Row({ label, value, extra }: { label: string; value: string | null; extra?: string | null }) {
+/** A list row: label left, value right. Empty fields aren't drawn at all. */
+function Row({ label, value, extra }: { label: string; value: string; extra?: string | null }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 px-5 py-3 transition-colors hover:bg-accent-bg/60">
-      <dt className="shrink-0 text-xs text-text-muted">{label}</dt>
-      <dd className="min-w-0 text-right text-sm break-words text-text-primary">
-        {value || <span className="text-text-muted">—</span>}
+    <div className="flex items-baseline justify-between gap-4 px-5 py-3">
+      <dt className="shrink-0 text-[15px] text-text-primary">{label}</dt>
+      <dd className="min-w-0 text-right text-[15px] break-words text-text-secondary">
+        {value}
         {extra && <span className="block text-xs text-text-muted">{extra}</span>}
       </dd>
     </div>

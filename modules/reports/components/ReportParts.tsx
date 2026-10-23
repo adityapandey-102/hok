@@ -53,7 +53,7 @@ export interface Figure {
 /** Headline figures. `columns` is the grid's classes, chosen by the caller so every row is full. */
 export function FigureBoard({ label, figures, columns }: { label: string; figures: Figure[]; columns: string }) {
   return (
-    <section aria-label={label} className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app">
+    <section aria-label={label} className="overflow-hidden rounded-app-lg bg-card shadow-app">
       <div className={`stagger-in grid gap-px bg-border-light ${columns}`}>
         {figures.map((f) => {
           const tone = f.tone ?? "default";
@@ -95,7 +95,7 @@ export function SkeletonRows({ rows, className = "h-14" }: { rows: number; class
 /** A figure board's shape while loading, so the page doesn't jump when the numbers land. */
 export function SkeletonBoard({ cells, columns }: { cells: number; columns: string }) {
   return (
-    <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app" aria-hidden>
+    <div className="overflow-hidden rounded-app-lg bg-card shadow-app" aria-hidden>
       <div className={`grid gap-px bg-border-light ${columns}`}>
         {Array.from({ length: cells }, (_, i) => (
           <div key={i} className="bg-card px-5 pt-5 pb-4">

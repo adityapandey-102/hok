@@ -152,7 +152,7 @@ export function PortalTab({
         />
       }
     >
-      <div className="px-5 pb-5">
+      <div className="p-5">
         {archived && (
           <p className="mb-3 rounded-app bg-warning-bg p-3 text-sm text-warning-text">
             This client is archived, so archiving switched the portal link off. Unarchive the client first, then generate a new link.

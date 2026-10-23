@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ROLE_LABELS, type Profile } from "../../lib/domain";
-import { visibleNavSections } from "./nav-config";
+import { activeNavHref, visibleNavSections } from "./nav-config";
 import { BrandLockup, BrandMark } from "./BrandMark";
 import { Icon } from "../ui/Icon";
 import { CommentsBadge } from "../../modules/client-comments/components/CommentsBadge";
@@ -32,15 +32,7 @@ export function Sidebar({
   const pathname = usePathname();
   const router = useRouter();
   const sections = visibleNavSections(profile.role);
-  // Highlight only the MOST specific matching link: on /app/clients/new that's
-  // "New client", not also "Dashboard" (/app is a prefix of it).
-  // Pages without their own menu item belong to a section: an event lives under Clients.
-  const path = pathname?.startsWith("/app/events") ? "/app/clients" : (pathname ?? "");
-  // The most specific match wins; Dashboard (/app) only on /app itself.
-  const activeHref = sections
-    .flatMap((sec) => sec.items.map((i) => i.href))
-    .filter((href) => path === href || (href !== "/app" && path.startsWith(href + "/")))
-    .sort((x, y) => y.length - x.length)[0];
+  const activeHref = activeNavHref(sections, pathname ?? "");
 
   async function handleSignOut() {
     // While still signed in: this device must stop getting this person's notifications.
@@ -92,15 +84,14 @@ export function Sidebar({
                     title={item.label}
                     className={`group relative mb-0.5 flex items-center gap-3 rounded-app px-3 py-2 text-[13.5px] transition-colors duration-150 ${
                       rail ? "lg:max-xl:justify-center lg:max-xl:py-2.5" : ""
-                    } ${isActive ? "bg-white/8 font-medium text-white" : "text-white/60 hover:bg-white/5 hover:text-white"}`}
+                    } ${isActive ? "bg-white/10 font-medium text-white" : "text-white/65 hover:bg-white/6 hover:text-white"}`}
                   >
-                    {/* A crimson bar beside the current page. */}
-                    {isActive && <span className="absolute top-2 bottom-2 left-0 w-[3px] rounded-full bg-brand-on-dark" aria-hidden />}
+                    {/* The current page's icon fills in crimson, like a tinted selected symbol on macOS. */}
                     <Icon
                       emoji={item.icon}
-                      size={16}
-                      strokeWidth={1.5}
-                      className={isActive ? "text-brand-on-dark" : "text-white/45 group-hover:text-white/80"}
+                      size={18}
+                      filled={isActive}
+                      className={isActive ? "text-brand-on-dark" : "text-white/50 group-hover:text-white/85"}
                     />
                     <span className={rail ? "lg:max-xl:sr-only" : ""}>{item.label}</span>
                     {item.badge === "comments" && (

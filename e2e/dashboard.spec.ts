@@ -27,7 +27,7 @@ test("the admin's dashboard is the firm alone, with previews that link to full l
   for (const name of ["Tasks by status", "Overdue tasks", "This week", "Client comments", "Team workload"]) {
     await expect(region(page, name)).toBeVisible();
   }
-  await expect(page.getByRole("link", { name: /View the whole team/ })).toHaveAttribute("href", "/app/team");
+  await expect(page.getByRole("region", { name: "Team workload" }).getByRole("link", { name: /^See all \d+$/ })).toHaveAttribute("href", "/app/team");
   // The Admin's own clients and tasks are on their own page.
   await expect(heading(page, "My clients")).toHaveCount(0);
   await expect(heading(page, "My tasks")).toHaveCount(0);

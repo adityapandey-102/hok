@@ -4,21 +4,22 @@ import Link from "next/link";
 type Variant = "primary" | "outline" | "ghost" | "danger" | "gold";
 
 /**
- * Ink for the main action (white in dark mode), crimson ("gold", the old name)
- * for the rare brand highlight, hairline for the rest. Solid fills use
- * `text-on-ink`, which flips with the theme so contrast holds in both.
+ * Apple-style buttons (redesign 2026-10-23): flat fills, no lift, a press that
+ * gives way under the finger. Ink for the main action (white in dark mode);
+ * `outline` is the soft grey "secondary" fill; `danger` is solid red for a
+ * confirmed destructive step; crimson ("gold", the old name) for the rare
+ * brand highlight. Solid fills use `text-on-ink`, which flips with the theme.
  */
 const VARIANT_CLASSES: Record<Variant, string> = {
-  primary:
-    "bg-ink text-on-ink shadow-primary hover:-translate-y-px hover:bg-ink-hover hover:shadow-app-lg disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none",
-  gold: "gradient-primary text-white shadow-gold hover:-translate-y-px hover:brightness-110 disabled:translate-y-0 disabled:opacity-60 disabled:shadow-none",
-  outline: "border border-border bg-card text-text-primary hover:border-accent-light hover:bg-accent-bg",
-  ghost: "text-text-secondary hover:bg-accent-bg hover:text-text-primary",
-  danger: "bg-error text-on-ink shadow-app hover:brightness-110 disabled:opacity-60 disabled:shadow-none",
+  primary: "bg-ink text-on-ink hover:bg-ink-hover disabled:opacity-40",
+  gold: "bg-primary text-white hover:bg-primary-dark disabled:opacity-50",
+  outline: "bg-accent-bg text-text-primary hover:bg-accent-light/70 disabled:opacity-50",
+  ghost: "text-text-secondary hover:bg-accent-bg hover:text-text-primary disabled:opacity-50",
+  danger: "bg-error text-white hover:brightness-110 disabled:opacity-50",
 };
 
 const BASE =
-  "inline-flex items-center justify-center gap-2 rounded-app px-4 py-2.5 text-sm font-semibold transition-all duration-200 outline-none active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg disabled:cursor-not-allowed disabled:active:scale-100";
+  "inline-flex min-h-10 items-center justify-center gap-2 rounded-app px-4 py-2 text-[15px] font-semibold transition-[background-color,transform,opacity] duration-150 outline-none select-none active:scale-[0.97] focus-visible:ring-4 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:active:scale-100 sm:text-sm";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;

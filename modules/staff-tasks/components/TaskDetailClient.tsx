@@ -172,7 +172,7 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         <div className="flex min-w-0 flex-col gap-5 lg:col-span-7">
           <Panel icon="clipboard" title="The brief" subtitle={`Created ${formatInZone(task.createdAt, zone)}`}>
-            <div className="flex flex-col gap-3.5 px-5 pb-5">
+            <div className="flex flex-col gap-3.5 p-5">
               <Row label="Due">
                 <DueLabel dueAt={task.dueAt} status={task.status} zone={zone} />
               </Row>
@@ -198,7 +198,7 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
 
           {hasBrief && (
             <Panel icon="palette" title="Editor brief" subtitle="Raw files, reference and script">
-              <div className="flex flex-col gap-3.5 px-5 pb-5">
+              <div className="flex flex-col gap-3.5 p-5">
                 {task.rawFilesUrl && (
                   <Row label="Raw files">
                     <ExternalLink href={task.rawFilesUrl}>Open the Drive folder</ExternalLink>
@@ -223,7 +223,7 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
         <div className="flex min-w-0 flex-col gap-5 lg:col-span-5">
           {canWork && (
             <Panel icon="check-circle" title="Update" subtitle="Change the status or add a comment">
-              <div className="flex flex-col gap-3 px-5 pb-5">
+              <div className="flex flex-col gap-3 p-5">
                 <div>
                   <FieldLabel htmlFor="task-comment">Comment (optional with a status change)</FieldLabel>
                   <Textarea id="task-comment" rows={3} maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="What's the update?" />

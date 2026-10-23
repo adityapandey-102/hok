@@ -54,7 +54,7 @@ test("a manager creates and edits a client; another manager cannot see it", asyn
   await expect(rohan.getByRole("heading", { name })).toBeVisible({ timeout: 30_000 });
   const clientUrl = rohan.url();
   expect(clientUrl).toMatch(/\/app\/clients\/[0-9a-f-]{36}$/);
-  for (const shown of ["Priya Shah", "+91 98200 55555", "Dev Mehta", "dev@example.com", "+971 4 555 0000", "https://e2e-blog.example.com", "@e2e_main", "@e2e_store"]) {
+  for (const shown of ["Priya Shah", "+91 98200 55555", "Dev Mehta", "dev@example.com", "+971 4 555 0000", "e2e-blog.example.com", "@e2e_main", "@e2e_store"]) {
     await expect(rohan.getByText(shown, { exact: true }).first(), shown).toBeVisible();
   }
   await expect(rohan.getByText(/Dubai/).first()).toBeVisible();

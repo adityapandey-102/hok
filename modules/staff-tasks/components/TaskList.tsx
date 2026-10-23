@@ -65,7 +65,7 @@ export function TaskList({
   }, [filterKey, page, reloadKey, retry]);
 
   return (
-    <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app">
+    <div className="overflow-hidden rounded-app-lg bg-card shadow-app">
       {loading ? (
         <ul className="divide-y divide-border-light" aria-busy="true" aria-label="Loading tasks">
           {Array.from({ length: 6 }, (_, i) => (

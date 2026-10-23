@@ -29,6 +29,7 @@ import { Modal } from "../../../components/ui/Modal";
 import { ButtonLink } from "../../../components/ui/Button";
 import { clientsApi } from "../../clients/api/clientsApi";
 import { Button } from "../../../components/ui/Button";
+import { Segmented } from "../../../components/ui/Segmented";
 import { Icon } from "../../../components/ui/Icon";
 import { Select } from "../../../components/ui/Select";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
@@ -154,19 +155,7 @@ export function CalendarView({
             {title}
           </h2>
         </div>
-        <div role="group" aria-label="Calendar view" className="inline-flex rounded-app border border-border bg-card p-0.5 shadow-app max-sm:w-full">
-          {VIEWS.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              aria-pressed={view === v.id}
-              onClick={() => setChosenView(v.id)}
-              className={`min-h-9 rounded-[calc(var(--radius-app)-2px)] px-3.5 py-1.5 text-sm font-medium transition-colors max-sm:flex-1 ${view === v.id ? "bg-ink text-on-ink" : "text-text-secondary hover:bg-accent-bg"}`}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Calendar view" options={VIEWS} value={view} onChange={setChosenView} className="max-sm:w-full" stretch />
       </div>
 
       <div className="mb-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
@@ -339,7 +328,7 @@ function MonthGrid({
 }) {
   const weeks = monthGrid(cursor);
   return (
-    <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app" role="grid" aria-label="Month">
+    <div className="overflow-hidden rounded-app-lg bg-card shadow-app" role="grid" aria-label="Month">
       <div className="grid grid-cols-7 border-b border-border bg-accent-bg text-center text-xs font-medium text-text-muted" role="row">
         {WEEKDAYS.map((d, i) => (
           <div key={d} className={`py-2.5 ${i >= 5 ? "text-text-muted/80" : "text-text-secondary"}`} role="columnheader">
@@ -460,7 +449,7 @@ function ListView({ range, items, zone, loading, onOpenPersonal }: { range: { fi
   for (let d = range.first; d <= range.last; d = addDays(d, 1)) days.push(d);
   const groups = days.map((d) => ({ day: d, list: itemsOnDay(items, d, zone) })).filter((g) => g.list.length > 0);
   return (
-    <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app" aria-label="Agenda">
+    <div className="overflow-hidden rounded-app-lg bg-card shadow-app" aria-label="Agenda">
       {groups.length === 0 ? (
         loading ? (
         <div className="space-y-4 p-5" aria-busy="true" aria-label="Loading calendar">

@@ -1,14 +1,16 @@
 import Link from "next/link";
-import { Card } from "./Card";
-import { Icon, type IconName } from "./Icon";
+import type { IconName } from "./Icon";
 
 /**
- * A panel with a header and an optional footer link: icon, title and a one-line subtitle, the body, and a
- * footer link to the full, paged list ("View all 12 …") -- the dashboard only
- * ever shows a preview.
+ * A section, the way Apple apps group content (redesign 2026-10-23): a plain
+ * heading ABOVE a white group -- title, an optional one-line note, and on the
+ * right an optional action plus the "See all" link to the full, paged list
+ * (the dashboard only ever shows a preview). No icon badges or footer bars;
+ * the content is the visual.
+ *
+ * \`icon\` is still accepted from older call sites but no longer drawn.
  */
 export function Panel({
-  icon,
   title,
   subtitle,
   action,
@@ -16,7 +18,7 @@ export function Panel({
   className = "",
   children,
 }: {
-  icon: IconName;
+  icon?: IconName;
   title: string;
   subtitle?: string;
   action?: React.ReactNode;
@@ -25,27 +27,22 @@ export function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <Card regionLabel={title} className={`flex flex-col ${className}`}>
-      <div className="flex items-center gap-3 px-5 pt-4 pb-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-app bg-accent-bg text-text-secondary ring-1 ring-border ring-inset">
-          <Icon name={icon} size={17} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="font-serif text-[15.5px] leading-snug text-text-primary">{title}</h3>
-          {subtitle && <p className="truncate text-xs text-text-muted">{subtitle}</p>}
+    <section aria-label={title} className={`flex min-w-0 flex-col ${className}`}>
+      <div className="flex items-end justify-between gap-3 px-1 pb-2">
+        <div className="min-w-0">
+          <h3 className="text-[17px] leading-snug font-semibold tracking-[-0.01em] text-text-primary">{title}</h3>
+          {subtitle && <p className="truncate text-[13px] text-text-muted">{subtitle}</p>}
         </div>
-        {action}
+        <div className="flex shrink-0 items-center gap-3">
+          {action}
+          {footer && (
+            <Link href={footer.href} className="rounded-app-sm text-[14px] font-medium text-primary hover:underline focus-visible:ring-4 focus-visible:ring-ring/25 focus-visible:outline-none">
+              {footer.label}
+            </Link>
+          )}
+        </div>
       </div>
-      <div className="flex-1">{children}</div>
-      {footer && (
-        <Link
-          href={footer.href}
-          className="group flex items-center justify-between gap-2 border-t border-border-light px-5 py-3 text-[13px] font-medium text-text-secondary transition-colors hover:bg-accent-bg hover:text-text-primary"
-        >
-          {footer.label}
-          <Icon name="chevron-right" size={15} className="transition-transform duration-200 group-hover:translate-x-0.5" />
-        </Link>
-      )}
-    </Card>
+      <div className="flex-1 overflow-hidden rounded-app-lg bg-card shadow-app print:border print:border-neutral-300">{children}</div>
+    </section>
   );
 }

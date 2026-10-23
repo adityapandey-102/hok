@@ -139,7 +139,7 @@ export function UserDetailClient({ initialUser, currentUserId }: { initialUser: 
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Panel icon="user" title="Account info" subtitle="Identity and activity">
-          <div className="px-5 pb-5">
+          <div className="p-5">
             <form onSubmit={handleSaveDetails} className="flex flex-col gap-3.5">
               <div>
                 <FieldLabel htmlFor="ud-name">Full name</FieldLabel>
@@ -169,7 +169,7 @@ export function UserDetailClient({ initialUser, currentUserId }: { initialUser: 
         </Panel>
 
         <Panel icon="shield" title="Account actions" subtitle="Role, credentials, and access">
-          <div className="flex flex-col gap-4 px-5 pb-5">
+          <div className="flex flex-col gap-4 p-5">
             <div>
               <FieldLabel htmlFor="ud-role">Role</FieldLabel>
               <Select id="ud-role" value={user.role} disabled={!user.active || busy || isSelf} onChange={(e) => handleRoleChange(e.target.value as Role)}>

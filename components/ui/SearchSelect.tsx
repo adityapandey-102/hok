@@ -5,6 +5,7 @@ import { SEARCH_SELECT_LIMIT, type SelectOption } from "../../lib/api/options";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../lib/hooks/useDebouncedValue";
 import { clampActive, moveActive } from "./searchSelectHelpers";
 import { Icon } from "./Icon";
+import { FIELD } from "./Field";
 
 export interface SearchSelectProps<T = unknown> {
   /** The chosen id, or null for "nothing / all". */
@@ -174,10 +175,10 @@ export function SearchSelect<T = unknown>({
           setActiveIndex(0);
         }}
         onKeyDown={onKeyDown}
-        className={`w-full truncate rounded-app-sm border border-border bg-card py-2.5 pl-3 text-sm text-text-primary outline-none transition-all placeholder:text-text-muted hover:border-accent-light focus:border-primary/60 focus:ring-3 focus:ring-primary/8 disabled:cursor-not-allowed disabled:opacity-60 ${showClear ? "pr-14" : "pr-8"}`}
+        className={`${FIELD} truncate ${showClear ? "pr-14" : "pr-8"}`}
       />
       <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-text-muted">
-        <Icon name="chevron-right" size={14} className="rotate-90" />
+        <Icon name="chevron-down" size={14} />
       </span>
       {showClear && (
         <button

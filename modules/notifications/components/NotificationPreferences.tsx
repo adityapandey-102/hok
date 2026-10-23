@@ -51,7 +51,7 @@ export function NotificationPreferences() {
 
   return (
     <Panel icon="bell" title="Notifications" subtitle="Choose what reaches you, in the bell and as push.">
-      <div className="space-y-4 px-5 pb-5">
+      <div className="space-y-4 p-5">
         <PushPrompt />
         {error ? (
           <p className="text-sm text-error">{error}</p>

@@ -57,7 +57,7 @@ export function StatusBreakdown({ counts }: { counts: TaskStatusCounts }) {
   const donePct = percentOf(counts.done, total);
   if (total === 0) return <EmptyState compact icon="clipboard" title="No tasks yet" description="Tasks you assign will show here." />;
   return (
-    <div className="flex flex-col gap-5 px-5 pb-5">
+    <div className="flex flex-col gap-5 p-5">
       <div className="flex items-end justify-between gap-4">
         <p>
           <span className="figure block text-[34px] leading-none text-text-primary">
@@ -306,7 +306,7 @@ export function StageBars({ groups }: { groups: StageGroup[] }) {
   const widths = barPercents(groups.map((g) => g.count));
   const top = Math.max(...groups.map((g) => g.count));
   return (
-    <ul className="flex flex-col gap-3 px-5 pb-5">
+    <ul className="flex flex-col gap-3 p-5">
       {groups.map((g, i) => (
         <li key={g.stageName} className="flex items-center gap-3">
           <span className="w-28 shrink-0 truncate text-[13px] text-text-secondary" title={g.stageName}>

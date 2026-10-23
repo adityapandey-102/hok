@@ -106,7 +106,7 @@ function AdminView({ firm, zone, today }: { firm: FirmSection; zone: string; tod
       <HeroBand cells={cells} label="The firm at a glance" />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <Panel icon="bar-chart" title="Tasks by status" subtitle="Every staff task, firm-wide" className="lg:col-span-5" footer={{ href: "/app/tasks", label: "Open the task board" }}>
+        <Panel icon="bar-chart" title="Tasks by status" subtitle="Every staff task, firm-wide" className="lg:col-span-5" footer={{ href: "/app/tasks", label: "Task board" }}>
           <StatusBreakdown counts={firm.tasksByStatus} />
         </Panel>
         <Panel
@@ -114,14 +114,14 @@ function AdminView({ firm, zone, today }: { firm: FirmSection; zone: string; tod
           title="Overdue tasks"
           subtitle={t.overdueTasks > 0 ? "Past their due date, oldest first" : "Nothing is late"}
           className="lg:col-span-7"
-          footer={t.overdueTasks > firm.overdueTasks.length ? { href: "/app/tasks?due=overdue", label: `View all ${t.overdueTasks} overdue tasks` } : undefined}
+          footer={t.overdueTasks > firm.overdueTasks.length ? { href: "/app/tasks?due=overdue", label: `See all ${t.overdueTasks}` } : undefined}
         >
           <TaskRows tasks={firm.overdueTasks} zone={zone} showAssignee empty="No overdue tasks" />
         </Panel>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <Panel icon="calendar" title="This week" subtitle={`${plural(t.weekEvents, "event")} across all clients`} className="lg:col-span-7" footer={{ href: "/app/calendar", label: "Open the calendar" }}>
+        <Panel icon="calendar" title="This week" subtitle={`${plural(t.weekEvents, "event")} across all clients`} className="lg:col-span-7" footer={{ href: "/app/calendar", label: "Calendar" }}>
           <WeekStrip today={today} events={firm.week} zone={zone} />
           <EventRows events={week} zone={zone} empty="Nothing scheduled this week" />
         </Panel>
@@ -130,7 +130,7 @@ function AdminView({ firm, zone, today }: { firm: FirmSection; zone: string; tod
           title="Client comments"
           subtitle="Waiting for a reply, newest first"
           className="lg:col-span-5"
-          footer={{ href: "/app/comments", label: t.unresolvedComments > 0 ? `Open the inbox (${t.unresolvedComments})` : "Open the inbox" }}
+          footer={{ href: "/app/comments", label: "Inbox" }}
         >
           <CommentRows comments={firm.latestComments} empty="Every comment is answered" />
         </Panel>
@@ -140,7 +140,7 @@ function AdminView({ firm, zone, today }: { firm: FirmSection; zone: string; tod
         icon="users"
         title="Team workload"
         subtitle="The busiest people right now: open work, with the overdue part in red"
-        footer={{ href: "/app/team", label: `View the whole team (${t.teamSize})` }}
+        footer={{ href: "/app/team", label: `See all ${t.teamSize}` }}
       >
         <TeamRows rows={firm.team} />
       </Panel>
@@ -175,15 +175,15 @@ function MyClients({ clients, zone, today, titled = true }: { clients: ClientsSe
     <>
       {titled && <h2 className="mt-2 font-serif text-[19px] text-text-primary">My clients</h2>}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <Panel icon="calendar" title="This week" subtitle={plural(clients.weekEventCount, "event")} className="lg:col-span-7" footer={{ href: "/app/calendar", label: "Open my calendar" }}>
+        <Panel icon="calendar" title="This week" subtitle={plural(clients.weekEventCount, "event")} className="lg:col-span-7" footer={{ href: "/app/calendar", label: "Calendar" }}>
           <WeekStrip today={today} events={[...clients.today, ...clients.upcoming]} zone={zone} />
           <EventRows events={week} zone={zone} empty="Nothing scheduled this week" />
         </Panel>
-        <Panel icon="layers" title="Events by stage" subtitle="Where your active events stand" className="lg:col-span-5" footer={{ href: "/app/clients", label: "Open my clients" }}>
+        <Panel icon="layers" title="Events by stage" subtitle="Where your active events stand" className="lg:col-span-5" footer={{ href: "/app/clients", label: "My clients" }}>
           <StageBars groups={clients.byStage} />
         </Panel>
       </div>
-      <Panel icon="message" title="Client comments" subtitle="Waiting for your reply" footer={{ href: "/app/comments", label: "Open the inbox" }}>
+      <Panel icon="message" title="Client comments" subtitle="Waiting for your reply" footer={{ href: "/app/comments", label: "Inbox" }}>
         <CommentRows comments={clients.latestComments} empty="Every comment is answered" />
       </Panel>
     </>

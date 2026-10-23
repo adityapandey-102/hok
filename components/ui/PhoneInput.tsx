@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { joinPhone, phoneCountries, splitPhone } from "../../lib/domain";
 import { Input } from "./Field";
 import { Select } from "./Select";
@@ -29,24 +29,37 @@ export function PhoneInput({
   const [iso, setIso] = useState(start.iso);
   const [local, setLocal] = useState(start.local);
   const label = ariaLabel ?? "Phone";
+  // Country names come from the runtime's own database (Intl.DisplayNames), which
+  // can word or order them differently on the server and in the browser. Until
+  // the page is interactive both render only the chosen code, so they match.
+  const inBrowser = useSyncExternalStore(subscribeNothing, () => true, () => false);
+  const countries = inBrowser ? phoneCountries() : phoneCountries().filter((c) => c.iso === iso);
 
   return (
     <div className="flex min-w-0 gap-1.5">
-      <Select
-        aria-label={`${label} country code`}
-        value={iso}
-        onChange={(e) => {
-          setIso(e.target.value);
-          onChange(joinPhone(e.target.value, local));
-        }}
-        className="w-24! shrink-0 truncate px-2!"
-      >
-        {phoneCountries().map((c) => (
-          <option key={c.iso} value={c.iso}>
-            +{c.code} {c.name}
-          </option>
-        ))}
-      </Select>
+      {/* Closed, the picker shows just "+971"; open, the list names each country.
+          The native select stays (keyboard, screen readers, phone pickers); its
+          own text is hidden behind the short label. */}
+      <div className="relative w-[5.5rem] shrink-0">
+        <Select
+          aria-label={`${label} country code`}
+          value={iso}
+          onChange={(e) => {
+            setIso(e.target.value);
+            onChange(joinPhone(e.target.value, local));
+          }}
+          className="pr-6! pl-3! text-transparent!"
+        >
+          {countries.map((c) => (
+            <option key={c.iso} value={c.iso} className="text-text-primary">
+              {inBrowser ? `+${c.code} ${c.name}` : `+${c.code}`}
+            </option>
+          ))}
+        </Select>
+        <span aria-hidden className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[15px] text-text-primary sm:text-sm">
+          +{phoneCountries().find((c) => c.iso === iso)?.code}
+        </span>
+      </div>
       <Input
         id={id}
         aria-label={label}
@@ -64,3 +77,5 @@ export function PhoneInput({
     </div>
   );
 }
+
+const subscribeNothing = () => () => {};

@@ -19,6 +19,8 @@ import { TaskList } from "./TaskList";
 import { TaskBoard } from "./TaskBoard";
 import { TaskFormModal } from "./TaskFormModal";
 import { Button } from "../../../components/ui/Button";
+import { Segmented } from "../../../components/ui/Segmented";
+import { FilterToggle } from "../../../components/ui/FilterToggle";
 import { Icon } from "../../../components/ui/Icon";
 import { Input } from "../../../components/ui/Field";
 import { Select } from "../../../components/ui/Select";
@@ -99,22 +101,17 @@ export function TasksPageClient({
         </div>
         {isAdmin && (
           <div className="page-actions items-center">
-            <div role="group" aria-label="View" className="inline-flex rounded-app border border-border bg-card p-0.5 shadow-app max-sm:w-full">
-              {(["list", "board"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  aria-pressed={view === v}
-                  onClick={() => chooseView(v)}
-                  className={`inline-flex items-center justify-center gap-1.5 rounded-app-sm px-3.5 py-2 text-sm font-medium transition-colors max-sm:flex-1 ${
-                    view === v ? "bg-ink text-on-ink" : "text-text-secondary hover:bg-accent-bg hover:text-text-primary"
-                  }`}
-                >
-                  <Icon name={v === "list" ? "list" : "columns"} size={15} />
-                  {v === "list" ? "List" : "Board"}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label="View"
+              value={view}
+              onChange={chooseView}
+              options={[
+                { id: "list", label: "List", icon: "list" },
+                { id: "board", label: "Board", icon: "columns" },
+              ]}
+              className="max-sm:w-full"
+              stretch
+            />
             <Button onClick={() => setFormOpen(true)}>
               <Icon name="plus" size={16} /> New task
             </Button>
@@ -122,7 +119,7 @@ export function TasksPageClient({
         )}
       </header>
 
-      <div className="mb-4 grid grid-cols-1 gap-3 rounded-app-lg border border-border bg-card p-3 shadow-app sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <div className="relative sm:col-span-2">
           <Icon name="search" size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-text-muted" />
           <Input
@@ -133,6 +130,7 @@ export function TasksPageClient({
             onChange={(e) => update("search", e.target.value)}
           />
         </div>
+        <FilterToggle active={[!board && filters.status !== "open", filters.priority, filters.due, filters.assigneeId, filters.role].filter(Boolean).length}>
         {!board && (
           <Select aria-label="Filter by status" value={filters.status} onChange={(e) => update("status", e.target.value as TaskFilterState["status"])}>
             <option value="open">Open tasks</option>
@@ -179,6 +177,7 @@ export function TasksPageClient({
             </Select>
           </>
         )}
+        </FilterToggle>
       </div>
 
       {board ? (

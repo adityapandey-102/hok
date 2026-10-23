@@ -16,6 +16,7 @@ import { Icon } from "../../../components/ui/Icon";
 import { Input } from "../../../components/ui/Field";
 import { Select } from "../../../components/ui/Select";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
+import { FilterToggle } from "../../../components/ui/FilterToggle";
 import { Pager } from "../../../components/ui/Pager";
 import { StatusPill, type PillTone } from "../../../components/ui/StatusPill";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -113,7 +114,7 @@ export function ClientsListClient({ isAdmin }: { isAdmin: boolean }) {
           ) : undefined
         }
       >
-        <div className="flex flex-col gap-2 border-y border-border-light bg-accent-bg/40 px-4 py-3 sm:flex-row sm:flex-wrap sm:px-5">
+        <div className="flex flex-col gap-2 border-b border-border-light px-4 py-3 sm:flex-row sm:flex-wrap sm:px-5">
           <Input
             className="sm:max-w-xs sm:flex-1"
             placeholder="Search by business, contact or industry"
@@ -124,6 +125,7 @@ export function ClientsListClient({ isAdmin }: { isAdmin: boolean }) {
               setPage(0);
             }}
           />
+          <FilterToggle active={[status, ownerId].filter(Boolean).length}>
           <Select
             className="sm:w-auto"
             aria-label="Filter by status"
@@ -154,6 +156,7 @@ export function ClientsListClient({ isAdmin }: { isAdmin: boolean }) {
               }}
             />
           )}
+          </FilterToggle>
         </div>
 
         {loading ? (

@@ -119,7 +119,7 @@ export function TemplatesClient() {
         />
       </div>
 
-      <div className="overflow-hidden rounded-app-lg border border-border bg-card shadow-app">
+      <div className="overflow-hidden rounded-app-lg bg-card shadow-app">
         {loading ? (
           <ul className="divide-y divide-border-light" aria-busy="true" aria-label="Loading templates">
             {Array.from({ length: 4 }, (_, i) => (

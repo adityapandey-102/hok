@@ -13,13 +13,15 @@ import {
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { clientsApi, type CreateClientPayload, type UpdateClientPayload } from "../api/clientsApi";
-import { Button, ButtonLink } from "../../../components/ui/Button";
+import Link from "next/link";
+import { Button } from "../../../components/ui/Button";
 import { Icon, type IconName } from "../../../components/ui/Icon";
 import { Panel } from "../../../components/ui/Panel";
 import { FieldLabel } from "../../../components/ui/Field";
 import { Modal } from "../../../components/ui/Modal";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { StatusPill } from "../../../components/ui/StatusPill";
+import { Segmented, type SegmentOption } from "../../../components/ui/Segmented";
 import { useToast } from "../../../components/ui/Toast";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
 import { ClientForm } from "./ClientForm";
@@ -33,13 +35,13 @@ import { ClientAvatar } from "./ClientAvatar";
 
 /** A tab's text is its id (capitalised by CSS) unless it has a `label` (shown as written). */
 const TABS = [
-  { id: "overview", icon: "home" },
-  { id: "events", icon: "layers" },
-  { id: "calendar", icon: "calendar" },
+  { id: "overview", icon: "home", label: "Overview" },
+  { id: "events", icon: "layers", label: "Events" },
+  { id: "calendar", icon: "calendar", label: "Calendar" },
   { id: "todos", icon: "check-circle", label: "To-dos" },
-  { id: "assets", icon: "image" },
-  { id: "portal", icon: "share" },
-] as const satisfies readonly { id: string; icon: IconName; label?: string }[];
+  { id: "assets", icon: "image", label: "Assets" },
+  { id: "portal", icon: "share", label: "Portal" },
+] as const satisfies readonly SegmentOption<string>[];
 type TabId = (typeof TABS)[number]["id"];
 
 /** True for a tab id this page has (the `?tab=` link parameter). */
@@ -77,6 +79,7 @@ export function ClientWorkspaceClient({
   const [teamOpen, setTeamOpen] = useState(false);
 
   const archived = client.status === "archived";
+  const hasContact = client.contacts.length + client.phones.length + client.websites.length > 0 || !!client.email || !!client.address;
 
   async function reload() {
     try {
@@ -156,29 +159,41 @@ export function ClientWorkspaceClient({
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5">
-      <section aria-label="Client" className="relative overflow-hidden rounded-app-xl border border-border bg-card shadow-app">
-        <div aria-hidden className="h-1.5 bg-ink" />
-        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:gap-5 sm:p-6">
+      <header aria-label="Client" className="flex flex-col gap-4">
+        <Link
+          href="/app/clients"
+          className="-ml-1 inline-flex w-fit items-center gap-0.5 rounded-app-sm px-1 text-[15px] font-medium text-primary hover:opacity-75 focus-visible:ring-4 focus-visible:ring-ring/25 focus-visible:outline-none"
+        >
+          <Icon name="chevron-left" size={17} /> Clients
+        </Link>
+        <div className="flex items-start gap-4 sm:gap-5">
           <ClientAvatar name={client.businessName} logoUrl={client.logoUrl} size="lg" />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
-              <h1 className="page-title break-words">{client.businessName}</h1>
-              <span className="mt-2.5 lg:mt-3.5"><StatusPill label={CLIENT_STATUS_LABELS[client.status]} tone={STATUS_TONES[client.status]} /></span>
-            </div>
-            <ul className="mt-1 flex flex-wrap gap-x-5 gap-y-1.5 text-[13px] text-text-secondary">
+            <h1 className="page-title break-words">{client.businessName}</h1>
+            <ul className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13.5px] text-text-secondary">
+              <li>
+                <StatusPill label={CLIENT_STATUS_LABELS[client.status]} tone={STATUS_TONES[client.status]} />
+              </li>
               {facts.map((f) => (
                 <li key={f.text} className="flex min-w-0 items-center gap-1.5">
-                  <Icon name={f.icon} size={14} className="shrink-0 text-text-muted" />
+                  <Icon name={f.icon} size={15} className="shrink-0 text-text-muted" />
                   <span className="truncate">{f.text}</span>
                 </li>
               ))}
             </ul>
           </div>
-          <ButtonLink href="/app/clients" variant="outline" className="self-start max-sm:w-full">
-            <Icon name="chevron-right" size={15} className="rotate-180" /> All clients
-          </ButtonLink>
+          {!archived && !editing && (
+            <Button variant="outline" className="shrink-0 max-sm:hidden" onClick={() => setEditing(true)}>
+              <Icon name="edit" size={17} /> Edit client
+            </Button>
+          )}
         </div>
-      </section>
+        {!archived && !editing && (
+          <Button variant="outline" className="sm:hidden" onClick={() => setEditing(true)}>
+            <Icon name="edit" size={17} /> Edit client
+          </Button>
+        )}
+      </header>
 
       {conflict && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-app border border-error/30 bg-error-bg p-3 text-sm text-error">
@@ -195,24 +210,7 @@ export function ClientWorkspaceClient({
         </div>
       )}
 
-      <div role="tablist" aria-label="Client workspace" className="-mb-1 flex max-w-full gap-1 overflow-x-auto border-b border-border [scrollbar-width:none]">
-        {TABS.map((t) => {
-          const { id, icon } = t;
-          const label = "label" in t ? t.label : undefined;
-          return (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            onClick={() => setTab(id)}
-            className={`-mb-px flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-medium whitespace-nowrap capitalize transition-colors sm:px-4 ${tab === id ? "border-primary text-text-primary" : "border-transparent text-text-muted hover:text-text-primary"}`}
-          >
-            <Icon name={icon} size={15} className={tab === id ? "text-primary" : ""} />
-            {label ? <span className="normal-case">{label}</span> : id}
-          </button>
-          );
-        })}
-      </div>
+      <Segmented options={TABS} value={tab} onChange={setTab} label="Client workspace" />
 
       <div key={tab} className="animate-fade-in">
         {tab === "events" && <EventsTab clientId={client.id} viewerTimeZone={viewerTimeZone} readOnly={archived} />}
@@ -232,110 +230,103 @@ export function ClientWorkspaceClient({
         {tab !== "overview" ? null : editing && !archived ? (
           <ClientForm client={client} submitLabel="Save changes" onSubmit={handleSave} onCancel={() => setEditing(false)} />
         ) : (
-          <div className="flex flex-col gap-5">
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              <Panel icon="user" title="Contact" subtitle="Who to talk to">
-                <dl className="divide-y divide-border-light border-t border-border-light">
-                  {client.contacts.map((c, i) => (
-                    <div key={i} className="flex items-baseline justify-between gap-4 px-5 py-3 transition-colors hover:bg-accent-bg/60">
-                      <dt className="shrink-0 text-sm font-medium text-text-primary">{c.name}</dt>
-                      <dd className="flex min-w-0 flex-col items-end text-right text-sm break-words text-text-secondary">
-                        {c.phone && (
-                          <a href={`tel:${c.phone}`} className="underline-offset-2 hover:text-primary hover:underline">
-                            {c.phone}
-                          </a>
-                        )}
-                        {c.email && (
-                          <a href={`mailto:${c.email}`} className="underline-offset-2 hover:text-primary hover:underline">
-                            {c.email}
-                          </a>
-                        )}
-                        {!c.phone && !c.email && <span className="text-text-muted">No phone or email</span>}
-                      </dd>
-                    </div>
-                  ))}
-                  {client.contacts.length === 0 && <Row label="Contact people" value={null} />}
-                  {(client.phones.length ? client.phones : [null]).map((p, i) => (
-                    <Row key={`p${i}`} label={i === 0 ? "Phone" : ""} value={p} href={p ? `tel:${p}` : undefined} />
-                  ))}
-                  <Row label="Email" value={client.email} href={client.email ? `mailto:${client.email}` : undefined} />
-                  {(client.websites.length ? client.websites : [null]).map((w, i) => (
-                    <Row key={`w${i}`} label={i === 0 ? "Website" : ""} value={w} href={w ?? undefined} external />
-                  ))}
-                  <Row label="Address" value={client.address} />
-                </dl>
+          <div className="flex flex-col gap-7">
+            {archived && isAdmin && (
+              <Button className="w-fit" disabled={busy} onClick={handleUnarchive}>
+                <Icon name="refresh" size={17} /> Unarchive client
+              </Button>
+            )}
+
+            <div className="grid grid-cols-1 items-start gap-x-6 gap-y-7 lg:grid-cols-2">
+              <Panel title="Contact">
+                {hasContact ? (
+                  <dl className="inset-rows">
+                    {client.contacts.map((c, i) => (
+                      <div key={`c${i}`} className="flex items-baseline justify-between gap-4 px-5 py-3">
+                        <dt className="min-w-0 truncate text-[15px] text-text-primary">{c.name}</dt>
+                        <dd className="flex min-w-0 flex-col items-end text-right text-[15px] break-words text-text-secondary">
+                          {c.phone && <TapLink href={`tel:${c.phone}`}>{c.phone}</TapLink>}
+                          {c.email && <TapLink href={`mailto:${c.email}`}>{c.email}</TapLink>}
+                        </dd>
+                      </div>
+                    ))}
+                    {client.phones.map((p, i) => (
+                      <Row key={`p${i}`} label={i === 0 ? "Phone" : ""} value={p} href={`tel:${p}`} />
+                    ))}
+                    {client.email && <Row label="Email" value={client.email} href={`mailto:${client.email}`} />}
+                    {client.websites.map((w, i) => (
+                      <Row key={`w${i}`} label={i === 0 ? "Website" : ""} value={w.replace(/^https?:\/\//, "")} href={w} external />
+                    ))}
+                    {client.address && <Row label="Address" value={client.address} />}
+                  </dl>
+                ) : (
+                  <EmptyRow text="No contact details yet." />
+                )}
               </Panel>
 
-              <Panel icon="clipboard" title="Contract" subtitle="Services and dates">
-                <dl className="divide-y divide-border-light border-t border-border-light">
-                  <Row label="Services" value={client.services.length ? client.services.join(", ") : null} />
-                  <Row label="Contract start" value={client.contractStart ? formatDateOnly(client.contractStart) : null} />
-                  <Row label="Contract end" value={client.contractEnd ? formatDateOnly(client.contractEnd) : null} />
+              <Panel title="Contract">
+                <dl className="inset-rows">
+                  {client.services.length > 0 && <Row label="Services" value={client.services.join(", ")} />}
+                  {client.contractStart && <Row label="Starts" value={formatDateOnly(client.contractStart)} />}
+                  {client.contractEnd && <Row label="Ends" value={formatDateOnly(client.contractEnd)} />}
                   <Row label="Time zone" value={timeZoneLabel(client.timeZone)} />
                 </dl>
               </Panel>
 
-              <Panel icon="share" title="Social media" subtitle="Accounts">
-                <dl className="divide-y divide-border-light border-t border-border-light">
-                  {client.socialAccounts.map((a, i) => (
-                    <Row
-                      key={i}
-                      label={SOCIAL_PLATFORM_LABELS[a.platform]}
-                      value={a.handle}
-                      href={/^https?:\/\//.test(a.handle) ? a.handle : undefined}
-                      external
-                    />
-                  ))}
-                </dl>
-                {client.socialAccounts.length === 0 && <p className="border-t border-border-light px-5 py-4 text-sm text-text-muted">None added.</p>}
+              <Panel title="Social media">
+                {client.socialAccounts.length > 0 ? (
+                  <dl className="inset-rows">
+                    {client.socialAccounts.map((a, i) => (
+                      <Row
+                        key={i}
+                        label={SOCIAL_PLATFORM_LABELS[a.platform]}
+                        value={a.handle}
+                        href={/^https?:\/\//.test(a.handle) ? a.handle : undefined}
+                        external
+                      />
+                    ))}
+                  </dl>
+                ) : (
+                  <EmptyRow text="No accounts added." />
+                )}
               </Panel>
 
-              <Panel icon="users" title="Team" subtitle="Who works on this client">
-                <ul className="divide-y divide-border-light border-t border-border-light">
+              <Panel title="Team" action={isAdmin && <EditLink label="Edit team" onClick={() => setTeamOpen(true)} />}>
+                <ul className="inset-rows">
                   {client.team.map((m) => (
-                    <li key={m.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-                      <span className="min-w-0 truncate text-text-primary">{m.fullName}</span>
-                      <span className="flex shrink-0 items-center gap-2 text-xs text-text-muted">
+                    <li key={m.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                      <span className="min-w-0 truncate text-[15px] text-text-primary">{m.fullName}</span>
+                      <span className="flex shrink-0 items-center gap-2 text-[13px] text-text-muted">
                         {ROLE_LABELS[m.role]}
-                        {m.isLead && <StatusPill label="Lead" tone="green" />}
+                        {m.isLead && <StatusPill label="Lead" tone="gold" />}
                       </span>
                     </li>
                   ))}
                 </ul>
               </Panel>
 
-              <Panel icon="edit" title="Notes" subtitle="Internal only">
-                <p className="border-t border-border-light px-5 py-4 text-sm break-words whitespace-pre-wrap text-text-primary">{client.notes || "No notes."}</p>
+              <Panel title="Notes" subtitle="Only HOK staff see these">
+                {client.notes ? (
+                  <p className="px-5 py-3.5 text-[15px] break-words whitespace-pre-wrap text-text-primary">{client.notes}</p>
+                ) : (
+                  <EmptyRow text="No notes." />
+                )}
               </Panel>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              {archived ? (
-                isAdmin ? (
-                  <Button disabled={busy} onClick={handleUnarchive}>
-                    <Icon name="refresh" size={16} /> Unarchive
-                  </Button>
-                ) : (
-                  <p className="text-sm text-text-muted">This client is archived. Ask the Admin to unarchive it.</p>
-                )
-              ) : (
-                <>
-                  <Button onClick={() => setEditing(true)} disabled={busy}>
-                    <Icon name="edit" size={16} /> Edit client
-                  </Button>
-                  {isAdmin && (
-                    <Button variant="outline" disabled={busy} onClick={() => setTeamOpen(true)}>
-                      <Icon name="users" size={16} /> Edit team
-                    </Button>
-                  )}
-                  {isAdmin && (
-                    <Button variant="danger" disabled={busy} onClick={handleArchive}>
-                      <Icon name="ban" size={16} /> Archive
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
+            {archived && !isAdmin && <p className="text-sm text-text-muted">This client is archived. Ask the Admin to unarchive it.</p>}
+            {!archived && isAdmin && (
+              <div className="overflow-hidden rounded-app-lg bg-card shadow-app">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={handleArchive}
+                  className="w-full px-5 py-3 text-left text-[15px] font-medium text-error transition-colors hover:bg-error-bg/60 disabled:opacity-50"
+                >
+                  Archive client
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -356,24 +347,43 @@ export function ClientWorkspaceClient({
   );
 }
 
-function Row({ label, value, href, external = false }: { label: string; value: string | null; href?: string; external?: boolean }) {
+/** A list row: the label on the left, its value on the right (a tap target when it's a link). Only rows with a value are drawn. */
+function Row({ label, value, href, external = false }: { label: string; value: string; href?: string; external?: boolean }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 px-5 py-3 transition-colors hover:bg-accent-bg/60">
-      <dt className="shrink-0 text-xs text-text-muted">{label}</dt>
-      <dd className="min-w-0 text-right text-sm break-words text-text-primary">
-        {value && href ? (
-          <a
-            href={href}
-            {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-            className="underline-offset-2 hover:text-primary hover:underline"
-          >
+    <div className="flex items-baseline justify-between gap-4 px-5 py-3">
+      <dt className="shrink-0 text-[15px] text-text-primary">{label}</dt>
+      <dd className="min-w-0 text-right text-[15px] break-words text-text-secondary">
+        {href ? (
+          <TapLink href={href} external={external}>
             {value}
-          </a>
+          </TapLink>
         ) : (
-          value || <span className="text-text-muted">—</span>
+          value
         )}
       </dd>
     </div>
+  );
+}
+
+/** A phone number, email or site: tinted, so it reads as tappable. */
+function TapLink({ href, external = false, children }: { href: string; external?: boolean; children: React.ReactNode }) {
+  return (
+    <a href={href} {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})} className="text-primary hover:underline">
+      {children}
+    </a>
+  );
+}
+
+function EmptyRow({ text }: { text: string }) {
+  return <p className="px-5 py-3.5 text-[15px] text-text-muted">{text}</p>;
+}
+
+/** The "Edit" link at the right of a section heading, as in iOS. */
+function EditLink({ label = "Edit", onClick }: { label?: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="rounded-app-sm text-[14px] font-medium text-primary hover:opacity-75 focus-visible:ring-4 focus-visible:ring-ring/25 focus-visible:outline-none">
+      {label}
+    </button>
   );
 }
 

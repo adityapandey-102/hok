@@ -10,6 +10,7 @@ import { ClientTodoFormModal } from "./ClientTodoFormModal";
 import { TODO_PRIORITY_ACCENT, describeTodoError } from "./todoUi";
 import { DueChip, PriorityPill } from "../../staff-tasks/components/taskUi";
 import { Button } from "../../../components/ui/Button";
+import { Segmented } from "../../../components/ui/Segmented";
 import { Icon } from "../../../components/ui/Icon";
 import { Input } from "../../../components/ui/Field";
 import { Select } from "../../../components/ui/Select";
@@ -146,23 +147,18 @@ export function ClientTodosPanel({ clientId, readOnly = false, viewerTimeZone }:
         ) : undefined
       }
     >
-      <div className="flex flex-col gap-2 border-y border-border-light bg-accent-bg/40 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
-        <div role="group" aria-label="Show" className="inline-flex self-start rounded-app border border-border bg-card p-0.5 max-sm:w-full">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              aria-pressed={tab === t.id}
-              onClick={() => {
-                setTab(t.id);
-                setPage(0);
-              }}
-              className={`min-h-9 rounded-app-sm px-3.5 text-sm font-medium transition-colors max-sm:flex-1 ${tab === t.id ? "bg-ink text-on-ink" : "text-text-secondary hover:bg-accent-bg"}`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-col gap-2 border-b border-border-light px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
+        <Segmented
+          label="Show"
+          options={TABS}
+          value={tab}
+          onChange={(id) => {
+            setTab(id);
+            setPage(0);
+          }}
+          className="self-start max-sm:w-full"
+          stretch
+        />
         <Input
           className="sm:max-w-xs sm:flex-1"
           placeholder="Search to-dos"

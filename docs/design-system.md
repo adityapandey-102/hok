@@ -2,31 +2,41 @@
 
 The public portfolio (`app/(site)`) is NOT covered here: it keeps the ported template's styles.
 
-## Idea: a modern, premium studio workspace
-Taken from the House of Khalak logo: crimson letterforms, ink lettering. Warm porcelain paper (not cold grey), white panels with soft warm shadows, an ink sidebar, and one ink "hero band" with a crimson glow per page for the numbers that matter.
-- **Ink is the colour of action**: main buttons (`<Button>` primary = `bg-ink text-on-ink`), the sidebar, the hero band.
-- **Crimson is the colour of attention**: the active nav item, the current stage, overdue, unread, "needs a reply". Default to neutral; red only where the user should look.
-- **Colour for data**: charts and status use the semantic set (graphite, info blue, warning amber, success green) so pages aren't monochrome.
-- **The real logo only** (`components/shell/BrandMark.tsx`: `BrandLogo`, `BrandMark`, `BrandLockup`, from `public/brand/*.png`). Never invent a logo or a logo-like mark.
-- **Light by default**, dark via `<html data-theme="dark">` (`ThemeToggle`). Tailwind's `dark:` variant follows it. Every colour is a token; **never hardcode a colour** except `text-white/…` on the always-dark ink surfaces (sidebar, sign-in panel, hero band) and the `*-on-dark` tokens there.
+## Idea: an Apple-style studio workspace (redesign 2026-10-23)
+Taken from the House of Khalak logo: crimson letterforms, ink lettering, now built the way Apple builds its apps: **clarity** (content first, few lines and boxes), **deference** (the chrome steps back), **depth only where it means something** (things that float: menus, sheets, the tab bar).
+- **Warm, flat page; white grouped sections.** A section is a plain heading above a white group (`Panel`), the way iOS Settings groups rows. No icon badges, no heavy borders, no decorative shadows.
+- **Ink is the colour of action**: main buttons (`<Button>` primary), the sidebar, the dashboard's hero band.
+- **Crimson is the colour of attention and of "tappable"**: the selected nav item (its icon fills in red), links and "See all" / "Edit" in section headings, phone numbers and emails, overdue, unread. Default to neutral.
+- **Colour for data**: charts and status use the semantic set (graphite, info blue, warning amber, success green).
+- **The real logo only** (`components/shell/BrandMark.tsx`). Never invent a logo or a logo-like mark.
+- **Light by default**, dark via `<html data-theme="dark">` (`ThemeToggle`). Every colour is a token; **never hardcode a colour** except `text-white/…` on the always-dark ink surfaces.
 
 ## Type
-- Headings: **Jost** (`font-serif` class, historical name; `.page-title` for the h1). Sentence case. No all-caps labels or letter-spaced eyebrows.
-- Text and numbers: **Plus Jakarta Sans**. Big numbers: `.figure` (tabular) and `<CountUp>`.
+- Headings: **Jost** (`font-serif`, `.page-title` = the large title that opens a screen, no rule under it). Sentence case. No all-caps labels or letter-spaced eyebrows.
+- Text: **Plus Jakarta Sans**, list rows at 15px (14px on wide screens for fields). Big numbers: `.figure` and `<CountUp>`.
+
+## Icons
+- `components/ui/Icon.tsx`: Phosphor's shapes, closest to SF Symbols. `filled` draws the selected form (current nav item, current tab).
+- The shapes are generated into `components/ui/iconPaths.ts` by `scripts/build-icons.mjs` with only the weights we use (all six would break the 300 KB page budget). **To add an icon: add it to that script's list and run `node scripts/build-icons.mjs`.** Never import `@phosphor-icons/react` in app code (it's a devDependency for the generator).
 
 ## Building blocks (reuse, don't hand-roll)
 | Need | Use |
 |---|---|
-| Page header | `<h1 className="page-title">` + one muted line; actions in `.page-actions` on the right |
-| Key numbers (one per page, optional) | `components/ui/HeroBand.tsx` (cells link to their lists, `alert` turns a figure crimson) |
-| A section with a header and a "View all" footer | `components/ui/Panel.tsx` |
+| Page header | `<h1 className="page-title">` + one muted line; actions in `.page-actions` on the right. On a detail page, a tinted back link above the title ("‹ Clients") |
+| Key numbers (one per page, optional) | `components/ui/HeroBand.tsx` |
+| A section | `components/ui/Panel.tsx`: heading + optional note + right-side `action` / `footer` link ("See all", "Inbox") above a white group |
+| Rows inside a group | `.inset-rows` on the list: hairlines that start at the text, iOS style. Label left (primary), value right (secondary). **Don't draw empty fields** (no "—" rows): leave the row out, or show one muted line ("No notes.") |
+| Switching views of the same thing | `components/ui/Segmented.tsx` (sliding thumb; `manual` when choosing loads data) |
+| Filters | In the page's filter row; wrap the secondary ones in `FilterToggle` so phones show a "Filters (n)" button instead of a stack of boxes |
+| Fields | `Input` / `Select` / `Textarea` share `FIELD` (soft filled well, ring on focus); `PhoneInput` for every phone number; `TimeZoneInput` for zones |
+| Dialogs | `Modal`: centred on desktop, a bottom **sheet** with a grabber on phones |
 | Plain container | `Card` / `CardHeader` / `CardBody` |
-| Empty list | `EmptyState` (pick a fitting `icon`) |
+| Empty list | `EmptyState` |
 | Loading | `.skeleton` blocks shaped like the content; `Loader` for small inline waits |
-| Pills | `StatusPill` (soft tints; solid only for urgent) |
+| Pills | `StatusPill` (capsules; soft tints, solid only for urgent) |
 | Pickers over growing data | `SearchSelect` |
 | Lists | server-paged + `Pager`; debounced search; filters in the API |
-| Stage progress | `StageRail` (via `StageTracker` / `PortalStageTrack`) |
+| Destructive actions | at the end of the page, red text in its own group ("Archive client"); confirm before acting |
 
 ## Colour for meaning
 - Priorities: low/medium `gray`, high `amber`, urgent `red`.
@@ -34,15 +44,15 @@ Taken from the House of Khalak logo: crimson letterforms, ink lettering. Warm po
 - Comment status: received `red` (needs a reply), in progress `blue`, solved `green`.
 - Overdue text `text-error`; due today `text-warning-text`.
 
-## Motion (smooth, never showy)
-- One page-load moment per screen (`.stagger-in` on the first row of cards, `CountUp` figures, `grow-x` bars, `draw-stroke` charts).
-- Motion that answers an action: modal `animate-scale-in`, toasts, the theme's circular reveal, hover `lift` on clickable cards only.
-- Ambient: only the slow crimson glow (`.ambient-glow`) on the sign-in panel and inside the hero band.
+## Motion (only when it shows what changed)
+- Answers to an action: buttons give way under the finger (`active:scale`), the segmented thumb slides, sheets rise from the bottom (`.sheet-in`), toasts, the theme's circular reveal.
+- One page-load moment at most (`CountUp` figures, `grow-x` bars, `draw-stroke` charts). No fade-in on every card, no hover lift on lists.
+- Ambient: only the slow crimson glow on the sign-in panel and inside the hero band.
 - Everything respects `prefers-reduced-motion` (globals.css).
 
 ## Responsive (check every screen at 375, 768, 1024 and 1440, light and dark)
-- Shell: phones and portrait tablets use the drawer (menu button); 1024–1279 an icon rail; 1280+ the full sidebar.
-- **Grids on phones: always `grid-cols-1` explicitly** (e.g. `grid grid-cols-1 gap-5 lg:grid-cols-12`). A bare `grid` sizes its column to the longest unbreakable/truncated text and overflows the page.
-- Tables: a table from `sm`/`md`, cards on phones; or the table scrolls inside its panel. The page itself never scrolls sideways.
-- Filter bars: stack on phones (`flex-col sm:flex-row`), controls `sm:w-auto` (Select/Input are full width by default).
+- Shell: below 1024px a **tab bar** at the bottom (`TabBar`: four main places + "More", which opens the full menu); 1024–1279 an icon rail; 1280+ the full sidebar. The top bar is translucent (`.material`).
+- **Grids on phones: always `grid-cols-1` explicitly**; add `items-start` when sections of different heights sit side by side.
+- Tables: a table from `sm`/`md`, cards on phones; or the table scrolls inside its group. The page itself never scrolls sideways.
 - Tap targets ≥ 40px on phones; header actions stack (`.page-actions`).
+- Anything whose text comes from the runtime's locale data (country names, `Intl` formatting) must render the same on the server and in the browser, or wait until the browser (see `PhoneInput`), or hydration breaks.
