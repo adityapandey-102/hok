@@ -82,3 +82,22 @@ export function toPushMessage(type: string, payload: NotificationPayload): PushM
 export function sanitizeMutes(types: readonly string[], allowed: readonly string[]): string[] {
   return [...new Set(types.filter((t) => allowed.includes(t)))].sort();
 }
+
+/**
+ * The browsers' push services (Chrome / Edge-on-Android / Samsung / Opera: FCM; Firefox: Mozilla;
+ * Safari: Apple; Edge on Windows: WNS). The API POSTs to this address on every notification, so any
+ * other host would let a signed-in user point the server at an internal address (SSRF).
+ */
+const PUSH_HOSTS = ["fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com"];
+export function isPushServiceUrl(value: string): boolean {
+  // Whitespace, control characters and backslashes are refused outright: the WHATWG parser checked
+  // here drops or rewrites them, but the web-push library re-parses with legacy url.parse, which
+  // reads them differently ("https://evil<TAB>.fcm.googleapis.com" would connect to "evil").
+  if (/[\u0000- \u007f-\u009f\\]/.test(value)) return false;
+  try {
+    const { protocol, hostname } = new URL(value);
+    return protocol === "https:" && PUSH_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+}

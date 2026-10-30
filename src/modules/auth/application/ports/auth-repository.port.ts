@@ -15,6 +15,8 @@ export interface NewAdminRecord {
 /** Persistence contract for the Auth module -- pure data access, no business rules. */
 export interface AuthRepositoryPort {
   countAdmins(): Promise<number>;
+  /** Runs `fn` while holding a database-wide bootstrap lock, so two first-Admin requests can't both pass the check. */
+  withBootstrapLock<T>(fn: () => Promise<T>): Promise<T>;
   /** Creates the auth user with role `admin`; returns the new user id. */
   createAdminUser(record: NewAdminRecord): Promise<string>;
   signInWithPassword(email: string, password: string): Promise<AuthSession>;

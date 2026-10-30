@@ -1,4 +1,4 @@
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 
 // Excludes visually-ambiguous characters (0/O, 1/l/I) since these passwords
 // are meant to be read aloud or copied off a screen by hand.
@@ -32,4 +32,9 @@ export function generateOpaqueToken(): string {
 /** Only the hash is ever stored -- same principle as a password, applied to opaque tokens (portal links). */
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+/** Constant-time string comparison (both sides hashed first, so lengths can't leak). */
+export function safeEqual(a: string, b: string): boolean {
+  return timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
 }

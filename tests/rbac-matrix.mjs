@@ -108,8 +108,8 @@ async function main() {
   check("GET /auth/bootstrap-status without a token -> 200", status.status, 200);
   check("bootstrap-status reports adminExists = true", status.body?.adminExists, true);
   check(
-    "POST /auth/bootstrap once an admin exists -> 403",
-    (await req("/auth/bootstrap", { method: "POST", body: JSON.stringify({ email: `rbac-boot-${stamp}@hok.test`, password: "Secret-123", fullName: "Nope" }) })).status,
+    "POST /auth/bootstrap without the right setup key (or once an admin exists) -> 403",
+    (await req("/auth/bootstrap", { method: "POST", body: JSON.stringify({ setupKey: "not-the-key", email: `rbac-boot-${stamp}@hok.test`, password: "Secret-123", fullName: "Nope" }) })).status,
     403,
   );
 

@@ -31,6 +31,14 @@ export class DrizzleAuthRepository implements AuthRepositoryPort {
     return rows[0]?.count ?? 0;
   }
 
+  withBootstrapLock<T>(fn: () => Promise<T>): Promise<T> {
+    // A transaction-scoped advisory lock: a second request waits here, then sees the first Admin's profile.
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('hok.auth.bootstrap'))`);
+      return fn();
+    });
+  }
+
   async createAdminUser(record: NewAdminRecord): Promise<string> {
     // handle_new_user() (supabase/migrations) copies full_name/role/time_zone
     // from the new auth user's metadata into `profiles` -- nothing to insert here.

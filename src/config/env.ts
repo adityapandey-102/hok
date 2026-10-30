@@ -39,6 +39,16 @@ const envSchema = z.object({
    * (off), with `alter role postgres set statement_timeout = '15s'` run on the database instead.
    */
   DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(15_000),
+  /**
+   * Secret the deployment owner types on /setup to create the first Admin. Unset = setup is off.
+   * Use a long random value (e.g. `openssl rand -base64 32`); remove it once the Admin exists.
+   */
+  BOOTSTRAP_TOKEN: z
+    .string()
+    .trim()
+    .transform((v) => v || undefined)
+    .optional()
+    .refine((v) => v === undefined || v.length >= 24, "Must be at least 24 characters"),
   /** Auth rate-limit window (ms) and max requests per window per IP. Defaults: 15 min / 30 attempts. */
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().default(30),

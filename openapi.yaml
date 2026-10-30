@@ -167,8 +167,10 @@ paths:
       summary: Create the very first Admin (refused once any admin exists)
       description: |
         No public sign-up exists. This creates the first `admin` account on a
-        fresh install and is refused (`403 AUTH_BOOTSTRAP_ALREADY_DONE`) once
-        any admin exists. It returns no session -- sign in afterwards with the
+        fresh install. The caller must send the server's `BOOTSTRAP_TOKEN` as
+        `setupKey`; with no token configured setup is off
+        (`403 AUTH_BOOTSTRAP_DISABLED`), a wrong key is `403 AUTH_BOOTSTRAP_KEY_INVALID`,
+        and it is refused (`403 AUTH_BOOTSTRAP_ALREADY_DONE`) once any admin exists. It returns no session -- sign in afterwards with the
         same credentials. Rate-limited.
       requestBody:
         required: true
@@ -176,8 +178,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password, fullName]
+              required: [setupKey, email, password, fullName]
               properties:
+                setupKey: { type: string, minLength: 1, maxLength: 200, description: "Must equal the server's BOOTSTRAP_TOKEN." }
                 email: { type: string, format: email }
                 password: { type: string, minLength: 8 }
                 fullName: { type: string, minLength: 1, maxLength: 120 }
@@ -193,7 +196,7 @@ paths:
                   ok: { type: boolean, enum: [true] }
         "400": { $ref: "#/components/responses/BadRequest" }
         "403":
-          description: "`AUTH_BOOTSTRAP_ALREADY_DONE` -- an admin already exists."
+          description: "`AUTH_BOOTSTRAP_DISABLED` (no setup key configured), `AUTH_BOOTSTRAP_KEY_INVALID` (wrong key) or `AUTH_BOOTSTRAP_ALREADY_DONE` (an admin already exists)."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

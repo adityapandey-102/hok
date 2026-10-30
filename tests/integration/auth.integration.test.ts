@@ -5,6 +5,7 @@ import { createApp } from "../../src/app";
 import { authProvider } from "../../src/common/auth/supabase-auth-provider";
 import { fetchActiveProfile } from "../../src/common/database/profiles";
 import { db } from "../../src/common/database/drizzle-client";
+import { supabaseClient } from "../../src/common/database/supabase-client";
 import { auditLog } from "../../src/common/audit/audit-log.schema";
 import { profiles } from "../../src/modules/users/infrastructure/profile.schema";
 import { bearerFor, closeDb, createFixtureUser, deleteFixtureUser } from "./helpers";
@@ -204,9 +205,29 @@ describe("/auth endpoints (integration)", () => {
 
     const res = await request(app)
       .post("/api/v1/auth/bootstrap")
-      .send({ email: `it-bootstrap-${Date.now()}@hok.test`, password: "Secret-123", fullName: "Should Not Exist" });
+      .send({ setupKey: "not-the-key", email: `it-bootstrap-${Date.now()}@hok.test`, password: "Secret-123", fullName: "Should Not Exist" });
     expect(res.status).toBe(403);
-    expect((res.body as { code: string }).code).toBe("AUTH_BOOTSTRAP_ALREADY_DONE");
+    // No BOOTSTRAP_TOKEN in the test environment: setup is off before any other check (security audit run 1).
+    expect((res.body as { code: string }).code).toBe("AUTH_BOOTSTRAP_DISABLED");
+  });
+
+  it("an auth user created without the server-set role gets no profile, even if its own metadata says admin (security audit run 1)", async () => {
+    // Simulates a self sign-up: role only in user_metadata (user-controlled), nothing in app_metadata.
+    const { data, error } = await supabaseClient.auth.admin.createUser({
+      email: `it-selfsignup-${Date.now()}@hok.test`,
+      password: "Secret-123-xyz",
+      email_confirm: true,
+      user_metadata: { full_name: "Self Signup", role: "admin" },
+    });
+    expect(error).toBeNull();
+    createdUserIds.push(data.user!.id);
+    const rows = await db.select({ id: profiles.id }).from(profiles).where(eq(profiles.id, data.user!.id));
+    expect(rows).toHaveLength(0);
+    // And a normal hok-api-created user still gets its role.
+    const staff = await createFixtureUser("editor", "IT Role From App Metadata");
+    createdUserIds.push(staff.id);
+    const [p] = await db.select({ role: profiles.role }).from(profiles).where(eq(profiles.id, staff.id));
+    expect(p?.role).toBe("editor");
   });
 
   it("password-reset-request answers 204 whether or not the email exists", async () => {

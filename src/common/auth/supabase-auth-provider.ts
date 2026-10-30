@@ -75,6 +75,9 @@ export class SupabaseAuthProvider implements AuthProvider {
       password: user.password,
       email_confirm: true,
       user_metadata: { full_name: user.fullName, role: user.role, ...(user.timeZone ? { time_zone: user.timeZone } : {}) },
+      // The role the database trusts: app_metadata is server-only (a signing-up user cannot set it), and
+      // handle_new_user reads the role from here (migration 20261030000001). user_metadata.role is display only.
+      app_metadata: { role: user.role },
     });
     if (error) {
       // GoTrue reports a duplicate as code "email_exists" (older versions: only

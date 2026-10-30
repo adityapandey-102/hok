@@ -3,6 +3,7 @@ import { env } from "../../../config/env";
 import { logger } from "../../../common/logger/logger";
 import type { PushOutcome, PushSender } from "../application/ports/push-sender.port";
 import type { PushMessage, PushSubscriptionEntity } from "../domain/notification.entity";
+import { isPushServiceUrl } from "../domain/notification.rules";
 
 export interface VapidConfig {
   publicKey?: string;
@@ -32,6 +33,11 @@ export class WebPushSender implements PushSender {
   }
 
   async send(subscription: Pick<PushSubscriptionEntity, "endpoint" | "p256dh" | "auth">, message: PushMessage): Promise<PushOutcome> {
+    // Re-checked at send time: a row stored before the stricter rule (or written another way) never gets a request.
+    if (!isPushServiceUrl(subscription.endpoint)) {
+      logger.warn("Push endpoint is not a browser push service; not sent");
+      return "failed";
+    }
     try {
       await webpush.sendNotification(
         { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },

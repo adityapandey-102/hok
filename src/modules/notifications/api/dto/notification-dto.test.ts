@@ -23,6 +23,15 @@ describe("notification DTOs", () => {
     for (const ok of ["https://updates.push.services.mozilla.com/wpush/v2/x", "https://web.push.apple.com/x", "https://wns2-par02p.notify.windows.com/w/?token=x"]) {
       expect(pushSubscriptionDtoSchema.safeParse({ ...SUB, endpoint: ok }).success, ok).toBe(true);
     }
+    // Parser-differential tricks (security audit run 1): the allow-list's WHATWG parse drops these
+    // characters, but web-push's legacy url.parse ends the host at them and would connect to "evil.test".
+    for (const ch of ["\t", "\n", "\r", " ", "\\", "\u0000", "\u007f"]) {
+      const bad = `https://evil.test${ch}.fcm.googleapis.com/fcm/send/x`;
+      expect(pushSubscriptionDtoSchema.safeParse({ ...SUB, endpoint: bad }).success, JSON.stringify(bad)).toBe(false);
+    }
+    // What is stored is the canonical form that was checked.
+    const parsed = pushSubscriptionDtoSchema.safeParse({ ...SUB, endpoint: "https://FCM.googleapis.com/fcm/send/abc" });
+    expect(parsed.success && parsed.data.endpoint).toBe("https://fcm.googleapis.com/fcm/send/abc");
     expect(pushSubscriptionDtoSchema.safeParse({ ...SUB, keys: { p256dh: "not base64!", auth: "a" } }).success).toBe(false);
   });
 

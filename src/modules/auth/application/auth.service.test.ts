@@ -42,6 +42,9 @@ class FakeAuthRepository implements AuthRepositoryPort {
   countAdmins(): Promise<number> {
     return Promise.resolve(this.admins);
   }
+  withBootstrapLock<T>(fn: () => Promise<T>): Promise<T> {
+    return fn();
+  }
   createAdminUser(record: NewAdminRecord): Promise<string> {
     this.createdAdmins.push(record);
     return Promise.resolve("new-admin");
@@ -102,15 +105,24 @@ describe("AuthService", () => {
       expect(await service.getBootstrapStatus()).toEqual({ adminExists: true });
     });
 
+    const KEY = "setup-key-for-tests-0123456789";
+    const withKey = () => new AuthService(repo, { record: (e: AuditEvent) => (events.push(e), Promise.resolve()) }, KEY);
+
+    it("is off when no setup key is configured, and refuses a wrong key (security audit run 1)", async () => {
+      await expect(service.bootstrap({ setupKey: "anything", email: "x@hok.test", password: "Secret123", fullName: "X" })).rejects.toMatchObject({ code: "AUTH_BOOTSTRAP_DISABLED" });
+      await expect(withKey().bootstrap({ setupKey: "wrong", email: "x@hok.test", password: "Secret123", fullName: "X" })).rejects.toMatchObject({ code: "AUTH_BOOTSTRAP_KEY_INVALID" });
+      expect(repo.createdAdmins).toHaveLength(0);
+    });
+
     it("creates the first admin with the default time zone and audits it", async () => {
-      await service.bootstrap({ email: "first@hok.test", password: "Secret123", fullName: "First Admin" });
+      await withKey().bootstrap({ setupKey: KEY, email: "first@hok.test", password: "Secret123", fullName: "First Admin" });
       expect(repo.createdAdmins).toEqual([{ email: "first@hok.test", password: "Secret123", fullName: "First Admin", timeZone: "Asia/Kolkata" }]);
       expect(events[0]).toMatchObject({ action: AUDIT_ACTIONS.AUTH_BOOTSTRAP, actorId: "new-admin" });
     });
 
     it("refuses once an admin exists", async () => {
       repo.admins = 1;
-      await expect(service.bootstrap({ email: "x@hok.test", password: "Secret123", fullName: "X" })).rejects.toMatchObject({
+      await expect(withKey().bootstrap({ setupKey: KEY, email: "x@hok.test", password: "Secret123", fullName: "X" })).rejects.toMatchObject({
         code: "AUTH_BOOTSTRAP_ALREADY_DONE",
       });
       expect(repo.createdAdmins).toHaveLength(0);

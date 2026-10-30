@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { NOTIFICATION_TYPES } from "../../domain/notification.entity";
+import { isPushServiceUrl } from "../../domain/notification.rules";
 
 export const NOTIFICATIONS_DEFAULT_LIMIT = 20;
 /** Page-size cap (docs/engineering-practices.md section 1): an over-large limit is clamped, never honoured. */
@@ -30,21 +31,12 @@ export type UpdatePreferencesDto = z.infer<typeof updatePreferencesDtoSchema>;
 
 /** base64url, as the Push API encodes subscription keys. */
 const base64url = (max: number) => z.string().min(1).max(max).regex(/^[A-Za-z0-9_-]+=*$/, "Not a push subscription key");
-/**
- * The browsers' push services (Chrome / Edge-on-Android / Samsung / Opera: FCM; Firefox: Mozilla;
- * Safari: Apple; Edge on Windows: WNS). The API POSTs to this address on every notification, so any
- * other host would let a signed-in user point the server at an internal address (SSRF).
- */
-const PUSH_HOSTS = ["fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com"];
-export function isPushServiceUrl(value: string): boolean {
-  try {
-    const { protocol, hostname } = new URL(value);
-    return protocol === "https:" && PUSH_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
-  } catch {
-    return false;
-  }
-}
-const endpoint = z.string().max(2048).refine(isPushServiceUrl, "Not a browser push service address");
+// Stored in its parsed, canonical form, so what was checked is exactly what is later sent to.
+const endpoint = z
+  .string()
+  .max(2048)
+  .refine(isPushServiceUrl, "Not a browser push service address")
+  .transform((v) => new URL(v).href);
 
 /**
  * POST /notifications/push/subscriptions: the browser's PushSubscription

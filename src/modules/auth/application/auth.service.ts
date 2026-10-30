@@ -1,5 +1,5 @@
 import { env } from "../../../config/env";
-import { assertNoAdminExists } from "../domain/bootstrap.rules";
+import { assertBootstrapKey, assertNoAdminExists } from "../domain/bootstrap.rules";
 import { pickOwnProfileChanges } from "../domain/own-profile.rules";
 import { toAuthSessionResponseDto } from "../api/auth-session.presenter";
 import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "../../../common/audit/audit-actions";
@@ -27,6 +27,7 @@ export class AuthService {
   constructor(
     private readonly authRepository: AuthRepositoryPort,
     private readonly audit: AuditLogger = defaultAuditLogger,
+    private readonly bootstrapToken: string | undefined = env.BOOTSTRAP_TOKEN,
   ) {}
 
   async getBootstrapStatus(): Promise<{ adminExists: boolean }> {
@@ -35,15 +36,16 @@ export class AuthService {
   }
 
   async bootstrap(dto: BootstrapDto): Promise<void> {
-    // Re-checked here, not trusted from an earlier bootstrap-status call.
-    const existingAdmins = await this.authRepository.countAdmins();
-    assertNoAdminExists(existingAdmins);
-
-    const userId = await this.authRepository.createAdminUser({
-      email: dto.email,
-      password: dto.password,
-      fullName: dto.fullName,
-      timeZone: dto.timeZone ?? env.DEFAULT_TIMEZONE,
+    assertBootstrapKey(this.bootstrapToken, dto.setupKey);
+    // Check and create under one lock, re-checked here, not trusted from an earlier bootstrap-status call.
+    const userId = await this.authRepository.withBootstrapLock(async () => {
+      assertNoAdminExists(await this.authRepository.countAdmins());
+      return this.authRepository.createAdminUser({
+        email: dto.email,
+        password: dto.password,
+        fullName: dto.fullName,
+        timeZone: dto.timeZone ?? env.DEFAULT_TIMEZONE,
+      });
     });
     // Unauthenticated request: the new admin is the actor.
     await this.audit.record({ action: AUDIT_ACTIONS.AUTH_BOOTSTRAP, entityType: AUDIT_ENTITIES.USER, entityId: userId, actorId: userId });

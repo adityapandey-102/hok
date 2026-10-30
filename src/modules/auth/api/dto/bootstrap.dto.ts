@@ -2,6 +2,8 @@ import { z } from "zod";
 import { isValidTimeZone } from "../../../../domain";
 
 export const bootstrapDtoSchema = z.object({
+  /** Proves the caller is the deployment owner: must equal the server's BOOTSTRAP_TOKEN. */
+  setupKey: z.string().min(1, "Enter the setup key").max(200),
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(8, "Password must be at least 8 characters"),
   fullName: z.string().trim().min(1).max(120),
