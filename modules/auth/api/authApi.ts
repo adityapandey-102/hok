@@ -2,6 +2,8 @@ import { apiFetch } from "../../../lib/api/client";
 import type { Profile } from "../../../lib/domain";
 
 export interface BootstrapPayload {
+  /** The server's BOOTSTRAP_TOKEN: proves the person setting up owns this deployment. */
+  setupKey: string;
   email: string;
   password: string;
   fullName: string;

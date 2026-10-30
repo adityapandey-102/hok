@@ -15,6 +15,7 @@ export function SetupForm() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
   const [adminExists, setAdminExists] = useState(true);
+  const [setupKey, setSetupKey] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,7 +36,7 @@ export function SetupForm() {
     setLoading(true);
 
     try {
-      await authApi.bootstrap({ email, password, fullName });
+      await authApi.bootstrap({ setupKey, email, password, fullName });
       await authApi.login({ email, password });
 
       router.push("/app");
@@ -69,6 +70,11 @@ export function SetupForm() {
         <p className="text-xs text-text-muted">
           No Admin account exists yet. Create the first one -- every other account is created from here afterward.
         </p>
+      </div>
+
+      <div>
+        <FieldLabel required>Setup key</FieldLabel>
+        <Input type="password" required autoComplete="off" value={setupKey} onChange={(e) => setSetupKey(e.target.value)} placeholder="BOOTSTRAP_TOKEN from the server settings" />
       </div>
 
       <div>
