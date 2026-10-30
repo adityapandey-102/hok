@@ -37,8 +37,8 @@ export const stageTemplateQueryDtoSchema = z.object({
     .string()
     .trim()
     .max(80)
-    .optional()
-    .transform((v) => (v ? v : undefined)),
+    
+    .transform((v) => (v ? v : undefined)).optional(),
   active: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
   limit: z.coerce
     .number()

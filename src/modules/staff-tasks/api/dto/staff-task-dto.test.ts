@@ -9,8 +9,8 @@ import {
 } from "./staff-task.dto";
 
 const ID = "7c443f82-7913-4383-b49c-605bdbe8e139";
-const paths = (r: { success: boolean; error?: { issues: { path: (string | number)[] }[] } }) =>
-  r.success ? [] : r.error!.issues.map((i) => i.path.join("."));
+const paths = (r: { success: boolean; error?: { issues: { path: PropertyKey[] }[] } }) =>
+  r.success ? [] : r.error!.issues.map((i) => i.path.map(String).join("."));
 
 describe("createStaffTaskDtoSchema", () => {
   it("needs a title and an assignee; trims, blank optional text becomes null", () => {

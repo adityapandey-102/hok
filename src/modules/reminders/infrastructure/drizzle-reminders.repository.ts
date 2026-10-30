@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
+import { notifiedTeamIdsOf } from "../../clients/infrastructure/client-team.sql";
 // Cross-module, Infrastructure-to-Infrastructure (docs/adr/0003): the
 // reminder claim writes the bell rows in its own transaction.
 import { eventReminderPayload, insertNotificationsInTransaction, taskDueReminderPayload } from "../../notifications/notifications.module";
@@ -51,7 +52,7 @@ export class DrizzleRemindersRepository implements RemindersRepositoryPort {
         from due, public.clients c
         where e.id = due.id and c.id = e.client_id
         returning e.id, e.title, e.starts_at, e.time_zone, c.business_name,
-          array_to_json(array(select m.profile_id from public.client_members m where m.client_id = c.id)) as team_ids`);
+          array_to_json(${notifiedTeamIdsOf(sql`c.id`)}) as team_ids`);
 
       const tasks = await tx.execute<TaskRow>(sql`
         with due as (

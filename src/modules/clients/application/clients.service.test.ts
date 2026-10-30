@@ -56,7 +56,7 @@ function client(overrides: Partial<ClientEntity> = {}): ClientEntity {
     updatedAt: "2026-10-13T00:00:00.000Z",
     ...overrides,
   };
-  return { ...base, team: overrides.team ?? [{ id: base.ownerId, fullName: base.ownerName, role: "social_media_manager", isLead: true }] };
+  return { ...base, team: overrides.team ?? [{ id: base.ownerId, fullName: base.ownerName, role: "social_media_manager", active: true, isLead: true }] };
 }
 
 class FakeClientsRepository implements ClientsRepositoryPort {
@@ -105,7 +105,7 @@ class FakeClientsRepository implements ClientsRepositoryPort {
       ...(changes.team
         ? {
             ownerId: changes.team.leadId,
-            team: changes.team.memberIds.map((id) => ({ id, fullName: id, role: this.people.get(id)!.role, isLead: id === changes.team!.leadId })),
+            team: changes.team.memberIds.map((id) => ({ id, fullName: id, role: this.people.get(id)!.role, active: this.people.get(id)!.active, isLead: id === changes.team!.leadId })),
           }
         : {}),
       ...(changes.archivedAt === "now" ? { archivedAt: "2026-10-14T00:00:00.000Z" } : changes.archivedAt === null ? { archivedAt: null } : {}),
@@ -314,6 +314,13 @@ describe("ClientsService", () => {
       expect(await codeOf(service.setTeam(ADMIN, "c1", { leadId: "rohan", memberIds: ["meera"] }))).toBe("CLIENT_OWNER_INVALID");
       expect(await codeOf(service.setTeam(ADMIN, "c1", { leadId: "gone", memberIds: [] }))).toBe("CLIENT_OWNER_INVALID");
       expect(await codeOf(service.setTeam(ADMIN, "c1", { leadId: "rohan", memberIds: ["nobody"] }))).toBe("CLIENT_OWNER_INVALID");
+    });
+
+    it("keeps a member deactivated since joining, but not as the lead", async () => {
+      await service.setTeam(ADMIN, "c1", { leadId: "rohan", memberIds: ["sara"] });
+      repo.people.set("sara", { id: "sara", role: "social_media_manager", active: false });
+      expect((await service.setTeam(ADMIN, "c1", { leadId: "rohan", memberIds: ["sara", "kiran"] })).team).toHaveLength(3);
+      expect(await codeOf(service.setTeam(ADMIN, "c1", { leadId: "sara", memberIds: ["rohan", "kiran"] }))).toBe("CLIENT_OWNER_INVALID");
     });
 
     it("refuses a manager (403 CLIENT_ADMIN_ONLY) and a stale version", async () => {

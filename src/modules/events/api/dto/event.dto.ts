@@ -9,8 +9,8 @@ function optionalText(max: number) {
     .trim()
     .max(max)
     .nullable()
-    .optional()
-    .transform((v) => (v === "" ? null : v));
+    
+    .transform((v) => (v === "" ? null : v)).optional();
 }
 
 /** An ISO-8601 instant WITH its offset ("2026-10-14T10:00:00+05:30" or "...Z"): never a zone-less wall time. */
@@ -91,8 +91,8 @@ export const eventQueryDtoSchema = z.object({
     .string()
     .trim()
     .max(80)
-    .optional()
-    .transform((v) => (v ? v : undefined)),
+    
+    .transform((v) => (v ? v : undefined)).optional(),
   limit: z.coerce
     .number()
     .int()

@@ -18,16 +18,16 @@ export const updateOwnProfileDtoSchema = z.object({
     .trim()
     .max(PHONE_MAX_LENGTH)
     .nullable()
-    .optional()
-    .transform((v) => (v === "" ? null : v))
+    
+    .transform((v) => (v === "" ? null : v)).optional()
     .refine((v) => v == null || isValidPhone(v), "Enter a valid phone number"),
   avatarUrl: z
     .string()
     .trim()
     .max(URL_MAX_LENGTH)
     .nullable()
-    .optional()
-    .transform((v) => (v === "" ? null : v))
+    
+    .transform((v) => (v === "" ? null : v)).optional()
     .refine((v) => v == null || isValidHttpUrl(v), "Must be an http(s) link"),
 });
 

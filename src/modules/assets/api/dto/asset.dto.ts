@@ -10,8 +10,8 @@ function optionalText(max: number) {
     .trim()
     .max(max)
     .nullable()
-    .optional()
-    .transform((v) => (v === "" ? null : v));
+    
+    .transform((v) => (v === "" ? null : v)).optional();
 }
 
 const version = z.number().int().min(1);
@@ -93,9 +93,9 @@ export const assetQueryDtoSchema = z.object({
   clientId: uuid("clientId").optional(),
   eventId: uuid("eventId").optional(),
   ownerId: uuid("ownerId").optional(),
-  search: z.string().trim().max(80).optional().transform(blankToUndefined),
+  search: z.string().trim().max(80).transform(blankToUndefined).optional(),
   type: z.enum(ASSET_TYPES).optional(),
-  tag: z.string().trim().max(ASSET_TAG_MAX_LENGTH).optional().transform(blankToUndefined),
+  tag: z.string().trim().max(ASSET_TAG_MAX_LENGTH).transform(blankToUndefined).optional(),
   from: instant.optional(),
   to: instant.optional(),
   limit: limit(ASSETS_DEFAULT_LIMIT, ASSETS_MAX_LIMIT),
@@ -109,7 +109,7 @@ export const TAG_SUGGEST_MAX_LIMIT = 50;
 /** GET /assets/tags: auto-suggest (FR-AST-03). `q` matches anywhere in the name; no `q` = the most used. */
 export const tagQueryDtoSchema = z.object({
   clientId: uuid("clientId").optional(),
-  q: z.string().trim().max(ASSET_TAG_MAX_LENGTH).optional().transform(blankToUndefined),
+  q: z.string().trim().max(ASSET_TAG_MAX_LENGTH).transform(blankToUndefined).optional(),
   limit: limit(TAG_SUGGEST_DEFAULT_LIMIT, TAG_SUGGEST_MAX_LIMIT),
 });
 export type TagQueryDto = z.infer<typeof tagQueryDtoSchema>;

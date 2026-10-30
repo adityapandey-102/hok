@@ -19,10 +19,10 @@ const blankToUndefined = (v: string | undefined) => (v ? v : undefined);
  */
 export const clientQueryDtoSchema = z.object({
   /** Business name contains (case-insensitive). */
-  search: z.string().trim().max(80).optional().transform(blankToUndefined),
+  search: z.string().trim().max(80).transform(blankToUndefined).optional(),
   status: z.enum(CLIENT_STATUSES).optional(),
   /** Case-insensitive exact match. */
-  industry: z.string().trim().max(80).optional().transform(blankToUndefined),
+  industry: z.string().trim().max(80).transform(blankToUndefined).optional(),
   ownerId: z.string().uuid("ownerId must be a user id").optional(),
   limit: z.coerce
     .number()

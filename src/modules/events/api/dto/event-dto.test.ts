@@ -9,9 +9,9 @@ const base = {
   startsAt: "2026-10-20T10:00:00+05:30",
   endsAt: "2026-10-20T16:00:00+05:30",
 };
-const paths = (schema: { safeParse: (v: unknown) => { success: boolean; error?: { issues: { path: (string | number)[] }[] } } }, v: unknown) => {
+const paths = (schema: { safeParse: (v: unknown) => { success: boolean; error?: { issues: { path: PropertyKey[] }[] } } }, v: unknown) => {
   const r = schema.safeParse(v);
-  return r.success ? [] : r.error!.issues.map((i) => i.path.join("."));
+  return r.success ? [] : r.error!.issues.map((i) => i.path.map(String).join("."));
 };
 
 describe("createEventDtoSchema", () => {

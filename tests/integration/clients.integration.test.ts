@@ -296,6 +296,16 @@ describe("GET /clients (paging, filters)", () => {
     const wildcard = await request(app).get(`/api/v1/clients?search=${encodeURIComponent(`${marker}%Store`)}`).set("Authorization", auth.social_media_manager!);
     expect((wildcard.body as { total: number }).total).toBe(0);
   });
+
+  it("also finds a client by a contact person's name or its industry, never by JSON keys", async () => {
+    const marker = `Kq${Date.now()}`;
+    await createAs("social_media_manager", { businessName: "IT Contact Search", industry: `${marker} Dairy`, contacts: [{ name: `${marker} Kabir` }] });
+    const find = async (q: string) =>
+      ((await request(app).get(`/api/v1/clients?search=${encodeURIComponent(q)}`).set("Authorization", auth.social_media_manager!)).body as { total: number }).total;
+    expect(await find(`${marker} Kabir`)).toBe(1);
+    expect(await find(`${marker} Dairy`)).toBe(1);
+    expect(await find(`${marker} email`)).toBe(0);
+  });
 });
 
 describe("database constraints (the last line of defence)", () => {

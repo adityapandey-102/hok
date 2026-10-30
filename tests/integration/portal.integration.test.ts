@@ -188,3 +188,23 @@ describe("link lifecycle", () => {
     expect((await request(app).get(`/api/v1/portal/${live}`)).status).toBe(404);
   });
 });
+
+describe("who a comment notifies", () => {
+  it("only active client managers on the team: not someone deactivated or moved to a task-only role since joining", async () => {
+    const gone = await createFixtureUser("social_media_manager", "Portal Gone");
+    try {
+      // On the team, then deactivated; and the editor, as if their role changed after joining.
+      await db.execute(sql`insert into client_members (client_id, profile_id) values (${clientId}, ${gone.id}), (${clientId}, ${editor.id}), (${clientId}, ${other.id})`);
+      await db.execute(sql`update profiles set active = false where id = ${gone.id}`);
+      const link = await request(app).post(`/api/v1/portal-links/${clientId}`).set("Authorization", ownerAuth);
+      const res = await request(app).post(`/api/v1/portal/${body(link).token as string}/comments`).send({ body: "Who hears this?" });
+      expect(res.status).toBe(201);
+      const commentId = (body(res).comment as Json).id as string;
+      const n = await db.execute(sql`select user_id from notifications where type = 'client_comment' and payload::text like ${"%" + commentId + "%"}`);
+      expect(n.rows.map((r) => (r as { user_id: string }).user_id).sort()).toEqual([owner.id, other.id].sort());
+    } finally {
+      await db.execute(sql`delete from client_members where client_id = ${clientId} and profile_id in (${gone.id}, ${editor.id}, ${other.id})`);
+      await deleteFixtureUser(gone.id);
+    }
+  });
+});

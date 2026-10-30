@@ -509,14 +509,14 @@ paths:
       tags: [Clients]
       summary: List clients (scoped, searchable, paginated)
       description: |
-        The Admin sees every client; a Social Media / Marketing Manager only
-        the clients they own (their `ownerId` filter is ignored). Archived
+        The Admin sees every client; a Social Media / Marketing / Project Manager
+        only the clients whose team they're on. Archived
         clients are hidden unless `status=archived`. Newest first.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: search
           in: query
-          description: Business name contains (case-insensitive). Max 80 characters.
+          description: Business name, industry or a contact person's name contains (case-insensitive). Max 80 characters.
           schema: { type: string, maxLength: 80 }
         - name: status
           in: query
@@ -2854,11 +2854,12 @@ components:
           description: Everyone assigned, lead first. `ownerId` / `ownerName` are the lead.
           items:
             type: object
-            required: [id, fullName, role, isLead]
+            required: [id, fullName, role, active, isLead]
             properties:
               id: { type: string, format: uuid }
               fullName: { type: string }
               role: { $ref: "#/components/schemas/Role" }
+              active: { type: boolean, description: "False for a deactivated account. Such a member can stay on a team, but can't be added or made the lead." }
               isLead: { type: boolean }
         services: { type: array, items: { type: string } }
         contractStart: { type: string, format: date, nullable: true }

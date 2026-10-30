@@ -16,6 +16,13 @@ describe("notification DTOs", () => {
 
   it("refuses a non-https endpoint or malformed keys", () => {
     expect(pushSubscriptionDtoSchema.safeParse({ ...SUB, endpoint: "http://push.test/x" }).success).toBe(false);
+    // Only the browsers' push services: anything else would make the API call an address of the user's choosing.
+    for (const bad of ["https://169.254.169.254/latest", "https://localhost/x", "https://fcm.googleapis.com.evil.test/x", "https://evilfcm.googleapis.com/x"]) {
+      expect(pushSubscriptionDtoSchema.safeParse({ ...SUB, endpoint: bad }).success, bad).toBe(false);
+    }
+    for (const ok of ["https://updates.push.services.mozilla.com/wpush/v2/x", "https://web.push.apple.com/x", "https://wns2-par02p.notify.windows.com/w/?token=x"]) {
+      expect(pushSubscriptionDtoSchema.safeParse({ ...SUB, endpoint: ok }).success, ok).toBe(true);
+    }
     expect(pushSubscriptionDtoSchema.safeParse({ ...SUB, keys: { p256dh: "not base64!", auth: "a" } }).success).toBe(false);
   });
 

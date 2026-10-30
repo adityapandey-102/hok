@@ -11,8 +11,8 @@ export const createUserDtoSchema = z.object({
     .string()
     .trim()
     .max(PHONE_MAX_LENGTH)
-    .optional()
-    .transform((v) => (v ? v : undefined))
+    
+    .transform((v) => (v ? v : undefined)).optional()
     .refine((v) => v === undefined || isValidPhone(v), "Enter a valid phone number"),
 });
 

@@ -10,7 +10,7 @@ export const versionSchema = z.number().int().min(1);
  * 400 VALIDATION_NO_FIELDS); `version` is **required**: an edit form always
  * has the copy it was loaded from, and a stale one is 409 CLIENT_MODIFIED.
  * `status` may only move between active and paused; archiving has its own
- * endpoint. Ownership is not editable here (POST /clients/:id/reassign).
+ * endpoint. The team and lead are not editable here (PUT /clients/:id/team).
  * Each list sent (`websites`, `phones`, `contacts`, `socialAccounts`,
  * `services`) replaces that whole list.
  */

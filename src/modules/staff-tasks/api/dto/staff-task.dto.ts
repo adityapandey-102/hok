@@ -16,8 +16,8 @@ function optionalText(max: number) {
     .trim()
     .max(max)
     .nullable()
-    .optional()
-    .transform((v) => (v === "" ? null : v));
+    
+    .transform((v) => (v === "" ? null : v)).optional();
 }
 
 /** Optional http(s) link; "" or null clears it. Refuses javascript:/data: links. */
@@ -132,8 +132,8 @@ export const staffTaskQueryDtoSchema = z.object({
     .string()
     .trim()
     .max(80)
-    .optional()
-    .transform((v) => (v ? v : undefined)),
+    
+    .transform((v) => (v ? v : undefined)).optional(),
   limit: z.coerce
     .number()
     .int()

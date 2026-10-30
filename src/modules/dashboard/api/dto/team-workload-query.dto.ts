@@ -8,8 +8,8 @@ export const teamWorkloadQueryDtoSchema = z.object({
     .string()
     .trim()
     .max(80)
-    .optional()
-    .transform((v) => (v ? v : undefined)),
+    
+    .transform((v) => (v ? v : undefined)).optional(),
   role: z.enum(ROLES.filter((r) => r !== "admin") as [Exclude<(typeof ROLES)[number], "admin">, ...Exclude<(typeof ROLES)[number], "admin">[]]).optional(),
   limit: z.coerce
     .number()

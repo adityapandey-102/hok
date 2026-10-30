@@ -20,8 +20,8 @@ export const commentQueryDtoSchema = z.object({
     .string()
     .trim()
     .max(100)
-    .optional()
-    .transform((v) => (v ? v : undefined)),
+    
+    .transform((v) => (v ? v : undefined)).optional(),
   status: z.enum(COMMENT_STATUSES).optional(),
   limit,
   offset,
@@ -33,8 +33,8 @@ export const updateCommentDtoSchema = z.object({
   status: z.enum(COMMENT_STATUSES).optional(),
   reply: z
     .union([z.string().trim().max(COMMENT_REPLY_MAX), z.null()])
-    .optional()
-    .transform((v) => (v === "" ? null : v)),
+    
+    .transform((v) => (v === "" ? null : v)).optional(),
   version: z.number().int().min(1),
 });
 export type UpdateCommentDto = z.infer<typeof updateCommentDtoSchema>;

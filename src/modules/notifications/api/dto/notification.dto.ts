@@ -30,7 +30,21 @@ export type UpdatePreferencesDto = z.infer<typeof updatePreferencesDtoSchema>;
 
 /** base64url, as the Push API encodes subscription keys. */
 const base64url = (max: number) => z.string().min(1).max(max).regex(/^[A-Za-z0-9_-]+=*$/, "Not a push subscription key");
-const endpoint = z.string().max(2048).url().refine((v) => v.startsWith("https://"), "A push endpoint is an https URL");
+/**
+ * The browsers' push services (Chrome / Edge-on-Android / Samsung / Opera: FCM; Firefox: Mozilla;
+ * Safari: Apple; Edge on Windows: WNS). The API POSTs to this address on every notification, so any
+ * other host would let a signed-in user point the server at an internal address (SSRF).
+ */
+const PUSH_HOSTS = ["fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com"];
+export function isPushServiceUrl(value: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(value);
+    return protocol === "https:" && PUSH_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+}
+const endpoint = z.string().max(2048).refine(isPushServiceUrl, "Not a browser push service address");
 
 /**
  * POST /notifications/push/subscriptions: the browser's PushSubscription

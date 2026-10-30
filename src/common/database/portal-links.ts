@@ -7,7 +7,7 @@ import { InternalError } from "../errors/app-error";
 // which several modules' public routes depend on, needs it.
 import { portalLinks } from "../../modules/portal/infrastructure/portal.schema";
 import { clients } from "../../modules/clients/infrastructure/clients.schema";
-import { teamIdsOf } from "../../modules/clients/infrastructure/client-team.sql";
+import { notifiedTeamIdsOf } from "../../modules/clients/infrastructure/client-team.sql";
 import { profiles } from "../../modules/users/infrastructure/profile.schema";
 
 /** What a valid portal link opens: one client, and the first name of their manager -- nothing else about staff. */
@@ -19,7 +19,7 @@ export interface PortalContext {
   timeZone: string;
   /** The lead. For server-side use only; never sent to the portal. */
   ownerId: string;
-  /** The client's team, who a new comment notifies. Server-side only; never sent to the portal. */
+  /** The team members a new comment notifies (active client managers only). Server-side only; never sent to the portal. */
   teamIds: string[];
   ownerFirstName: string;
 }
@@ -40,7 +40,7 @@ export async function findActivePortalLink(tokenHash: string): Promise<PortalCon
         logoUrl: clients.logoUrl,
         timeZone: clients.timeZone,
         ownerId: clients.ownerId,
-        teamIds: teamIdsOf(clients.id),
+        teamIds: notifiedTeamIdsOf(clients.id),
         ownerName: profiles.fullName,
       })
       .from(portalLinks)

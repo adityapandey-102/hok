@@ -58,6 +58,10 @@ const pool = new Pool({
   max: env.DB_POOL_MAX,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
+  // A runaway query is cancelled by Postgres after 15s instead of holding one of the few pooled connections.
+  statement_timeout: env.DB_STATEMENT_TIMEOUT_MS, // 0 = off (pg sends nothing)
+  // Hosted Supabase: encrypted and verified against its CA. Unset = whatever sslmode in DATABASE_URL says.
+  ssl: env.DATABASE_SSL_CA ? { ca: env.DATABASE_SSL_CA.replace(/\\n/g, "\n"), rejectUnauthorized: true } : undefined,
 });
 
 // CRITICAL: an idle pooled client can emit 'error' on its own when the database

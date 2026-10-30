@@ -9,8 +9,8 @@ const description = z
   .trim()
   .max(5000)
   .nullable()
-  .optional()
-  .transform((v) => (v === "" ? null : v));
+  
+  .transform((v) => (v === "" ? null : v)).optional();
 
 /** POST /personal-events. Owned by the caller; `timeZone` defaults to their profile's; `clientId` must be one of their own clients. */
 export const createPersonalEventDtoSchema = z.object({

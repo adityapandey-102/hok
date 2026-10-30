@@ -16,8 +16,8 @@ export const updateUserDtoSchema = z.object({
     .trim()
     .max(PHONE_MAX_LENGTH)
     .nullable()
-    .optional()
-    .transform((v) => (v === "" ? null : v))
+    
+    .transform((v) => (v === "" ? null : v)).optional()
     .refine((v) => v == null || isValidPhone(v), "Enter a valid phone number"),
   active: z.boolean().optional(),
 });

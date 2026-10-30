@@ -26,6 +26,19 @@ const envSchema = z.object({
    * ~20-50 staff.
    */
   DB_POOL_MAX: z.coerce.number().int().min(1).default(10),
+  /**
+   * Supabase's CA certificate (PEM; a one-line value with 
+ for line breaks also works), from
+   * Dashboard > Database > SSL. When set the connection is encrypted AND the server's identity is
+   * checked. Leave sslmode out of DATABASE_URL then: a sslmode there would override this.
+   */
+  DATABASE_SSL_CA: z.string().trim().optional().transform((v) => v || undefined),
+  /**
+   * A query running longer than this (ms) is cancelled by Postgres. Sent as a connection
+   * startup setting; a pooler that refuses it ("unsupported startup parameter") needs 0 here
+   * (off), with `alter role postgres set statement_timeout = '15s'` run on the database instead.
+   */
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(15_000),
   /** Auth rate-limit window (ms) and max requests per window per IP. Defaults: 15 min / 30 attempts. */
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().default(30),
@@ -62,14 +75,33 @@ const envSchema = z.object({
    * commit it). The subject is a contact for the push services: `mailto:` or
    * an https URL. All three unset = push is off (the in-app bell still works).
    */
-  VAPID_PUBLIC_KEY: z.string().trim().optional().transform((v) => v || undefined),
-  VAPID_PRIVATE_KEY: z.string().trim().optional().transform((v) => v || undefined),
+  VAPID_PUBLIC_KEY: z.string().trim().transform((v) => v || undefined).optional(),
+  VAPID_PRIVATE_KEY: z.string().trim().transform((v) => v || undefined).optional(),
   VAPID_SUBJECT: z
     .string()
     .trim()
-    .optional()
-    .transform((v) => v || undefined)
+    
+    .transform((v) => v || undefined).optional()
     .refine((v) => v === undefined || /^(mailto:|https:\/\/)/.test(v), "Must start with mailto: or https://"),
+}).superRefine((e, ctx) => {
+  // The localhost defaults are for dev only: a forgotten one in production means portal and
+  // calendar links that point at localhost, or a browser app CORS turns away. Fail at boot instead.
+  if (e.DATABASE_SSL_CA && /[?&]sslmode=/.test(e.DATABASE_URL)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["DATABASE_URL"], message: "Remove sslmode from DATABASE_URL when DATABASE_SSL_CA is set (the URL setting would win)" });
+  }
+  if (e.NODE_ENV !== "production") return;
+  // A hosted database must be reached over SSL: without sslmode in the URL or the CA, the driver would
+  // connect in plain text if the server allows it, sending the password and all data unencrypted.
+  const dbHost = /^[a-z]+:\/\/[^@]*@([^:/?#]+)/i.exec(e.DATABASE_URL)?.[1] ?? "";
+  const sslMode = /[?&]sslmode=([^&]+)/.exec(e.DATABASE_URL)?.[1] ?? "";
+  if (!/^(localhost|127\.0\.0\.1)$/.test(dbHost) &&!e.DATABASE_SSL_CA && !["require", "verify-ca", "verify-full", "no-verify"].includes(sslMode)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["DATABASE_URL"], message: "In production the database connection must use SSL: set DATABASE_SSL_CA (best), or sslmode=require / sslmode=no-verify in DATABASE_URL" });
+  }
+  for (const key of ["CORS_ALLOWED_ORIGIN", "WEB_APP_URL", "PUBLIC_API_URL"] as const) {
+    if (e[key].split(",").some((u) => !u.trim().startsWith("https://") || /localhost|127\.0\.0\.1/.test(u))) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: "Must be the public https:// address in production" });
+    }
+  }
 });
 
 const parsed = envSchema.safeParse(process.env);

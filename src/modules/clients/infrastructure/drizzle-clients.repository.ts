@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, ne, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
 import { NotFoundError } from "../../../common/errors/app-error";
@@ -50,7 +50,7 @@ const CLIENT_SELECT = {
   notes: clients.notes,
   // The team, lead first: one correlated read on the client_members primary key.
   team: sql<ClientTeamMember[]>`coalesce((
-    select json_agg(json_build_object('id', p.id, 'fullName', p.full_name, 'role', p.role, 'isLead', p.id = ${clients.ownerId})
+    select json_agg(json_build_object('id', p.id, 'fullName', p.full_name, 'role', p.role, 'active', p.active, 'isLead', p.id = ${clients.ownerId})
                     order by (p.id = ${clients.ownerId}) desc, p.full_name)
     from ${clientMembers} m join ${profiles} p on p.id = m.profile_id
     where m.client_id = ${clients.id}), '[]'::json)`,
@@ -106,7 +106,17 @@ export class DrizzleClientsRepository implements ClientsRepositoryPort {
     // No status = the working list: archived clients are hidden (FR-CLI-07).
     conditions.push(filters.status ? eq(clients.status, filters.status) : ne(clients.status, "archived"));
     if (filters.ownerId) conditions.push(isOnTeam(clients.id, filters.ownerId));
-    if (filters.search) conditions.push(ilike(clients.businessName, containsPattern(filters.search)));
+    if (filters.search) {
+      const pattern = containsPattern(filters.search);
+      // shortcut: the OR (and the contacts JSON) skips the business-name trigram index; fine for a firm's few hundred clients, add a search column if it reaches thousands.
+      conditions.push(
+        or(
+          ilike(clients.businessName, pattern),
+          ilike(clients.industry, pattern),
+          sql`exists (select 1 from jsonb_array_elements(${clients.contacts}) c where c->>'name' ilike ${pattern})`,
+        )!,
+      );
+    }
     if (filters.industry) conditions.push(sql`lower(${clients.industry}) = lower(${filters.industry})`);
     return and(...conditions);
   }

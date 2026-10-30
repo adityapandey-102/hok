@@ -10,8 +10,8 @@ export const teamStatusQueryDtoSchema = z.object({
     .string()
     .trim()
     .max(80)
-    .optional()
-    .transform((v) => (v ? v : undefined)),
+    
+    .transform((v) => (v ? v : undefined)).optional(),
   role: z.enum(nonAdminRoles).optional(),
   status: z.enum(TEAM_STATUSES).optional(),
   limit: z.coerce

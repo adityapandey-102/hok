@@ -16,8 +16,8 @@ export const userQueryDtoSchema = z.object({
     .string()
     .trim()
     .max(80)
-    .optional()
-    .transform((v) => (v ? v : undefined)),
+    
+    .transform((v) => (v ? v : undefined)).optional(),
   role: z.enum(ROLES).optional(),
   limit: z.coerce
     .number()

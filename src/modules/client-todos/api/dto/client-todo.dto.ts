@@ -13,8 +13,8 @@ function optionalText(max: number) {
     .trim()
     .max(max)
     .nullable()
-    .optional()
-    .transform((v) => (v === "" ? null : v));
+    
+    .transform((v) => (v === "" ? null : v)).optional();
 }
 
 const version = z.number().int().min(1);
@@ -83,8 +83,8 @@ export const clientTodoQueryDtoSchema = z.object({
     .string()
     .trim()
     .max(80)
-    .optional()
-    .transform((v) => (v ? v : undefined)),
+    
+    .transform((v) => (v ? v : undefined)).optional(),
   limit: z.coerce
     .number()
     .int()

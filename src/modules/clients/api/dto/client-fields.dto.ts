@@ -29,8 +29,8 @@ export function optionalText(max: number) {
     .trim()
     .max(max)
     .nullable()
-    .optional()
-    .transform((v) => (v === "" ? null : v));
+    
+    .transform((v) => (v === "" ? null : v)).optional();
 }
 
 /** Optional value checked by `isValid` after trimming; "" -> null. */
@@ -42,8 +42,8 @@ const calendarDate = z
   .string()
   .trim()
   .nullable()
-  .optional()
-  .transform((v) => (v === "" ? null : v))
+  
+  .transform((v) => (v === "" ? null : v)).optional()
   .refine((v) => v == null || isCalendarDate(v), "Use a date in YYYY-MM-DD form");
 
 /** Each account: a known platform (the form's drop-down) and a handle or http(s) link. A platform may repeat. */
@@ -83,7 +83,8 @@ const phones = z
 
 const email = optionalText(254)
   .transform((v) => (v == null ? v : v.toLowerCase()))
-  .refine((v) => v == null || z.string().email().safeParse(v).success, "Enter a valid email address");
+  .refine((v) => v == null || z.string().email().safeParse(v).success, "Enter a valid email address")
+  .optional();
 
 /** People to talk to: a name, and optionally their own phone and email. */
 const contacts = z

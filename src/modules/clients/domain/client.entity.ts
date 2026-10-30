@@ -57,6 +57,8 @@ export interface ClientTeamMember {
   id: string;
   fullName: string;
   role: Role;
+  /** False once the account is deactivated: still listed so the Admin sees who to take off. */
+  active: boolean;
   isLead: boolean;
 }
 

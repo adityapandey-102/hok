@@ -204,7 +204,7 @@ export class ClientsService {
     const scope = this.scopeOf(caller);
     assertAdmin(scope, "change a client's team");
     const memberIds = normalizeTeam(dto.leadId, dto.memberIds);
-    assertValidTeam(memberIds, await this.repo.findTeamCandidates(memberIds));
+    const candidates = await this.repo.findTeamCandidates(memberIds);
 
     // Filled in by the guard (from the locked row), read after the commit.
     const change: { diff?: { added: string[]; removed: string[] }; fromLead?: string; notice?: ClientReassignedNotice } = {};
@@ -215,6 +215,10 @@ export class ClientsService {
         current.team.map((m) => m.id),
         memberIds,
       );
+      // Only the lead and the people being added are checked: someone deactivated
+      // since joining may stay until the Admin takes them off, so one stale member
+      // never blocks every other team change.
+      assertValidTeam([...new Set([dto.leadId, ...diff.added])], candidates);
       if (diff.added.length === 0 && diff.removed.length === 0 && current.ownerId === dto.leadId) return {};
       change.diff = diff;
       change.fromLead = current.ownerId;
