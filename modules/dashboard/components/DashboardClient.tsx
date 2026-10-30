@@ -39,7 +39,7 @@ export function DashboardClient({ firstName, view = "overview" }: { firstName: s
         {view === "mine" ? (
           <div>
             <h1 className="page-title">My clients</h1>
-            <p className="text-sm text-text-muted">The clients you own and the tasks assigned to you.</p>
+            <p className="text-sm text-text-muted">The clients whose team you’re on and the tasks assigned to you.</p>
           </div>
         ) : (
           <div>

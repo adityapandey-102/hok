@@ -17,8 +17,9 @@ describe("phone country codes", () => {
     expect(splitPhone("+1 416 555 0100", "CA")).toEqual({ iso: "CA", local: "416 555 0100" });
   });
 
-  it("keeps a number without + as typed, under the default country", () => {
-    expect(splitPhone("98200 11111")).toEqual({ iso: "IN", local: "98200 11111" });
+  it("keeps an old number without + as typed, with no country (never guessed as +91)", () => {
+    expect(splitPhone("020 7946 0958")).toEqual({ iso: "", local: "020 7946 0958" });
+    expect(joinPhone("", "020 7946 0958")).toBe("020 7946 0958");
     expect(splitPhone("")).toEqual({ iso: "IN", local: "" });
   });
 
@@ -27,6 +28,8 @@ describe("phone country codes", () => {
     expect(joinPhone("AE", "050 123 4567")).toBe("+971 50 123 4567"); // trunk 0 dropped
     expect(joinPhone("IN", "  ")).toBe("");
     expect(joinPhone("IN", "+44 20 7946 0958")).toBe("+44 20 7946 0958"); // typed with its own code
+    expect(joinPhone("IN", "0044 20 7946 0958")).toBe("+44 20 7946 0958"); // 00 = international prefix, not trunk zeros
+    expect(joinPhone("IN", "0")).toBe("");
   });
 
   it("round-trips", () => {

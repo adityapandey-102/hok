@@ -71,6 +71,8 @@ export interface ClientTeamMember {
   id: string;
   fullName: string;
   role: Role;
+  /** False once deactivated: still on the team until the Admin takes them off. */
+  active: boolean;
   isLead: boolean;
 }
 

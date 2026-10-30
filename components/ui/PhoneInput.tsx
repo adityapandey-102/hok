@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { joinPhone, phoneCountries, splitPhone } from "../../lib/domain";
 import { Input } from "./Field";
 import { Select } from "./Select";
+import { useInBrowser } from "../../lib/hooks/useInBrowser";
 
 /**
  * A phone number with its country code: pick the country (common ones
@@ -32,8 +33,9 @@ export function PhoneInput({
   // Country names come from the runtime's own database (Intl.DisplayNames), which
   // can word or order them differently on the server and in the browser. Until
   // the page is interactive both render only the chosen code, so they match.
-  const inBrowser = useSyncExternalStore(subscribeNothing, () => true, () => false);
+  const inBrowser = useInBrowser();
   const countries = inBrowser ? phoneCountries() : phoneCountries().filter((c) => c.iso === iso);
+  const code = phoneCountries().find((c) => c.iso === iso)?.code;
 
   return (
     <div className="flex min-w-0 gap-1.5">
@@ -50,6 +52,8 @@ export function PhoneInput({
           }}
           className="pr-6! pl-3! text-transparent!"
         >
+          {/* An old number saved without a code: say so rather than guess one. */}
+          {start.iso === "" && <option value="">No code</option>}
           {countries.map((c) => (
             <option key={c.iso} value={c.iso} className="text-text-primary">
               {inBrowser ? `+${c.code} ${c.name}` : `+${c.code}`}
@@ -57,7 +61,7 @@ export function PhoneInput({
           ))}
         </Select>
         <span aria-hidden className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[15px] text-text-primary sm:text-sm">
-          +{phoneCountries().find((c) => c.iso === iso)?.code}
+          {code ? `+${code}` : "—"}
         </span>
       </div>
       <Input
@@ -78,4 +82,3 @@ export function PhoneInput({
   );
 }
 
-const subscribeNothing = () => () => {};

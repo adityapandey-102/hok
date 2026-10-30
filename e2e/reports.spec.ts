@@ -4,6 +4,7 @@ const PASSWORD = process.env.E2E_PASSWORD ?? "Hok@2026";
 
 async function login(page: Page, email: string) {
   await page.goto("/login");
+  await page.waitForLoadState("networkidle"); // submitted before hydration, the form does nothing
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();

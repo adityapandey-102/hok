@@ -5,6 +5,7 @@ import {
   CLIENT_STATUS_LABELS,
   CLIENT_TEAM_MAX,
   formatDateOnly,
+  isClientManager,
   ROLE_LABELS,
   SOCIAL_PLATFORM_LABELS,
   timeZoneLabel,
@@ -32,6 +33,7 @@ import { ClientTodosPanel } from "../../client-todos/components/ClientTodosPanel
 import { PortalTab } from "../../portal/components/PortalTab";
 import { STATUS_TONES } from "./ClientsListClient";
 import { ClientAvatar } from "./ClientAvatar";
+import { useInBrowser } from "../../../lib/hooks/useInBrowser";
 
 /** A tab's text is its id (capitalised by CSS) unless it has a `label` (shown as written). */
 const TABS = [
@@ -73,6 +75,7 @@ export function ClientWorkspaceClient({
   const { showToast } = useToast();
   const confirm = useConfirm();
   const [client, setClient] = useState<Client>(initialClient);
+  const tzLabel = timeZoneLabel(client.timeZone, undefined, useInBrowser());
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
@@ -153,7 +156,7 @@ export function ClientWorkspaceClient({
     client.industry ? { icon: "briefcase" as IconName, text: client.industry } : null,
     { icon: "user" as IconName, text: `Lead: ${client.ownerName}` },
     client.team.length > 1 ? { icon: "users" as IconName, text: `Team of ${client.team.length}` } : null,
-    { icon: "clock" as IconName, text: timeZoneLabel(client.timeZone) },
+    { icon: "clock" as IconName, text: tzLabel },
     client.contractEnd ? { icon: "calendar" as IconName, text: `Contract ends ${formatDateOnly(client.contractEnd)}` } : null,
   ].filter((x): x is { icon: IconName; text: string } => x !== null);
 
@@ -269,7 +272,7 @@ export function ClientWorkspaceClient({
                   {client.services.length > 0 && <Row label="Services" value={client.services.join(", ")} />}
                   {client.contractStart && <Row label="Starts" value={formatDateOnly(client.contractStart)} />}
                   {client.contractEnd && <Row label="Ends" value={formatDateOnly(client.contractEnd)} />}
-                  <Row label="Time zone" value={timeZoneLabel(client.timeZone)} />
+                  <Row label="Time zone" value={tzLabel} />
                 </dl>
               </Panel>
 
@@ -298,6 +301,7 @@ export function ClientWorkspaceClient({
                       <span className="min-w-0 truncate text-[15px] text-text-primary">{m.fullName}</span>
                       <span className="flex shrink-0 items-center gap-2 text-[13px] text-text-muted">
                         {ROLE_LABELS[m.role]}
+                        {!canWorkOnClients(m) && <StatusPill label="Inactive" tone="red" />}
                         {m.isLead && <StatusPill label="Lead" tone="gold" />}
                       </span>
                     </li>
@@ -387,7 +391,10 @@ function EditLink({ label = "Edit", onClick }: { label?: string; onClick: () => 
   );
 }
 
-type TeamRow = Pick<ClientTeamMember, "id" | "fullName" | "role">;
+type TeamRow = Pick<ClientTeamMember, "id" | "fullName" | "role" | "active">;
+
+/** Deactivated, or moved to a task-only role: can stay listed, but can't lead or be added. */
+const canWorkOnClients = (m: TeamRow) => m.active && isClientManager(m.role);
 
 /** Admin: who works on the client, and which of them leads it (FR-CLI-05, client teams). */
 function TeamModal({
@@ -401,7 +408,7 @@ function TeamModal({
   onDone: (client: Client) => void;
   onError: (err: unknown) => void;
 }) {
-  const [members, setMembers] = useState<TeamRow[]>(client.team.map(({ id, fullName, role }) => ({ id, fullName, role })));
+  const [members, setMembers] = useState<TeamRow[]>(client.team.map(({ id, fullName, role, active }) => ({ id, fullName, role, active })));
   const [leadId, setLeadId] = useState(client.ownerId);
   const [saving, setSaving] = useState(false);
   const unchanged =
@@ -431,9 +438,10 @@ function TeamModal({
           {members.map((m) => (
             <li key={m.id} className="flex items-center gap-3 rounded-app border border-border-light px-3 py-2 text-sm">
               <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
-                <input type="radio" name="team-lead" checked={leadId === m.id} onChange={() => setLeadId(m.id)} aria-label={`Make ${m.fullName} the lead`} />
+                <input type="radio" name="team-lead" checked={leadId === m.id} disabled={!canWorkOnClients(m)} onChange={() => setLeadId(m.id)} aria-label={`Make ${m.fullName} the lead`} />
                 <span className="min-w-0 truncate text-text-primary">{m.fullName}</span>
                 <span className="shrink-0 text-xs text-text-muted">{ROLE_LABELS[m.role]}</span>
+                {!canWorkOnClients(m) && <StatusPill label="Inactive" tone="red" />}
               </label>
               <button
                 type="button"
@@ -461,7 +469,7 @@ function TeamModal({
             excludeIds={members.map((m) => m.id)}
             load={clientsApi.searchOwnerOptions}
             onChange={(id, item) => {
-              if (id && item?.data) setMembers([...members, { id, fullName: item.data.fullName, role: item.data.role }]);
+              if (id && item?.data) setMembers([...members, { id, fullName: item.data.fullName, role: item.data.role, active: true }]);
             }}
           />
         </div>

@@ -51,9 +51,15 @@ function allZones(): string[] {
   return zones;
 }
 
+// One formatter per zone and style, made once: a search walks ~420 zones, and building formatters was most of its time.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
 function part(zone: string, timeZoneName: Intl.DateTimeFormatOptions["timeZoneName"], at: Date): string {
   try {
-    return new Intl.DateTimeFormat("en-GB", { timeZone: zone, timeZoneName }).formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? "";
+    const key = `${zone}|${timeZoneName}`;
+    let f = formatters.get(key);
+    if (!f) formatters.set(key, (f = new Intl.DateTimeFormat("en-GB", { timeZone: zone, timeZoneName })));
+    return f.formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? "";
   } catch {
     return "";
   }
@@ -74,10 +80,10 @@ export function describeTimeZone(zone: string, at = new Date()): TimeZoneOption 
   return { id: zone, city, name: part(zone, "longGeneric", at), offset: part(zone, "shortOffset", at).replace(/^GMT$/, "GMT+0") };
 }
 
-/** "Kolkata · India Standard Time (GMT+5:30)". */
-export function timeZoneLabel(zone: string, at = new Date()): string {
+/** "Kolkata · India Standard Time (GMT+5:30)"; without the name ("Kolkata (GMT+5:30)") until the browser renders it (useInBrowser). */
+export function timeZoneLabel(zone: string, at = new Date(), withName = true): string {
   const z = describeTimeZone(zone, at);
-  return z.name && z.name !== z.city ? `${z.city} · ${z.name} (${z.offset})` : `${z.city} (${z.offset})`;
+  return withName && z.name && z.name !== z.city ? `${z.city} · ${z.name} (${z.offset})` : `${z.city} (${z.offset})`;
 }
 
 const squash = (s: string) => s.toLowerCase().replace(/[\s_/·()]+/g, " ").trim();

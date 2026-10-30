@@ -4,6 +4,7 @@ const PASSWORD = process.env.E2E_PASSWORD ?? "Hok@2026";
 
 async function login(page: Page, email: string) {
   await page.goto("/login");
+  await page.waitForLoadState("networkidle"); // submitted before hydration, the form does nothing
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -34,7 +35,9 @@ test("a manager creates an event from a template and moves its stage with a clie
   const title = `E2E Shoot ${Date.now()}`;
   await login(page, "rohan.smm@hok.test");
   await page.goto("/app/clients");
-  await page.getByText("Chai Point Cafe").first().click();
+  await page.waitForLoadState("networkidle"); // typed before hydration, the search would be lost
+  await page.getByLabel("Search clients").fill("Chai Point Cafe"); // e2e runs leave newer clients, so it may not be on the first page
+  await page.getByRole("link", { name: /Chai Point Cafe/ }).first().click();
   await page.getByRole("tab", { name: "events" }).click();
   await page.getByRole("link", { name: "New event" }).click();
 

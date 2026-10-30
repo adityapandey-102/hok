@@ -42,7 +42,7 @@ export function Panel({
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-hidden rounded-app-lg bg-card shadow-app print:border print:border-neutral-300">{children}</div>
+      <div className="flex-1 overflow-hidden rounded-app-lg bg-card has-[[role=listbox]]:overflow-visible shadow-app print:border print:border-neutral-300">{children}</div>
     </section>
   );
 }

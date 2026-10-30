@@ -71,13 +71,14 @@ export function phoneCountries(): PhoneCountry[] {
 /**
  * "+971 50 123 4567" → { iso: "AE", local: "50 123 4567" }. The longest
  * matching calling code wins ("+1 242…" is +1, "+971" beats "+97"). A number
- * without "+" keeps the default country and the text as typed; `preferIso`
+ * without "+" (saved before the code picker existed) gets no country (iso "")
+ * and keeps the text as typed, so it's never silently given +91; `preferIso`
  * picks between countries sharing a code (+1: US / Canada / …, +7: Russia / Kazakhstan).
  */
 export function splitPhone(value: string, preferIso = DEFAULT_PHONE_COUNTRY): { iso: string; local: string } {
   const text = value.trim();
   const m = /^\+\s*(\d+)/.exec(text);
-  if (!m) return { iso: preferIso, local: text };
+  if (!m) return { iso: text ? "" : preferIso, local: text };
   const digits = m[1]!;
   for (let len = Math.min(3, digits.length); len >= 1; len--) {
     const code = digits.slice(0, len);
@@ -91,11 +92,18 @@ export function splitPhone(value: string, preferIso = DEFAULT_PHONE_COUNTRY): { 
   return { iso: preferIso, local: text };
 }
 
-/** { iso: "AE", local: "50 123 4567" } → "+971 50 123 4567"; an empty local part is "". A local part typed with its own "+" is kept as is. */
+/**
+ * { iso: "AE", local: "50 123 4567" } → "+971 50 123 4567"; an empty local part is "".
+ * A local part typed with its own "+" (or "00", the international prefix) keeps that code; no country (iso "") keeps the text as typed.
+ */
 export function joinPhone(iso: string, local: string): string {
   const number = local.trim();
   if (!number) return "";
   if (number.startsWith("+")) return number;
+  if (number.startsWith("00")) return `+${number.slice(2).trimStart()}`;
+  if (!iso) return number;
+  const national = number.replace(/^0+/, "");
+  if (!national) return "";
   // A leading trunk 0 ("050 …") is dropped in international form.
-  return `+${CODES[iso] ?? CODES[DEFAULT_PHONE_COUNTRY]} ${number.replace(/^0+/, "")}`;
+  return `+${CODES[iso] ?? CODES[DEFAULT_PHONE_COUNTRY]} ${national}`;
 }

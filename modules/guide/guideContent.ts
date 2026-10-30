@@ -44,7 +44,7 @@ export const GUIDE: GuideArticle[] = [
     pages: ["/app/my-clients"],
     keywords: ["own clients", "admin", "my work"],
     requires: "dashboard:global",
-    summary: "The clients you own as Admin, and the tasks assigned to you, kept apart from the firm overview.",
+    summary: "The clients whose team you’re on as Admin, and the tasks assigned to you, kept apart from the firm overview.",
     steps: ["Open “My clients” in the menu.", "See this week’s events, events by stage, client comments and your open tasks."],
   },
   {
@@ -68,8 +68,8 @@ export const GUIDE: GuideArticle[] = [
       "Archiving, unarchiving and changing the team are for the Admin only.",
     ],
     problems: [
-      { q: "I can't find a client.", a: "Managers only see their own clients. Ask the Admin who owns it, or search with Ctrl+K." },
-      { q: "I can't edit a client.", a: "Archived clients are read-only. Unarchive it first (Admin or its owner)." },
+      { q: "I can't find a client.", a: "You only see clients whose team you're on. Ask the Admin to add you to its team, or search with Ctrl+K." },
+      { q: "I can't edit a client.", a: "Archived clients are read-only. Only the Admin can unarchive it." },
     ],
   },
   {
@@ -87,7 +87,7 @@ export const GUIDE: GuideArticle[] = [
       "Tick “Visible to the client” to show that note on the client’s portal.",
       "Use Postpone or Cancel under “Manage event” when plans change.",
     ],
-    tips: ["The owner gets a reminder about 2 hours before an event starts."],
+    tips: ["The client's team gets a reminder about 2 hours before an event starts."],
   },
   {
     id: "calendar",
@@ -286,7 +286,7 @@ export const GUIDE: GuideArticle[] = [
     topic: "Problems",
     pages: [],
     keywords: ["not found", "404", "missing", "can't open", "access"],
-    summary: "You may not have access to it: managers only see their own clients and tasks assigned to them.",
+    summary: "You may not have access to it: managers only see the clients whose team they're on and the tasks assigned to them.",
     steps: ["Check with the Admin who owns that client or task.", "If a link came from a notification, the item may have been deleted or moved."],
   },
   {

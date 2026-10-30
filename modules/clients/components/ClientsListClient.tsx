@@ -89,7 +89,7 @@ export function ClientsListClient({ isAdmin }: { isAdmin: boolean }) {
         <div className="min-w-0">
           <h1 className="page-title">Clients</h1>
           <p className="text-sm text-text-muted">
-            {isAdmin ? "Every client in the agency." : "The clients you own."}
+            {isAdmin ? "Every client in the agency." : "The clients whose team you’re on."}
             {!loading && !error && ` ${total.toLocaleString("en-IN")} ${total === 1 ? "client" : "clients"}${filtered ? " match" : ""}.`}
           </p>
         </div>

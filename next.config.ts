@@ -19,6 +19,7 @@ function lanIPv4s(): string[] {
 }
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   // Build/dev output folder. Next allows ONE dev server per folder, so agents
   // working in parallel each use their own: `NEXT_DIST_DIR=.next-web npx next
   // dev -p 3401` (docs/AGENT-COORDINATION.md). Default stays `.next`.
@@ -35,6 +36,18 @@ const nextConfig: NextConfig = {
   // cache, or a fixed version would take days to reach installed apps.
   async headers() {
     return [
+      {
+        // Every page: never framed by another site (clickjacking on the staff app), no MIME sniffing,
+        // and only the origin goes to other sites in a Referer. The portal's stricter rules below win.
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
       {
         source: "/sw.js",
         headers: [

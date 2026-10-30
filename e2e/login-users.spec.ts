@@ -11,6 +11,7 @@ test("admin logs in, creates a user, finds it, and logs out", async ({ page }) =
   const name = `E2E Editor ${stamp}`;
 
   await page.goto("/login");
+  await page.waitForLoadState("networkidle"); // submitted before hydration, the form does nothing
   await page.locator('input[type="email"]').fill(ADMIN_EMAIL);
   await page.locator('input[type="password"]').fill(ADMIN_PASSWORD);
   await page.getByRole("button", { name: /sign in|log in/i }).click();
@@ -41,6 +42,7 @@ test("admin logs in, creates a user, finds it, and logs out", async ({ page }) =
 
 test("wrong password shows an error and stays on /login", async ({ page }) => {
   await page.goto("/login");
+  await page.waitForLoadState("networkidle"); // submitted before hydration, the form does nothing
   await page.locator('input[type="email"]').fill(ADMIN_EMAIL);
   await page.locator('input[type="password"]').fill("definitely-wrong");
   await page.getByRole("button", { name: /sign in|log in/i }).click();
