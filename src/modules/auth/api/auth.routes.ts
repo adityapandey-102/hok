@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../../../common/middleware/auth.middleware";
-import { authRateLimiter } from "../../../common/middleware/rate-limit.middleware";
+import { authRateLimiter, loginEmailRateLimiter } from "../../../common/middleware/rate-limit.middleware";
 import { asyncHandler } from "../../../common/http/async-handler";
 import { validateBody } from "../../../common/http/validate.middleware";
 import { AuthService } from "../application/auth.service";
@@ -53,6 +53,7 @@ authRouter.post(
 authRouter.post(
   "/login",
   authRateLimiter,
+  loginEmailRateLimiter,
   validateBody(loginDtoSchema),
   asyncHandler(async (req, res) => {
     res.json(await authService.login(req.body as LoginDto));

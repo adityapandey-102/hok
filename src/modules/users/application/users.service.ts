@@ -2,7 +2,15 @@ import { env } from "../../../config/env";
 import { BadRequestError, NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { generatePassword } from "../../../common/crypto/credentials";
-import { assertNotChangingOwnRole, assertNotDeactivatingSelf, assertPasswordCanBeRegenerated } from "../domain/account-admin.rules";
+import {
+  assertCanChangeRole,
+  assertCanCreateWithRole,
+  assertCanDeactivate,
+  assertCanRegenerateAdminPassword,
+  assertNotChangingOwnRole,
+  assertNotDeactivatingSelf,
+  assertPasswordCanBeRegenerated,
+} from "../domain/account-admin.rules";
 import { toUserResponseDto } from "../api/user.presenter";
 import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "../../../common/audit/audit-actions";
 import { auditLogger as defaultAuditLogger } from "../../../common/audit/drizzle-audit-logger";
@@ -55,7 +63,8 @@ export class UsersService {
    * The generated password is returned once in the response; the Admin is
    * responsible for passing it on to the new person.
    */
-  async createUser(dto: CreateUserDto): Promise<{ userId: string; password: string }> {
+  async createUser(dto: CreateUserDto, callerId: string): Promise<{ userId: string; password: string }> {
+    assertCanCreateWithRole(dto.role, await this.callerIsOwner(callerId));
     const password = generatePassword(dto.fullName);
     const userId = await this.usersRepository.createUser({
       email: dto.email,
@@ -79,6 +88,7 @@ export class UsersService {
   async generatePassword(targetId: string, callerId: string): Promise<{ password: string }> {
     const target = await this.findOrThrow(targetId);
     assertPasswordCanBeRegenerated(target, callerId);
+    assertCanRegenerateAdminPassword(target, await this.callerIsOwner(callerId));
 
     const password = generatePassword(target.fullName);
     await this.usersRepository.setPassword(targetId, password);
@@ -101,13 +111,22 @@ export class UsersService {
     const target = await this.findOrThrow(targetId);
     if (updates.role !== undefined) assertNotChangingOwnRole(targetId, callerId, target.role, updates.role);
     if (updates.active === false) assertNotDeactivatingSelf(targetId, callerId);
+    // Owner rules, consulted only when an Admin is involved so other edits skip the caller lookup.
+    if (updates.role !== undefined && (target.role === "admin" || updates.role === "admin")) {
+      assertCanChangeRole(target, updates.role, await this.callerIsOwner(callerId));
+    }
+    if (updates.active === false) assertCanDeactivate(target, await this.callerIsOwner(callerId));
 
     await this.usersRepository.updateProfile(targetId, updates);
     // `active` through PATCH must have the same effect as deactivate/reactivate:
     // the auth-layer ban is what stops a refresh token from minting new sessions.
     if (updates.active !== undefined && updates.active !== target.active) {
       if (updates.active) await this.usersRepository.unbanAuthUser(targetId);
-      else await this.usersRepository.banAuthUser(targetId);
+      else {
+        await this.usersRepository.banAuthUser(targetId);
+        // No more pushes (task titles, due times) to devices a deactivated person registered.
+        await this.usersRepository.deletePushSubscriptions(targetId);
+      }
     }
 
     await this.audit.record({
@@ -123,12 +142,14 @@ export class UsersService {
 
   async deactivateUser(targetId: string, callerId: string): Promise<void> {
     assertNotDeactivatingSelf(targetId, callerId);
-    await this.findOrThrow(targetId);
+    const target = await this.findOrThrow(targetId);
+    assertCanDeactivate(target, await this.callerIsOwner(callerId));
 
     await this.usersRepository.updateProfile(targetId, { active: false });
     // Blocks sign-in and refresh at the auth layer; requireAuth already rejects
     // an inactive profile on the very next request, so live access tokens die too.
     await this.usersRepository.banAuthUser(targetId);
+    await this.usersRepository.deletePushSubscriptions(targetId);
     await this.audit.record({ action: AUDIT_ACTIONS.USER_DEACTIVATED, entityType: AUDIT_ENTITIES.USER, entityId: targetId });
   }
 
@@ -139,6 +160,11 @@ export class UsersService {
     // Lift the auth-layer ban so the account can sign in again (same password as before).
     await this.usersRepository.unbanAuthUser(targetId);
     await this.audit.record({ action: AUDIT_ACTIONS.USER_REACTIVATED, entityType: AUDIT_ENTITIES.USER, entityId: targetId });
+  }
+
+  /** Whether the signed-in Admin is the Owner (profiles.is_owner); read fresh from the database on each check. */
+  private async callerIsOwner(callerId: string): Promise<boolean> {
+    return (await this.usersRepository.findById(callerId))?.isOwner ?? false;
   }
 
   private async findOrThrow(id: string): Promise<UserAccountEntity> {

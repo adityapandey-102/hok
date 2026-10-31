@@ -2,6 +2,8 @@ import { and, asc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { containsPattern } from "../../../common/database/like-pattern";
 import { db } from "../../../common/database/drizzle-client";
 import { profiles } from "./profile.schema";
+// Cross-module Infrastructure-only write: a deactivated account's push devices go with it. See docs/adr/0003.
+import { pushSubscriptions } from "../../notifications/infrastructure/notifications.schema";
 import { InternalError } from "../../../common/errors/app-error";
 import { UserAccountMapper, type UserAccountRow } from "./user-account.mapper";
 import type { AuthProvider } from "../../../common/auth/auth-provider";
@@ -24,6 +26,7 @@ const USER_ROW_SELECT = {
   phone: profiles.phone,
   avatarUrl: profiles.avatarUrl,
   active: profiles.active,
+  isOwner: profiles.isOwner,
   createdAt: profiles.createdAt,
   lastLoginAt: profiles.lastLoginAt,
   lastSeenAt: profiles.lastSeenAt,
@@ -124,5 +127,9 @@ export class DrizzleUsersRepository implements UsersRepositoryPort {
 
   async unbanAuthUser(id: string): Promise<void> {
     await this.authProvider.unbanUser(id);
+  }
+
+  async deletePushSubscriptions(id: string): Promise<void> {
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.userId, id));
   }
 }

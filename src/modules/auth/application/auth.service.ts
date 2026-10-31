@@ -40,12 +40,15 @@ export class AuthService {
     // Check and create under one lock, re-checked here, not trusted from an earlier bootstrap-status call.
     const userId = await this.authRepository.withBootstrapLock(async () => {
       assertNoAdminExists(await this.authRepository.countAdmins());
-      return this.authRepository.createAdminUser({
+      const id = await this.authRepository.createAdminUser({
         email: dto.email,
         password: dto.password,
         fullName: dto.fullName,
         timeZone: dto.timeZone ?? env.DEFAULT_TIMEZONE,
       });
+      // The first Admin is the Owner -- the only one who can later manage other Admins.
+      await this.authRepository.markOwner(id);
+      return id;
     });
     // Unauthenticated request: the new admin is the actor.
     await this.audit.record({ action: AUDIT_ACTIONS.AUTH_BOOTSTRAP, entityType: AUDIT_ENTITIES.USER, entityId: userId, actorId: userId });

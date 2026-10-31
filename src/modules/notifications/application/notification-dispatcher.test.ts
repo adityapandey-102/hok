@@ -60,6 +60,15 @@ describe("NotificationDispatcher", () => {
       expect(repo.rows).toHaveLength(1); // unchanged: muting the bell mutes everything
     });
 
+    it("gives a deactivated recipient no bell row and no push, but still serves active ones", async () => {
+      repo.inactive.add("sara");
+      await repo.saveSubscription(device("kim", "https://push.test/kim-phone"));
+      await dispatcher.notify(request({ recipientIds: ["sara", "kim"] }));
+      await dispatcher.flush();
+      expect(repo.rows.map((r) => r.userId)).toEqual(["kim"]);
+      expect(sender.sent.map((s) => s.endpoint)).toEqual(["https://push.test/kim-phone"]);
+    });
+
     it("deletes a device the push service says is gone, and keeps one that merely failed", async () => {
       await repo.saveSubscription(device("sara", "https://push.test/old-gone"));
       await repo.saveSubscription(device("sara", "https://push.test/flaky-fail"));
@@ -92,6 +101,13 @@ describe("NotificationDispatcher", () => {
       await dispatcher.flush();
       expect(repo.rows).toEqual([]);
       expect(sender.sent).toHaveLength(2);
+    });
+
+    it("sends no push to a deactivated recipient", async () => {
+      repo.inactive.add("sara");
+      await dispatcher.push(request());
+      await dispatcher.flush();
+      expect(sender.sent).toEqual([]);
     });
 
     it("does nothing without VAPID keys", async () => {

@@ -378,6 +378,7 @@ paths:
         No invite email: the account exists, with a real password, at once.
         The password (first name + 8 random characters, e.g. `Priya-9kQ2Xf7q`)
         is returned **once**; the Admin passes it on.
+        Creating an Admin is Owner-only (`403 USER_OWNER_ONLY`).
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -436,6 +437,9 @@ paths:
         sign-in ban). The Admin cannot change their own role
         (`400 USER_CANNOT_CHANGE_OWN_ROLE`) or deactivate themselves
         (`400 USER_CANNOT_DEACTIVATE_SELF`), so at least one Admin always remains.
+        Owner rules (`403`): only the Owner can make someone an Admin, demote
+        an Admin or deactivate an Admin (`USER_OWNER_ONLY`); nobody can demote
+        or deactivate the Owner (`USER_OWNER_PROTECTED`).
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -463,6 +467,7 @@ paths:
         Refused with `403 USER_PASSWORD_SELF_MANAGED` for the Admin's own
         account (use `POST /api/v1/auth/password-update`) and for another
         Admin who has already signed in (they use "Forgot password").
+        Regenerating any Admin's password is Owner-only (`403 USER_OWNER_ONLY`).
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/UserId"
@@ -483,7 +488,7 @@ paths:
     post:
       tags: [Users]
       summary: Deactivate an account (data kept; sign-in and live tokens refused)
-      description: "`400 USER_CANNOT_DEACTIVATE_SELF` for the caller's own account."
+      description: "`400 USER_CANNOT_DEACTIVATE_SELF` for the caller's own account. `403 USER_OWNER_ONLY` for an Admin target unless the caller is the Owner; `403 USER_OWNER_PROTECTED` for the Owner."
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/UserId"
@@ -2746,7 +2751,7 @@ components:
     UserAccount:
       type: object
       description: A staff account as the Admin sees it.
-      required: [id, fullName, email, role, timeZone, phone, avatarUrl, active, createdAt, lastLoginAt, lastSeenAt]
+      required: [id, fullName, email, role, timeZone, phone, avatarUrl, active, isOwner, createdAt, lastLoginAt, lastSeenAt]
       properties:
         id: { type: string, format: uuid }
         fullName: { type: string }
@@ -2756,6 +2761,7 @@ components:
         phone: { type: string, nullable: true }
         avatarUrl: { type: string, format: uri, nullable: true }
         active: { type: boolean }
+        isOwner: { type: boolean, description: "True for the one Owner (the first Admin)." }
         createdAt: { type: string, format: date-time }
         lastLoginAt: { type: string, format: date-time, nullable: true, description: Last password sign-in; null until the first one. }
         lastSeenAt: { type: string, format: date-time, nullable: true, description: "Last time they used HOK (any authenticated call; recorded at most every 5 minutes). Null = never. The web shows anything older than 45 days as not seen." }

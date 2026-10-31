@@ -37,13 +37,14 @@ export interface NotificationsRepositoryPort {
   insertMany(records: NewNotificationRecord[]): Promise<void>;
 
   // -- preferences ---------------------------------------------------------------
-  /** Preferences of these users (one query); users with no row are absent. */
+  /** Preferences of the ACTIVE users among these (one query); an active user with no row gets no mutes, inactive/unknown users are absent. */
   findPreferences(userIds: string[]): Promise<Map<string, NotificationPreferences>>;
   savePreferences(userId: string, preferences: NotificationPreferences): Promise<NotificationPreferences>;
 
   // -- push devices ----------------------------------------------------------------
   /** Upsert by endpoint: a re-subscribe refreshes keys; the same browser signed in as someone else moves to them. */
   saveSubscription(subscription: NewPushSubscription): Promise<void>;
+  /** Devices of these users, active accounts only. */
   findSubscriptionsForUsers(userIds: string[]): Promise<PushSubscriptionEntity[]>;
   /** Removes one of the user's devices; false if it isn't theirs. */
   deleteSubscription(userId: string, id: string): Promise<boolean>;

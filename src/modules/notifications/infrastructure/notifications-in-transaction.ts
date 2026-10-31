@@ -19,7 +19,8 @@ export async function insertNotificationsInTransaction(tx: DbExecutor, request: 
   const candidates = [...new Set(request.recipientIds)].filter((id) => id !== request.actorId);
   if (candidates.length === 0) return;
   const prefs = await selectPreferences(tx, candidates);
-  const { inApp } = planDelivery(request, (id) => prefs.get(id) ?? NO_MUTES);
+  // Inactive accounts are absent from `prefs`: no bell row for a deactivated person.
+  const { inApp } = planDelivery({ ...request, recipientIds: candidates.filter((id) => prefs.has(id)) }, (id) => prefs.get(id) ?? NO_MUTES);
   if (inApp.length === 0) return;
   const payload = normalizePayload(request.payload);
   await insertNotificationRows(

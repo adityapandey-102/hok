@@ -30,9 +30,19 @@ export function feedTokenFrom(file: string): string | null {
 
 const TYPE_WORDS: Record<string, string> = { shoot: "Shoot", campaign: "Campaign", meeting: "Meeting", content_posting: "Content posting", other: "Other" };
 
-/** RFC 5545 text: backslash, semicolon, comma and newlines escaped. */
+/**
+ * RFC 5545 text: backslash, semicolon, comma and newlines escaped. A lone CR
+ * counts as a newline (some parsers split lines on it, which would let text
+ * inject properties); other control characters and line/paragraph separators
+ * are dropped.
+ */
 function text(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r\n|\r|\n/g, "\\n")
+    .replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029]/g, "");
 }
 
 /** 2026-10-21T09:30:00.000Z → 20261021T093000Z */

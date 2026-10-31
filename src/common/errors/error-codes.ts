@@ -50,6 +50,10 @@ export const ERROR_CODES = {
   USER_PASSWORD_SELF_MANAGED: "USER_PASSWORD_SELF_MANAGED",
   /** Admin changing their own role -- would let the last admin lock everyone out (400). */
   USER_CANNOT_CHANGE_OWN_ROLE: "USER_CANNOT_CHANGE_OWN_ROLE",
+  /** Only the Owner (first Admin) can create, demote or deactivate an Admin, or regenerate an Admin's password (403). */
+  USER_OWNER_ONLY: "USER_OWNER_ONLY",
+  /** The Owner can never be demoted or deactivated (403). */
+  USER_OWNER_PROTECTED: "USER_OWNER_PROTECTED",
   /** An account with this email already exists (409). */
   USER_EMAIL_TAKEN: "USER_EMAIL_TAKEN",
 

@@ -52,6 +52,8 @@ const envSchema = z.object({
   /** Auth rate-limit window (ms) and max requests per window per IP. Defaults: 15 min / 30 attempts. */
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().default(30),
+  /** POST /auth/login only: max attempts per target email per window, across all IPs. */
+  AUTH_LOGIN_EMAIL_MAX: z.coerce.number().int().min(1).default(10),
   /**
    * Public client portal (M8), per IP: reads per 15 minutes, comment posts per
    * hour; plus a firm-wide hourly ceiling on comment posts and a daily cap
@@ -100,6 +102,11 @@ const envSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["DATABASE_URL"], message: "Remove sslmode from DATABASE_URL when DATABASE_SSL_CA is set (the URL setting would win)" });
   }
   if (e.NODE_ENV !== "production") return;
+  // The "loopback" default is wrong behind a hosted proxy: every client would share the proxy's rate-limit
+  // bucket (or a spoofed XFF would be trusted). Make the operator state the hop count on purpose.
+  if (!process.env.TRUST_PROXY?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["TRUST_PROXY"], message: "In production set TRUST_PROXY explicitly to the number of proxies in front of the API (e.g. 1 or 2)" });
+  }
   // A hosted database must be reached over SSL: without sslmode in the URL or the CA, the driver would
   // connect in plain text if the server allows it, sending the password and all data unencrypted.
   const dbHost = /^[a-z]+:\/\/[^@]*@([^:/?#]+)/i.exec(e.DATABASE_URL)?.[1] ?? "";

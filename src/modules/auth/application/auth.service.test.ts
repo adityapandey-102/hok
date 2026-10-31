@@ -49,6 +49,11 @@ class FakeAuthRepository implements AuthRepositoryPort {
     this.createdAdmins.push(record);
     return Promise.resolve("new-admin");
   }
+  owners: string[] = [];
+  markOwner(userId: string): Promise<void> {
+    this.owners.push(userId);
+    return Promise.resolve();
+  }
   signInWithPassword(): Promise<AuthTokens> {
     return Promise.resolve(TOKENS);
   }
@@ -117,6 +122,7 @@ describe("AuthService", () => {
     it("creates the first admin with the default time zone and audits it", async () => {
       await withKey().bootstrap({ setupKey: KEY, email: "first@hok.test", password: "Secret123", fullName: "First Admin" });
       expect(repo.createdAdmins).toEqual([{ email: "first@hok.test", password: "Secret123", fullName: "First Admin", timeZone: "Asia/Kolkata" }]);
+      expect(repo.owners).toEqual(["new-admin"]); // the first Admin is the Owner
       expect(events[0]).toMatchObject({ action: AUDIT_ACTIONS.AUTH_BOOTSTRAP, actorId: "new-admin" });
     });
 

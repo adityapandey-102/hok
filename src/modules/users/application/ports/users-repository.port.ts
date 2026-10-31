@@ -40,4 +40,6 @@ export interface UsersRepositoryPort {
   setPassword(id: string, password: string): Promise<void>;
   banAuthUser(id: string): Promise<void>;
   unbanAuthUser(id: string): Promise<void>;
+  /** Removes every web-push device of the account (on deactivation). */
+  deletePushSubscriptions(id: string): Promise<void>;
 }

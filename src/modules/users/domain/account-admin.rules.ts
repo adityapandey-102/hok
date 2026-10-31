@@ -11,6 +11,12 @@ import type { Role } from "../../../domain";
  * Together, the two "self" rules guarantee there is always at least one active
  * Admin: an Admin can demote or deactivate *another* Admin, but never
  * themselves, so the caller -- an Admin -- always remains.
+ *
+ * On top of that there is one Owner (the first Admin, profiles.is_owner). Only
+ * the Owner manages other Admins (make, demote, deactivate, regenerate the
+ * password of), and nobody can demote or deactivate the Owner. Without this an
+ * Admin could demote a peer, reset their password, then re-promote them (audit
+ * lead users.admin-password-rule-bypass-via-role-flip).
  */
 
 /** An Admin can't deactivate their own account (POST /users/:id/deactivate, or PATCH { active: false }). */
@@ -54,4 +60,38 @@ export function assertPasswordCanBeRegenerated(target: PasswordTarget, callerId:
       ERROR_CODES.USER_PASSWORD_SELF_MANAGED,
     );
   }
+}
+
+/** The Owner-only guard shared by the rules below. */
+function assertCallerIsOwner(callerIsOwner: boolean, action: string): void {
+  if (!callerIsOwner) throw new ForbiddenError(`Only the Owner can ${action}`, ERROR_CODES.USER_OWNER_ONLY);
+}
+
+/** Creating an Admin account is Owner-only. */
+export function assertCanCreateWithRole(role: Role, callerIsOwner: boolean): void {
+  if (role === "admin") assertCallerIsOwner(callerIsOwner, "create an Admin");
+}
+
+/**
+ * A role change that makes or unmakes an Admin is Owner-only, and the Owner
+ * can't be moved off Admin. Resending an Admin's unchanged role is fine.
+ */
+export function assertCanChangeRole(target: { role: Role; isOwner: boolean }, newRole: Role, callerIsOwner: boolean): void {
+  if (target.isOwner && newRole !== "admin") {
+    throw new ForbiddenError("The Owner cannot be demoted", ERROR_CODES.USER_OWNER_PROTECTED);
+  }
+  if ((target.role === "admin") !== (newRole === "admin")) {
+    assertCallerIsOwner(callerIsOwner, newRole === "admin" ? "make someone an Admin" : "demote an Admin");
+  }
+}
+
+/** The Owner can't be deactivated; deactivating any other Admin is Owner-only. */
+export function assertCanDeactivate(target: { role: Role; isOwner: boolean }, callerIsOwner: boolean): void {
+  if (target.isOwner) throw new ForbiddenError("The Owner cannot be deactivated", ERROR_CODES.USER_OWNER_PROTECTED);
+  if (target.role === "admin") assertCallerIsOwner(callerIsOwner, "deactivate an Admin");
+}
+
+/** Regenerating an Admin's password is Owner-only (checked after assertPasswordCanBeRegenerated). */
+export function assertCanRegenerateAdminPassword(target: { role: Role }, callerIsOwner: boolean): void {
+  if (target.role === "admin") assertCallerIsOwner(callerIsOwner, "regenerate an Admin's password");
 }

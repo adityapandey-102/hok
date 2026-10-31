@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 // Cross-module Infrastructure-only read: `profiles` is owned by the Users
 // module's schema (the actor's name on a bell entry). See docs/adr/0003.
@@ -60,14 +60,21 @@ function toRowValues(records: NewNotificationRecord[]) {
   return records.map((r) => ({ userId: r.userId, type: r.type, actorId: r.actorId, payload: r.payload }));
 }
 
+/**
+ * Preferences of the ACTIVE accounts among `userIds` -- the one place delivery
+ * recipients are resolved, so a deactivated account gets no bell row or push
+ * of any type. Every active user is present (no preferences row = no mutes);
+ * inactive or unknown ids are absent, and callers drop them.
+ */
 export async function selectPreferences(ex: DbExecutor, userIds: string[]): Promise<Map<string, NotificationPreferences>> {
   const result = new Map<string, NotificationPreferences>();
   if (userIds.length === 0) return result;
   const rows = await ex
-    .select({ userId: notificationPreferences.userId, mutedPush: notificationPreferences.mutedPush, mutedInApp: notificationPreferences.mutedInApp })
-    .from(notificationPreferences)
-    .where(inArray(notificationPreferences.userId, userIds));
-  for (const r of rows) result.set(r.userId, { mutedPush: r.mutedPush, mutedInApp: r.mutedInApp });
+    .select({ userId: profiles.id, mutedPush: notificationPreferences.mutedPush, mutedInApp: notificationPreferences.mutedInApp })
+    .from(profiles)
+    .leftJoin(notificationPreferences, eq(notificationPreferences.userId, profiles.id))
+    .where(and(inArray(profiles.id, userIds), eq(profiles.active, true)));
+  for (const r of rows) result.set(r.userId, { mutedPush: r.mutedPush ?? [], mutedInApp: r.mutedInApp ?? [] });
   return result;
 }
 
@@ -182,10 +189,12 @@ export class DrizzleNotificationsRepository implements NotificationsRepositoryPo
   findSubscriptionsForUsers(userIds: string[]) {
     return guarded("load push devices", async (): Promise<PushSubscriptionEntity[]> => {
       if (userIds.length === 0) return [];
+      // Active owners only: a deactivated account's devices stay silent even if one slipped in.
       const rows = await db
-        .select()
+        .select(getTableColumns(pushSubscriptions))
         .from(pushSubscriptions)
-        .where(inArray(pushSubscriptions.userId, userIds))
+        .innerJoin(profiles, eq(profiles.id, pushSubscriptions.userId))
+        .where(and(inArray(pushSubscriptions.userId, userIds), eq(profiles.active, true)))
         .orderBy(asc(pushSubscriptions.createdAt));
       return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString(), lastUsedAt: r.lastUsedAt.toISOString() }));
     });

@@ -11,6 +11,7 @@ export interface UserAccountRow {
   phone: string | null;
   avatarUrl: string | null;
   active: boolean;
+  isOwner: boolean;
   createdAt: Date;
   lastLoginAt: Date | null;
   lastSeenAt: Date | null;
@@ -27,6 +28,7 @@ export const UserAccountMapper = {
       phone: row.phone,
       avatarUrl: row.avatarUrl,
       active: row.active,
+      isOwner: row.isOwner,
       createdAt: row.createdAt.toISOString(),
       lastLoginAt: row.lastLoginAt ? row.lastLoginAt.toISOString() : null,
       lastSeenAt: row.lastSeenAt ? row.lastSeenAt.toISOString() : null,

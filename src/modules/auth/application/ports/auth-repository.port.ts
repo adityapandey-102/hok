@@ -19,6 +19,8 @@ export interface AuthRepositoryPort {
   withBootstrapLock<T>(fn: () => Promise<T>): Promise<T>;
   /** Creates the auth user with role `admin`; returns the new user id. */
   createAdminUser(record: NewAdminRecord): Promise<string>;
+  /** Marks the first Admin as the Owner (profiles.is_owner); see users/domain/account-admin.rules.ts. */
+  markOwner(userId: string): Promise<void>;
   signInWithPassword(email: string, password: string): Promise<AuthSession>;
   refreshSession(refreshToken: string): Promise<AuthSession>;
   signOut(accessToken: string): Promise<void>;

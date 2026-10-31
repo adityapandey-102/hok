@@ -1,4 +1,4 @@
-import { REMINDER_TYPES, type NotificationEntity, type NotificationPreferences, type PushMessage, type PushSubscriptionEntity } from "../domain/notification.entity";
+import { NO_MUTES, REMINDER_TYPES, type NotificationEntity, type NotificationPreferences, type PushMessage, type PushSubscriptionEntity } from "../domain/notification.entity";
 import type {
   NewNotificationRecord,
   NewPushSubscription,
@@ -13,6 +13,8 @@ export class FakeNotificationsRepository implements NotificationsRepositoryPort 
   prefs = new Map<string, NotificationPreferences>();
   devices: PushSubscriptionEntity[] = [];
   touched: string[] = [];
+  /** Deactivated accounts: no preferences entry, no devices returned (mirrors the profiles.active join). */
+  inactive = new Set<string>();
   failNextInsert = false;
 
   private mine(userId: string, unreadOnly: boolean) {
@@ -61,7 +63,7 @@ export class FakeNotificationsRepository implements NotificationsRepositoryPort 
     return Promise.resolve();
   }
   findPreferences(userIds: string[]) {
-    return Promise.resolve(new Map([...this.prefs].filter(([id]) => userIds.includes(id))));
+    return Promise.resolve(new Map(userIds.filter((id) => !this.inactive.has(id)).map((id) => [id, this.prefs.get(id) ?? NO_MUTES])));
   }
   savePreferences(userId: string, preferences: NotificationPreferences) {
     this.prefs.set(userId, preferences);
@@ -73,7 +75,7 @@ export class FakeNotificationsRepository implements NotificationsRepositoryPort 
     return Promise.resolve();
   }
   findSubscriptionsForUsers(userIds: string[]) {
-    return Promise.resolve(this.devices.filter((d) => userIds.includes(d.userId)));
+    return Promise.resolve(this.devices.filter((d) => userIds.includes(d.userId) && !this.inactive.has(d.userId)));
   }
   deleteSubscription(userId: string, id: string) {
     const before = this.devices.length;

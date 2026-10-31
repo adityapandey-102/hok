@@ -11,6 +11,8 @@ export interface UserAccountEntity {
   phone: string | null;
   avatarUrl: string | null;
   active: boolean;
+  /** The one Owner (first Admin): only they manage other Admins, and nobody can demote or deactivate them. */
+  isOwner: boolean;
   createdAt: string;
   /** Last password sign-in (not a silent refresh); null until their first login. */
   lastLoginAt: string | null;

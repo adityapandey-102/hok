@@ -10,6 +10,8 @@ export interface UserResponseDto {
   phone: string | null;
   avatarUrl: string | null;
   active: boolean;
+  /** The one Owner (first Admin): only they manage other Admins, and nobody can demote or deactivate them. */
+  isOwner: boolean;
   createdAt: string;
   lastLoginAt: string | null;
   lastSeenAt: string | null;

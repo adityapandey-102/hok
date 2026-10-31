@@ -45,6 +45,14 @@ export class DrizzleAuthRepository implements AuthRepositoryPort {
     return this.authProvider.createUser({ ...record, role: "admin" });
   }
 
+  async markOwner(userId: string): Promise<void> {
+    try {
+      await db.update(profiles).set({ isOwner: true }).where(eq(profiles.id, userId));
+    } catch (error) {
+      throw new InternalError("Failed to mark the Owner", error);
+    }
+  }
+
   async signInWithPassword(email: string, password: string): Promise<AuthSession> {
     return this.authProvider.signInWithPassword(email, password);
   }

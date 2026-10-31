@@ -41,7 +41,7 @@ usersRouter.post(
   "/",
   validateBody(createUserDtoSchema),
   asyncHandler(async (req, res) => {
-    const result = await usersService.createUser(req.body as CreateUserDto);
+    const result = await usersService.createUser(req.body as CreateUserDto, req.authUserId!);
     res.status(201).json(result);
   }),
 );

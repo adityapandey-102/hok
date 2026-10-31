@@ -41,7 +41,8 @@ export class NotificationDispatcher {
       const candidates = [...new Set(request.recipientIds)].filter((id) => id !== request.actorId);
       if (candidates.length === 0) return;
       const prefs = await this.repo.findPreferences(candidates);
-      const plan = planDelivery(request, (id) => prefs.get(id) ?? NO_MUTES);
+      // Inactive accounts are absent from `prefs`: no bell row, no push.
+      const plan = planDelivery({ ...request, recipientIds: candidates.filter((id) => prefs.has(id)) }, (id) => prefs.get(id) ?? NO_MUTES);
       if (plan.inApp.length === 0) return;
       const payload = normalizePayload(request.payload);
       await this.repo.insertMany(plan.inApp.map((userId) => ({ userId, type: request.type, actorId: request.actorId, payload })));
@@ -57,7 +58,8 @@ export class NotificationDispatcher {
       const candidates = [...new Set(request.recipientIds)].filter((id) => id !== request.actorId);
       if (candidates.length === 0) return;
       const prefs = await this.repo.findPreferences(candidates);
-      const plan = planDelivery(request, (id) => prefs.get(id) ?? NO_MUTES);
+      // Inactive accounts are absent from `prefs`: no bell row, no push.
+      const plan = planDelivery({ ...request, recipientIds: candidates.filter((id) => prefs.has(id)) }, (id) => prefs.get(id) ?? NO_MUTES);
       if (plan.push.length > 0) this.background(this.deliver(plan.push, toPushMessage(request.type, request.payload)));
     } catch (error) {
       logger.error({ err: error, type: request.type }, "Could not send push notifications");

@@ -54,6 +54,13 @@ describe("toIcs", () => {
     expect(lines).toContain("SUMMARY:Call\\nback");
   });
 
+  it("cannot be made to start a new line by a bare CR or other control characters in text", () => {
+    const out = toIcs([{ ...personal, title: "Hi\rURL:https://x\u2028ATTENDEE:y\u0085z\u0000\u001B\u007Fq\tw" }], opts);
+    expect(out).not.toMatch(/\r(?!\n)/);
+    expect(out.split("\r\n")).toContain("SUMMARY:Hi\\nURL:https://xATTENDEE:yzq\tw");
+    expect(out.split("\r\n").some((l) => l.startsWith("URL:"))).toBe(false);
+  });
+
   it("leaves DTEND out of a zero-length item (RFC 5545: DTEND must be after DTSTART)", () => {
     const zero = toIcs([{ ...personal, endsAt: personal.startsAt }], opts).split("\r\n");
     expect(zero).toContain("DTSTART:20261022T050000Z");

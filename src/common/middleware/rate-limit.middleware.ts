@@ -1,6 +1,17 @@
+import type { Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { env } from "../../config/env";
 import { ERROR_CODES } from "../errors/error-codes";
+import { ipKey } from "./ip-key";
+
+/** Respond in the API's standard error shape (stable code + requestId) rather than express-rate-limit's default plain-text body. */
+const rateLimitedHandler = (req: Request, res: Response) => {
+  res.status(429).json({
+    error: "Too many attempts. Please wait a while and try again.",
+    code: ERROR_CODES.RATE_LIMITED,
+    requestId: typeof req.id === "string" ? req.id : undefined,
+  });
+};
 
 /**
  * Brute-force protection for authentication endpoints only. Deliberately
@@ -20,13 +31,26 @@ export const authRateLimiter = rateLimit({
   limit: env.AUTH_RATE_LIMIT_MAX,
   standardHeaders: "draft-7", // RateLimit-* response headers
   legacyHeaders: false,
-  // Respond in the API's standard error shape (stable code + requestId) rather
-  // than express-rate-limit's default plain-text body.
-  handler: (req, res) => {
-    res.status(429).json({
-      error: "Too many attempts. Please wait a while and try again.",
-      code: ERROR_CODES.RATE_LIMITED,
-      requestId: typeof req.id === "string" ? req.id : undefined,
-    });
-  },
+  keyGenerator: (req) => ipKey(req.ip), // IPv6 grouped by /64
+  handler: rateLimitedHandler,
+});
+
+/** Per-email key for login: lower-cased, trimmed body.email; the IP key when there is none. */
+export function loginEmailKey(req: Pick<Request, "body" | "ip">): string {
+  const email: unknown = (req.body as { email?: unknown } | undefined)?.email;
+  return typeof email === "string" && email.trim() ? `email:${email.trim().toLowerCase()}` : ipKey(req.ip);
+}
+
+/**
+ * Extra cap on POST /auth/login per target account, on top of the per-IP
+ * authRateLimiter: stops one account being guessed from many IPs (or from
+ * behind a rotating IPv6 range). Same window and 429 shape as authRateLimiter.
+ */
+export const loginEmailRateLimiter = rateLimit({
+  windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+  limit: env.AUTH_LOGIN_EMAIL_MAX,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: loginEmailKey,
+  handler: rateLimitedHandler,
 });

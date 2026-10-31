@@ -193,10 +193,12 @@ describe("POST /users/:id/generate-password", () => {
     expect(own.status).toBe(403);
     expect((own.body as { code: string }).code).toBe("USER_PASSWORD_SELF_MANAGED");
 
+    // Another Admin's password: only the Owner may reset it (security audit run 1), and this
+    // fixture Admin is not the Owner, so it is refused whether or not they have signed in.
     const otherAdmin = await fixture("admin", "IT Other Admin");
-    // Before their first sign-in: allowed.
-    expect((await request(app).post(`/api/v1/users/${otherAdmin.id}/generate-password`).set("Authorization", adminAuth)).status).toBe(201);
-    // After it (last_login_at set, as POST /auth/login does): refused.
+    const before = await request(app).post(`/api/v1/users/${otherAdmin.id}/generate-password`).set("Authorization", adminAuth);
+    expect(before.status).toBe(403);
+    expect((before.body as { code: string }).code).toBe("USER_OWNER_ONLY");
     await db.update(profiles).set({ lastLoginAt: new Date() }).where(eq(profiles.id, otherAdmin.id));
     const after = await request(app).post(`/api/v1/users/${otherAdmin.id}/generate-password`).set("Authorization", adminAuth);
     expect(after.status).toBe(403);

@@ -23,6 +23,8 @@ export const profiles = pgTable("profiles", {
   phone: text("phone"),
   avatarUrl: text("avatar_url"),
   active: boolean("active").notNull().default(true),
+  /** The first Admin (supabase/migrations/20261030000003); at most one row, enforced by a unique partial index. */
+  isOwner: boolean("is_owner").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
