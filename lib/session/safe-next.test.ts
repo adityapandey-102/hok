@@ -13,6 +13,12 @@ describe("safeNext (open-redirect guard)", () => {
     }
   });
 
+  it("refuses dot-segment tricks that normalise into //host (security audit run 1)", () => {
+    for (const bad of ["/.//evil.example", "/a/..//evil.example", "/%2e//evil.example", "/./\\evil.example"]) {
+      expect(safeNext(bad), JSON.stringify(bad)).toBe("/app");
+    }
+  });
+
   it("falls back when missing", () => {
     expect(safeNext(null)).toBe("/app");
     expect(safeNext("", "/login")).toBe("/login");

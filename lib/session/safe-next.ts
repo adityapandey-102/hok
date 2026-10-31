@@ -11,7 +11,11 @@ export function safeNext(next: string | null | undefined, fallback = "/app"): st
   if (!next || !next.startsWith("/")) return fallback;
   try {
     const url = new URL(next, BASE);
-    return url.origin === BASE ? `${url.pathname}${url.search}${url.hash}` : fallback;
+    if (url.origin !== BASE) return fallback;
+    const path = `${url.pathname}${url.search}${url.hash}`;
+    // Dot segments can normalise "/.//evil.example" into "//evil.example", which the
+    // router then treats as another origin (security audit run 1): never return one.
+    return /^\/(?![/\\])/.test(path) ? path : fallback;
   } catch {
     return fallback;
   }

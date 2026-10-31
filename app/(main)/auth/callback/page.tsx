@@ -1,72 +1,17 @@
-"use client";
-
-import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { authApi } from "../../../../modules/auth/api/authApi";
-import { safeNext } from "../../../../lib/session/safe-next";
-
 /**
- * Lands here from a password-reset or invite email link. This local Supabase
- * project (and most default configs) uses the implicit flow, so GoTrue hands
- * back tokens directly in the URL fragment (`#access_token=...`) -- a
- * fragment never reaches a server, so this has to be a client page, not a
- * Route Handler. A `?code=` query param (PKCE) is also handled, in case the
- * project is ever reconfigured for it.
+ * Email sign-in links (password reset / invite) are turned off until HOK has an
+ * email service (owner decision, security audit run 1). The previous page signed in
+ * whatever tokens a link carried, replacing the visitor's own session, so a crafted
+ * link could put a signed-in person into someone else's account. Re-enable with a
+ * single-use code bound to the browser that asked for the email.
  */
-function AuthCallbackContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const next = safeNext(searchParams.get("next"));
-    const code = searchParams.get("code");
-
-    async function complete() {
-      if (code) {
-        await authApi.exchangeCode({ code });
-        router.replace(next);
-        return;
-      }
-
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-      const accessToken = hashParams.get("access_token");
-      const refreshToken = hashParams.get("refresh_token");
-
-      if (accessToken && refreshToken) {
-        // Hand the fragment tokens to the server so the refresh token is
-        // stored httpOnly (JS can't set an httpOnly cookie itself).
-        await authApi.establish({ accessToken, refreshToken });
-        router.replace(next);
-        return;
-      }
-
-      throw new Error(hashParams.get("error_description")?.replace(/\+/g, " ") || "This link is invalid or has expired.");
-    }
-
-    complete().catch((err) => setError(err instanceof Error ? err.message : "This link is invalid or has expired."));
-  }, [router, searchParams]);
-
+export default function AuthCallbackPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-app-bg px-4 py-10">
       <div className="w-full max-w-sm rounded-app-lg border border-border bg-card p-6 text-center shadow-app-md">
-        {error ? (
-          <>
-            <h1 className="font-serif text-[26px] leading-tight text-text-primary">Link expired</h1>
-            <p className="mt-2 text-sm text-text-secondary">{error}</p>
-          </>
-        ) : (
-          <p className="text-sm text-text-muted">Signing you in…</p>
-        )}
+        <h1 className="font-serif text-[26px] leading-tight text-text-primary">Link not available</h1>
+        <p className="mt-2 text-sm text-text-secondary">Sign-in links aren&apos;t used yet. Ask your Admin for a new password, then sign in on the login page.</p>
       </div>
     </div>
-  );
-}
-
-export default function AuthCallbackPage() {
-  return (
-    <Suspense>
-      <AuthCallbackContent />
-    </Suspense>
   );
 }

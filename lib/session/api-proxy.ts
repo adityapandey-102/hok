@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { clientIpFrom } from "./refresh";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
@@ -18,7 +19,7 @@ export async function postToAuthApi(
   request: NextRequest,
 ): Promise<{ status: number; data: Record<string, unknown> }> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const clientIp = clientIpFrom(request);
+  const clientIp = clientIpFrom(request.headers);
   if (clientIp) headers["x-forwarded-for"] = clientIp;
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -32,9 +33,3 @@ export async function postToAuthApi(
   return { status: response.status, data };
 }
 
-/** Best-effort client IP from the hosting proxy's forwarding headers. */
-function clientIpFrom(request: NextRequest): string | null {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) return forwardedFor.split(",")[0]!.trim();
-  return request.headers.get("x-real-ip");
-}

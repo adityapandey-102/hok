@@ -1,5 +1,7 @@
+import { headers as requestHeaders } from "next/headers";
 import { getAccessToken, getRefreshToken, setSession } from "../session/server";
 import { isExpired } from "../session/jwt";
+import { isRefreshTokenRejected, postRefresh } from "../session/refresh";
 import { describeFetchError, logger } from "../logging/logger";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
@@ -26,14 +28,17 @@ async function ensureFreshAccessToken(): Promise<string | null> {
   const refreshToken = await getRefreshToken();
   if (!refreshToken) return null;
 
-  const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken }),
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await postRefresh(refreshToken, await requestHeaders());
+  } catch {
+    throw new ApiError("Service temporarily unavailable. Please try again.", 503);
+  }
 
-  if (!response.ok) return null;
+  // Only a rejected token means no session; 429 / 5xx must not end it (the
+  // layout shows an error instead of signing the user out).
+  if (isRefreshTokenRejected(response.status)) return null;
+  if (!response.ok) throw new ApiError("Service temporarily unavailable. Please try again.", response.status === 429 ? 429 : 503);
 
   const data = await response.json();
   // Best-effort: throws (and is swallowed) when called from a plain Server

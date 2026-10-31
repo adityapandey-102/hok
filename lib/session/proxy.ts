@@ -6,8 +6,7 @@ import {
   COOKIE_MAX_AGE_REFRESH,
 } from "./constants";
 import { isExpired } from "./jwt";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
+import { isRefreshTokenRejected, postRefresh } from "./refresh";
 
 /** Where a signed-in staff member lands. */
 export const APP_HOME = "/app";
@@ -52,15 +51,25 @@ export async function updateSession(request: NextRequest) {
   let accessToken = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value ?? null;
   const refreshToken = request.cookies.get(REFRESH_TOKEN_COOKIE)?.value ?? null;
   let refreshedTokens: Tokens | null = null;
+  let refreshUnavailable = false;
 
   if ((!accessToken || isExpired(accessToken)) && refreshToken) {
-    refreshedTokens = await refreshSession(refreshToken);
-    accessToken = refreshedTokens?.accessToken ?? null;
+    const result = await refreshSession(request, refreshToken);
+    if (result === "unavailable") {
+      // 429 / 5xx / network: the session may be fine, so keep the cookies and
+      // let the request through; the next navigation retries the refresh.
+      refreshUnavailable = true;
+    } else if (result) {
+      refreshedTokens = result;
+      accessToken = result.accessToken;
+    } else {
+      accessToken = null;
+    }
   }
 
   const authenticated = Boolean(accessToken && !isExpired(accessToken));
 
-  if (!authenticated && isProtected) {
+  if (!authenticated && isProtected && !refreshUnavailable) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname);
     const response = NextResponse.redirect(loginUrl);
@@ -76,19 +85,17 @@ export async function updateSession(request: NextRequest) {
   return applyTokens(NextResponse.next({ request }), refreshedTokens);
 }
 
-async function refreshSession(refreshToken: string): Promise<Tokens | null> {
+/** Tokens on success, null when hok-api rejects the refresh token (dead session), "unavailable" on any other failure. */
+async function refreshSession(request: NextRequest, refreshToken: string): Promise<Tokens | null | "unavailable"> {
   try {
-    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
-    if (!response.ok) return null;
+    const response = await postRefresh(refreshToken, request.headers);
+    if (isRefreshTokenRejected(response.status)) return null;
+    if (!response.ok) return "unavailable";
 
     const data = await response.json();
     return { accessToken: data.accessToken, refreshToken: data.refreshToken };
   } catch {
-    return null;
+    return "unavailable";
   }
 }
 
