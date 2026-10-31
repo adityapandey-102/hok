@@ -48,14 +48,9 @@ Copy the first value to V7, the second to V8, and the VAPID public and private k
 
 Vercel and DigitalOcean deploy from GitHub.
 
-**One repo for both apps works fine.** Vercel and DigitalOcean each let you pick a sub-folder ("Root directory" / "Source directory"), so one private repo `hok` can hold `hok-api/`, `hok-web/` and `docs/`. Claude will:
-1. commit the security fixes in each app (you say yes first);
-2. join both apps into one repo at the `HOK` folder, **keeping both histories**. The old `.git` folders are kept as a backup in `HOK/.repo-backups/`;
-3. leave out the things that must never go online: `.env` files, `security-audit/` (it describes weak spots), `graphify-out/`, `node_modules`, build folders.
+**Done (2026-10-31).** The code is at **https://github.com/adityapandey-102/hok** (public for now: the trial account cannot make private repos). One repo holds `hok-api/`, `hok-web/` and `docs/`, with both apps' history kept. Before the push, the full history was checked for keys and passwords and none were found. Never published: `.env` files, `security-audit/`, `graphify-out/`, `node_modules`, build folders. The old `.git` folders are backed up in `HOK/.repo-backups/`.
 
-You then:
-1. Go to github.com → **New repository** → name `hok` → **Private** → no README → Create.
-2. Give Claude the repo address (`https://github.com/<you>/hok.git`). Claude adds it and pushes after you say yes.
+Because the repo is public, **never put a real key in any file in it**. Keys go only into the DigitalOcean and Vercel settings screens. The seed's test password `Hok@2026` is public, so the seed now refuses to run against any database that is not on your own computer. Switch the repo to **Private** (Settings → General → Danger Zone) once the account allows it.
 
 ---
 
