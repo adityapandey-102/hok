@@ -62,7 +62,11 @@ export const authApi = {
     return postSession("exchange-code", payload);
   },
 
-  updatePassword(payload: { newPassword: string }): Promise<void> {
+  me(): Promise<{ profile: Profile }> {
+    return apiFetch("/auth/me");
+  },
+
+  updatePassword(payload: { currentPassword: string; newPassword: string }): Promise<void> {
     return apiFetch("/auth/password-update", { method: "POST", body: JSON.stringify(payload) });
   },
 

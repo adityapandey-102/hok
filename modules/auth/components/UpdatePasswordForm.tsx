@@ -8,6 +8,7 @@ import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
 
 export function UpdatePasswordForm() {
   const router = useRouter();
+  const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -18,7 +19,10 @@ export function UpdatePasswordForm() {
     setLoading(true);
 
     try {
-      await authApi.updatePassword({ newPassword: password });
+      // The change ends every session (security audit run 1), so sign this device straight back in.
+      const { profile } = await authApi.me();
+      await authApi.updatePassword({ currentPassword: current, newPassword: password });
+      await authApi.login({ email: profile.email, password });
       router.push("/app");
       router.refresh();
     } catch (err) {
@@ -32,6 +36,13 @@ export function UpdatePasswordForm() {
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div>
         <h1 className="font-serif text-[28px] leading-tight text-text-primary">Set a new password</h1>
+      </div>
+
+      <p className="text-sm text-text-secondary">Your other devices are signed out after the change; this one stays signed in.</p>
+
+      <div>
+        <FieldLabel required>Current password</FieldLabel>
+        <Input type="password" required autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
       </div>
 
       <div>
