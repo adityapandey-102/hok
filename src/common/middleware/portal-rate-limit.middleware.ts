@@ -2,6 +2,7 @@ import rateLimit from "express-rate-limit";
 import type { Request, Response } from "express";
 import { env } from "../../config/env";
 import { ERROR_CODES } from "../errors/error-codes";
+import { clientIp } from "./client-ip";
 import { ipKey } from "./ip-key";
 
 /**
@@ -11,7 +12,7 @@ import { ipKey } from "./ip-key";
  * IP, capped for everyone together, and capped per link so one leaked link
  * can't flood a manager's inbox.
  */
-function limiter(windowMs: number, limit: number, message: string, keyGenerator: (req: Request) => string = (req) => ipKey(req.ip)) {
+function limiter(windowMs: number, limit: number, message: string, keyGenerator: (req: Request) => string = (req) => ipKey(clientIp(req))) {
   return rateLimit({
     windowMs,
     limit,

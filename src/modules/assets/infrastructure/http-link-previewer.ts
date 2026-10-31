@@ -11,17 +11,28 @@ import { assets } from "./assets.schema";
 
 /** Hard limits: a preview is a nicety, never worth slowing or exposing the server. */
 const TIMEOUT_MS = 4_000;
-const MAX_BYTES = 512 * 1024;
+const MAX_BYTES = 64 * 1024; // the <head> is all we read
 const MAX_REDIRECTS = 3;
+const DNS_TIMEOUT_MS = 2_000;
 const USER_AGENT = "HOKLinkPreview/1.0";
 
 /**
  * DNS lookup that refuses non-public answers AT CONNECT TIME (no gap between
  * "checked" and "connected", so DNS rebinding can't slip a private address
- * in). If any answer is non-public the whole lookup fails.
+ * in). If any answer is non-public the whole lookup fails. dns.lookup holds a
+ * libuv thread and can't be cancelled, so a slow one is abandoned after
+ * DNS_TIMEOUT_MS (the preview fails; the limiter below bounds how many hang).
  */
 const guardedLookup: LookupFunction = (hostname, options, callback) => {
+  let done = false;
+  const timer = setTimeout(() => {
+    done = true;
+    callback(Object.assign(new Error(`DNS lookup timed out for ${hostname}`), { code: "ETIMEOUT" }), "", 0);
+  }, DNS_TIMEOUT_MS);
   dns.lookup(hostname, { all: true, family: options.family ?? 0 }, (err, addresses) => {
+    clearTimeout(timer);
+    if (done) return;
+    done = true;
     if (err) return callback(err, "", 0);
     if (addresses.length === 0 || addresses.some((a) => !isPublicAddress(a.address))) {
       return callback(Object.assign(new Error(`Refusing non-public address for ${hostname}`), { code: "EBLOCKED" }), "", 0);
@@ -30,6 +41,46 @@ const guardedLookup: LookupFunction = (hostname, options, callback) => {
     callback(null, addresses[0]!.address, addresses[0]!.family);
   });
 };
+
+/**
+ * At most `limit` jobs run at once; up to `maxWaiting` more queue, the rest
+ * are refused (a preview is best-effort, so dropping beats piling up work).
+ */
+export function createLimiter(limit: number, maxWaiting: number) {
+  let running = 0;
+  const waiting: (() => void)[] = [];
+  const next = () => {
+    const start = waiting.shift();
+    if (start) start();
+    else running -= 1;
+  };
+  return {
+    /** False when dropped (queue full); otherwise the job runs now or when a slot frees. */
+    run(job: () => Promise<void>): boolean {
+      const go = () => void job().catch(() => undefined).finally(next);
+      if (running < limit) {
+        running += 1;
+        go();
+        return true;
+      }
+      if (waiting.length >= maxWaiting) return false;
+      waiting.push(go);
+      return true;
+    },
+  };
+}
+
+const previewLimiter = createLimiter(2, 50);
+
+/** UTF-8 only: invalid bytes mean the page isn't something we can read safely, so no preview. */
+export function decodeUtf8(chunks: Buffer[], truncated: boolean): string | null {
+  try {
+    // stream: a cut at the size cap may split a character; that's not an error.
+    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks), { stream: truncated });
+  } catch {
+    return null;
+  }
+}
 
 interface Fetched {
   status: number;
@@ -54,7 +105,7 @@ function fetchOnce(url: URL, json = false): Promise<Fetched> {
           return resolve({ status, location: res.headers.location ?? null, html: null });
         }
         const type = String(res.headers["content-type"] ?? "");
-        if (status !== 200 || !(json ? /json/i : /text\/html|application\/xhtml/i).test(type)) {
+        if (status !== 200 || !(json ? /json/i : /^\s*(?:text\/html|application\/xhtml\+xml)\s*(?:;|$)/i).test(type)) {
           res.resume();
           return resolve({ status, location: null, html: null });
         }
@@ -66,12 +117,12 @@ function fetchOnce(url: URL, json = false): Promise<Fetched> {
             // Enough to read the <head>; stop reading the rest of the page.
             chunks.push(chunk.subarray(0, Math.max(0, MAX_BYTES - (size - chunk.length))));
             req.destroy();
-            resolve({ status, location: null, html: Buffer.concat(chunks).toString("utf8") });
+            resolve({ status, location: null, html: decodeUtf8(chunks, true) });
             return;
           }
           chunks.push(chunk);
         });
-        res.on("end", () => resolve({ status, location: null, html: Buffer.concat(chunks).toString("utf8") }));
+        res.on("end", () => resolve({ status, location: null, html: decodeUtf8(chunks, false) }));
         res.on("error", reject);
       },
     );
@@ -113,7 +164,7 @@ export async function fetchLinkPreview(raw: string): Promise<LinkPreview | null>
  */
 export class HttpLinkPreviewer implements LinkPreviewerPort {
   refresh(assetId: string, url: string): void {
-    void (async () => {
+    const queued = previewLimiter.run(async () => {
       let preview: LinkPreview | null = null;
       try {
         preview = await fetchLinkPreview(url);
@@ -134,7 +185,8 @@ export class HttpLinkPreviewer implements LinkPreviewerPort {
       } catch (err) {
         logger.warn({ err, assetId }, "could not store the link preview");
       }
-    })();
+    });
+    if (!queued) logger.warn({ assetId }, "link preview skipped: too many waiting");
   }
 }
 

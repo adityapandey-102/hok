@@ -4,6 +4,9 @@ import { NO_MUTES, type NotificationRequest, type PushMessage } from "../domain/
 import type { NotificationsRepositoryPort } from "./ports/notifications-repository.port";
 import type { PushSender } from "./ports/push-sender.port";
 
+/** Push sends in flight at once per delivery. */
+const SEND_CONCURRENCY = 10;
+
 export interface PushReport {
   sent: number;
   failed: number;
@@ -88,7 +91,12 @@ export class NotificationDispatcher {
     const devices = await this.repo.findSubscriptionsForUsers(userIds);
     if (devices.length === 0) return report;
 
-    const outcomes = await Promise.all(devices.map(async (d) => ({ id: d.id, outcome: await this.sender.send(d, message).catch(() => "failed" as const) })));
+    // A few sends at a time: a large fan-out never opens hundreds of sockets at once.
+    const outcomes: { id: string; outcome: Awaited<ReturnType<PushSender["send"]>> | "failed" }[] = [];
+    for (let i = 0; i < devices.length; i += SEND_CONCURRENCY) {
+      const batch = devices.slice(i, i + SEND_CONCURRENCY);
+      outcomes.push(...(await Promise.all(batch.map(async (d) => ({ id: d.id, outcome: await this.sender.send(d, message).catch(() => "failed" as const) })))));
+    }
     const gone = outcomes.filter((o) => o.outcome === "gone").map((o) => o.id);
     const sent = outcomes.filter((o) => o.outcome === "sent").map((o) => o.id);
     report.sent = sent.length;

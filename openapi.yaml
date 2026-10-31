@@ -206,7 +206,10 @@ paths:
     post:
       tags: [Auth]
       summary: Sign in with email + password
-      description: Records `lastLoginAt` and an `auth.login` audit entry. A deactivated account gets no session. Rate-limited.
+      description: |
+        Records `lastLoginAt` and an `auth.login` audit entry. A deactivated account gets no session.
+        Rate-limited per IP (all attempts), per IP + email (failures) and per email from any IP
+        (failures; skipped when `deviceToken` is a valid trusted-device token for this email).
       requestBody:
         required: true
         content:
@@ -215,14 +218,20 @@ paths:
               type: object
               required: [email, password]
               properties:
-                email: { type: string, format: email }
-                password: { type: string }
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string, maxLength: 1024 }
+                deviceToken: { type: string, maxLength: 200, description: The `deviceToken` from an earlier successful login on this browser. }
       responses:
         "200":
-          description: A live session plus the profile.
+          description: A live session plus the profile, and a trusted-device token for this browser (absent when the server has no INTERNAL_PROXY_SECRET).
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AuthSession" }
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/AuthSession" }
+                  - type: object
+                    properties:
+                      deviceToken: { type: string, description: Keep server-side (hok-web stores it in an httpOnly cookie); valid 90 days. }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401":
           description: "`AUTH_INVALID_CREDENTIALS` (wrong email/password, or a deactivated account)."
@@ -231,6 +240,11 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "403": { $ref: "#/components/responses/AccountDeactivated" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: "`SERVICE_UNAVAILABLE` -- Supabase Auth is down or overloaded. Retry; the session is not ended."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/v1/auth/refresh:
     post:
       tags: [Auth]
@@ -258,19 +272,24 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "403": { $ref: "#/components/responses/AccountDeactivated" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: "`SERVICE_UNAVAILABLE` -- Supabase Auth is down or overloaded. Retry; the session is not ended."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/v1/auth/logout:
     post:
       tags: [Auth]
       summary: Revoke the caller's session server-side
       security: [{ bearerAuth: [] }]
       responses:
-        "204": { description: Signed out (all of the user's refresh tokens are revoked). }
+        "204": { description: "Signed out on this device only (its session and refresh token end); other devices stay signed in." }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/auth/password-reset-request:
     post:
       tags: [Auth]
-      summary: Email a password-reset link
-      description: Always 204, whether or not the email has an account (never leaks existence). The link lands on `${WEB_APP_URL}/auth/callback?next=/update-password`. Rate-limited.
+      summary: Self-service password reset (turned off)
+      description: Turned off since security audit run 2 -- no email is sent; the Admin issues passwords (POST /users/{id}/generate-password). Still answers 204 for any valid email (never reveals accounts). Rate-limited per IP and per target email (`AUTH_RESET_EMAIL_MAX_PER_HOUR`).
       requestBody:
         required: true
         content:
@@ -279,7 +298,7 @@ paths:
               type: object
               required: [email]
               properties:
-                email: { type: string, format: email }
+                email: { type: string, format: email, maxLength: 254 }
       responses:
         "204": { description: Accepted. }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -506,6 +525,7 @@ paths:
     post:
       tags: [Users]
       summary: Reactivate an account (same password as before)
+      description: Reactivating an Admin is Owner-only (`403 USER_OWNER_ONLY`). Old sessions were ended at deactivation, so the person signs in afresh.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/UserId"
@@ -1991,7 +2011,7 @@ paths:
     post:
       tags: [Notifications]
       summary: Register this browser for push (upsert by endpoint)
-      description: The body is the browser's `PushSubscription.toJSON()` plus an optional user agent. The same browser signed in as someone else moves to them.
+      description: The body is the browser's `PushSubscription.toJSON()` plus an optional user agent. The same browser signed in as someone else moves to them. At most 2 devices per user are kept; subscribing a third drops the least recently used. Rate-limited per user.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -2004,6 +2024,7 @@ paths:
           content: { application/json: { schema: { type: object, required: [subscribed], properties: { subscribed: { type: boolean } } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /api/v1/notifications/push/subscriptions/unsubscribe:
     post:
       tags: [Notifications]
@@ -2033,11 +2054,12 @@ paths:
     post:
       tags: [Notifications]
       summary: Send a test push to the caller's devices
-      description: No bell entry. `503 PUSH_NOT_CONFIGURED` when the server has no VAPID keys.
+      description: No bell entry. `503 PUSH_NOT_CONFIGURED` when the server has no VAPID keys. Rate-limited per user.
       security: [{ bearerAuth: [] }]
       responses:
         "200": { description: Delivery report., content: { application/json: { schema: { $ref: "#/components/schemas/PushTestResult" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
         "503": { $ref: "#/components/responses/PushNotConfigured" }
   # ------------------------------------------------------- Portal (staff) --
   /api/v1/portal-links/{clientId}:

@@ -119,17 +119,44 @@ function decodeEntities(s: string): string {
   });
 }
 
+// C0 controls except tab/newline/CR, DEL, and the bidi override/isolate characters.
+const UNSAFE_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g;
+
 const clean = (s: string | undefined, max: number): string | null => {
   if (!s) return null;
-  const text = decodeEntities(s).replace(/\s+/g, " ").trim();
+  const text = decodeEntities(s).replace(UNSAFE_CHARS, "").replace(/\s+/g, " ").trim();
   return text ? text.slice(0, max) : null;
 };
 
-/** The <meta> tags' content by property/name (first one wins), from the page's head only. */
+/** A tag longer than this is junk, not metadata: skipped unread. */
+const MAX_TAG = 2048;
+const MAX_TITLE_RAW = 4096;
+
+/** Position of a literal, case-insensitively, from from (-1 if none). Linear: no backtracking. */
+function indexOfCI(text: string, literal: string, from: number): number {
+  const re = new RegExp(literal.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&"), "gi");
+  re.lastIndex = from;
+  return re.exec(text)?.index ?? -1;
+}
+
+/**
+ * The <meta> tags' content by property/name (first one wins), from the page's head only.
+ * One forward pass: each "<meta" is paired with the next ">" once, and with no
+ * ">" left the scan stops, so hostile pages can't make it quadratic.
+ */
 function metaTags(html: string): Map<string, string> {
-  const head = html.slice(0, html.search(/<\/head>/i) >= 0 ? html.search(/<\/head>/i) : html.length);
+  const end = indexOfCI(html, "</head>", 0);
+  const head = end >= 0 ? html.slice(0, end) : html;
   const tags = new Map<string, string>();
-  for (const tag of head.match(/<meta\b[^>]*>/gi) ?? []) {
+  let pos = 0;
+  for (;;) {
+    const open = indexOfCI(head, "<meta", pos);
+    if (open < 0) break;
+    const close = head.indexOf(">", open);
+    if (close < 0) break;
+    pos = close + 1;
+    const tag = head.slice(open, pos);
+    if (tag.length > MAX_TAG || !/^<meta\s/i.test(tag)) continue;
     const key = /\b(?:property|name)\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]?.toLowerCase();
     const content = /\bcontent\s*=\s*"([^"]*)"|\bcontent\s*=\s*'([^']*)'/i.exec(tag);
     const value = content?.[1] ?? content?.[2];
@@ -138,10 +165,21 @@ function metaTags(html: string): Map<string, string> {
   return tags;
 }
 
+/** The first <title>'s text, found with one indexOf per marker (no rescans). */
+function titleText(html: string): string | undefined {
+  const open = indexOfCI(html, "<title", 0);
+  if (open < 0) return undefined;
+  const gt = html.indexOf(">", open);
+  if (gt < 0) return undefined;
+  const close = indexOfCI(html, "</title>", gt + 1);
+  if (close < 0) return undefined;
+  return html.slice(gt + 1, Math.min(close, gt + 1 + MAX_TITLE_RAW));
+}
+
 /** Title, description, image (absolute http(s) only) and site name from a page's HTML. */
 export function parseLinkPreview(html: string, pageUrl: string): LinkPreview {
   const meta = metaTags(html);
-  const titleTag = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1];
+  const titleTag = titleText(html);
   const rawImage = meta.get("og:image") ?? meta.get("og:image:url") ?? meta.get("twitter:image");
   let imageUrl: string | null = null;
   if (rawImage) {

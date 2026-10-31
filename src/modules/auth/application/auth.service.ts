@@ -13,7 +13,6 @@ import type { AuthRepositoryPort, AuthTokens } from "./ports/auth-repository.por
 import type { BootstrapDto } from "../api/dto/bootstrap.dto";
 import type { LoginDto } from "../api/dto/login.dto";
 import type { RefreshDto } from "../api/dto/refresh.dto";
-import type { PasswordResetRequestDto } from "../api/dto/password-reset-request.dto";
 import type { PasswordUpdateDto } from "../api/dto/password-update.dto";
 import type { ExchangeCodeDto } from "../api/dto/exchange-code.dto";
 import type { UpdateOwnProfileDto } from "../api/dto/update-own-profile.dto";
@@ -79,11 +78,6 @@ export class AuthService {
     await this.authRepository.signOut(accessToken);
     // Actor comes from the request context (logout is behind requireAuth).
     await this.audit.record({ action: AUDIT_ACTIONS.AUTH_LOGOUT, entityType: AUDIT_ENTITIES.SESSION });
-  }
-
-  async requestPasswordReset(dto: PasswordResetRequestDto): Promise<void> {
-    const redirectTo = `${env.WEB_APP_URL}/auth/callback?next=/update-password`;
-    await this.authRepository.requestPasswordReset(dto.email, redirectTo);
   }
 
   /**

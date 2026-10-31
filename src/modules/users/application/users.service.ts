@@ -6,6 +6,7 @@ import {
   assertCanChangeRole,
   assertCanCreateWithRole,
   assertCanDeactivate,
+  assertCanReactivate,
   assertCanRegenerateAdminPassword,
   assertNotChangingOwnRole,
   assertNotDeactivatingSelf,
@@ -125,6 +126,7 @@ export class UsersService {
       assertCanChangeRole(target, updates.role, await this.callerIsOwner(callerId));
     }
     if (updates.active === false) assertCanDeactivate(target, await this.callerIsOwner(callerId));
+    if (updates.active === true && !target.active) assertCanReactivate(target, await this.callerIsOwner(callerId));
 
     await this.usersRepository.updateProfile(targetId, updates);
     // `active` through PATCH must have the same effect as deactivate/reactivate:
@@ -133,8 +135,7 @@ export class UsersService {
       if (updates.active) await this.usersRepository.unbanAuthUser(targetId);
       else {
         await this.usersRepository.banAuthUser(targetId);
-        // No more pushes (task titles, due times) to devices a deactivated person registered.
-        await this.usersRepository.deletePushSubscriptions(targetId);
+        await this.endAllAccess(targetId);
       }
     }
 
@@ -158,17 +159,31 @@ export class UsersService {
     // Blocks sign-in and refresh at the auth layer; requireAuth already rejects
     // an inactive profile on the very next request, so live access tokens die too.
     await this.usersRepository.banAuthUser(targetId);
-    await this.usersRepository.deletePushSubscriptions(targetId);
+    await this.endAllAccess(targetId);
     await this.audit.record({ action: AUDIT_ACTIONS.USER_DEACTIVATED, entityType: AUDIT_ENTITIES.USER, entityId: targetId });
   }
 
-  async reactivateUser(targetId: string): Promise<void> {
-    await this.findOrThrow(targetId);
+  async reactivateUser(targetId: string, callerId: string): Promise<void> {
+    const target = await this.findOrThrow(targetId);
+    assertCanReactivate(target, await this.callerIsOwner(callerId));
+    // Again before the unban: if a deactivation failed halfway, no old session or link comes back.
+    await this.endAllAccess(targetId);
 
     await this.usersRepository.updateProfile(targetId, { active: true });
     // Lift the auth-layer ban so the account can sign in again (same password as before).
     await this.usersRepository.unbanAuthUser(targetId);
     await this.audit.record({ action: AUDIT_ACTIONS.USER_REACTIVATED, entityType: AUDIT_ENTITIES.USER, entityId: targetId });
+  }
+
+  /**
+   * Deactivation: end every session and the calendar subscribe link (security audit run 2), so
+   * reactivating the account later never brings an old device's session or link back -- the
+   * person signs in afresh. Also no more pushes (task titles, due times) to their devices.
+   */
+  private async endAllAccess(targetId: string): Promise<void> {
+    await this.usersRepository.revokeSessions(targetId);
+    await this.usersRepository.deletePushSubscriptions(targetId);
+    await this.usersRepository.clearCalendarFeed(targetId);
   }
 
   /** Whether the signed-in Admin is the Owner (profiles.is_owner); read fresh from the database on each check. */

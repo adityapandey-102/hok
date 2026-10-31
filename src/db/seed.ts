@@ -23,6 +23,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../common/database/drizzle-client";
 import { authProvider } from "../common/auth/supabase-auth-provider";
 import { logger } from "../common/logger/logger";
+import { env } from "../config/env";
 import { profiles } from "../modules/users/infrastructure/profile.schema";
 import { clientMembers, clients } from "../modules/clients/infrastructure/clients.schema";
 import type { ClientStatus, SocialPlatform } from "../modules/clients/domain/client.entity";
@@ -481,6 +482,11 @@ async function seedPersonalEvents(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // The seed password is public (it is in this repo), so never seed a database off this machine.
+  const host = new URL(env.DATABASE_URL).hostname;
+  if (env.NODE_ENV === "production" || !["localhost", "127.0.0.1", "[::1]"].includes(host)) {
+    throw new Error(`seed refuses to run against ${host} (NODE_ENV=${env.NODE_ENV}); it is for the local database only`);
+  }
   await seedStaff();
   await seedClients();
   const [adminRow] = await db.select({ id: profiles.id }).from(profiles).where(eq(profiles.email, "admin@hok.test")).limit(1);

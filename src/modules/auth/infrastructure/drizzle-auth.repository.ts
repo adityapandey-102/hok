@@ -65,12 +65,6 @@ export class DrizzleAuthRepository implements AuthRepositoryPort {
     await this.authProvider.signOut(accessToken);
   }
 
-  async requestPasswordReset(email: string, redirectTo: string): Promise<void> {
-    // Never surfaces whether the email exists -- the provider doesn't throw on
-    // an unknown address, so the API's response is identical either way.
-    await this.authProvider.requestPasswordReset(email, redirectTo);
-  }
-
   async updatePassword(userId: string, newPassword: string): Promise<void> {
     await this.authProvider.setPassword(userId, newPassword);
   }

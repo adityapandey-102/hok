@@ -136,4 +136,8 @@ export class DrizzleUsersRepository implements UsersRepositoryPort {
   async deletePushSubscriptions(id: string): Promise<void> {
     await db.delete(pushSubscriptions).where(eq(pushSubscriptions.userId, id));
   }
+
+  async clearCalendarFeed(id: string): Promise<void> {
+    await db.update(profiles).set({ calendarFeedTokenHash: null, calendarFeedCreatedAt: null }).where(eq(profiles.id, id));
+  }
 }

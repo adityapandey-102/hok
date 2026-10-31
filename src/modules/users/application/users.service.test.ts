@@ -79,6 +79,11 @@ class FakeUsersRepository implements UsersRepositoryPort {
     this.unbanned.push(id);
     return Promise.resolve();
   }
+  feedCleared: string[] = [];
+  clearCalendarFeed(id: string): Promise<void> {
+    this.feedCleared.push(id);
+    return Promise.resolve();
+  }
   deletePushSubscriptions(id: string): Promise<void> {
     this.pushCleared.push(id);
     return Promise.resolve();
@@ -216,6 +221,9 @@ describe("UsersService", () => {
       expect(repo.updates).toEqual([{ id: "target", updates: { active: false } }]);
       expect(repo.banned).toEqual(["target"]);
       expect(repo.pushCleared).toEqual(["target"]);
+      // Every session ends, so a later reactivation never revives an old device's session.
+      expect(repo.revoked).toEqual(["target"]);
+      expect(repo.feedCleared).toEqual(["target"]);
       expect(audit.events.map((e) => e.action)).toContain(AUDIT_ACTIONS.USER_DEACTIVATED);
     });
 
@@ -287,14 +295,24 @@ describe("UsersService", () => {
   describe("reactivateUser", () => {
     it("reactivates: sets active, unbans auth, audits", async () => {
       repo.users = [entity({ id: "target", active: false })];
-      await service.reactivateUser("target");
+      await service.reactivateUser("target", "admin");
       expect(repo.updates).toEqual([{ id: "target", updates: { active: true } }]);
       expect(repo.unbanned).toEqual(["target"]);
       expect(audit.events.map((e) => e.action)).toContain(AUDIT_ACTIONS.USER_REACTIVATED);
     });
 
     it("throws USER_NOT_FOUND when the target is missing", async () => {
-      await expect(service.reactivateUser("missing")).rejects.toMatchObject({ code: "USER_NOT_FOUND" });
+      await expect(service.reactivateUser("missing", "admin")).rejects.toMatchObject({ code: "USER_NOT_FOUND" });
+    });
+
+    it("reactivating an Admin is Owner-only, through both doors (security audit run 2)", async () => {
+      const owner = entity({ id: "owner", role: "admin", isOwner: true });
+      repo.users = [owner, entity({ id: "admin3", role: "admin" }), entity({ id: "admin2", role: "admin", active: false })];
+      await expect(service.reactivateUser("admin2", "admin3")).rejects.toMatchObject({ code: "USER_OWNER_ONLY" });
+      await expect(service.updateUser("admin2", "admin3", { active: true })).rejects.toMatchObject({ code: "USER_OWNER_ONLY" });
+      expect(repo.unbanned).toEqual([]);
+      await service.reactivateUser("admin2", "owner");
+      expect(repo.unbanned).toEqual(["admin2"]);
     });
   });
 });

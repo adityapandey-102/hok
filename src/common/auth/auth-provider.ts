@@ -36,7 +36,6 @@ export interface AuthProvider {
   signOut(accessToken: string): Promise<void>;
   /** Verifies an access token and returns the user id it belongs to, or null if invalid/expired. */
   verifyAccessToken(token: string): Promise<{ userId: string } | null>;
-  requestPasswordReset(email: string, redirectTo: string): Promise<void>;
   /** Admin-level: sets a user's password directly, no old-password check (used for both self-update and Admin-issued resets). */
   setPassword(userId: string, newPassword: string): Promise<void>;
   /** True when the password is right for the email. Signs out the throwaway session the check creates. */

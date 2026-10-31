@@ -75,4 +75,24 @@ describe("parseLinkPreview", () => {
     const html = `<head><meta property="og:image" content="javascript:alert(1)"><meta property="og:image:url" content="x"></head>`;
     expect(parseLinkPreview(html, page).imageUrl).toBeNull();
   });
+
+  it("strips control and bidi characters and caps lengths", () => {
+    const html = "<head><title>Hi\u0000 \u202Ethere\u0007</title><meta name=\"description\" content=\"" + "x".repeat(900) + "\"></head>";
+    const p = parseLinkPreview(html, page);
+    expect(p.title).toBe("Hi there");
+    expect(p.description).toHaveLength(500);
+  });
+
+  it("drops a javascript: image but keeps a normal page parsing", () => {
+    expect(parseLinkPreview(`<head><meta property="og:image" content="javascript:alert(1)"></head>`, page).imageUrl).toBeNull();
+  });
+
+  it("stays fast on pathological input (no quadratic scans)", () => {
+    const inputs = ["<meta".repeat(100_000), "<title>".repeat(60_000), "<meta ".repeat(60_000) + ">", "<title>" + "<title>".repeat(60_000)];
+    for (const html of inputs) {
+      const start = performance.now();
+      parseLinkPreview(html, page);
+      expect(performance.now() - start).toBeLessThan(200);
+    }
+  });
 });

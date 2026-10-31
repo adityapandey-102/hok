@@ -74,7 +74,7 @@ usersRouter.post(
 usersRouter.post(
   "/:id/reactivate",
   asyncHandler(async (req, res) => {
-    await usersService.reactivateUser(req.params.id!);
+    await usersService.reactivateUser(req.params.id!, req.authUserId!);
     res.status(204).send();
   }),
 );

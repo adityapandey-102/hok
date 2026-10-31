@@ -64,9 +64,6 @@ class FakeAuthRepository implements AuthRepositoryPort {
     this.signedOut.push(accessToken);
     return Promise.resolve();
   }
-  requestPasswordReset(): Promise<void> {
-    return Promise.resolve();
-  }
   passwordUpdates: string[] = [];
   revokedAll: string[] = [];
   currentPassword = "Current-123";

@@ -32,6 +32,7 @@ import { reportsRouter } from "./modules/reports/api/reports.routes";
 import { searchRouter } from "./modules/search/api/search.routes";
 import { requirePortalLink } from "./common/middleware/portal-link.middleware";
 import { calendarFeedLimiter, portalReadLimiter } from "./common/middleware/portal-rate-limit.middleware";
+import { tokenFailureRateLimiter } from "./common/middleware/rate-limit.middleware";
 
 /** Turns the TRUST_PROXY env string into what Express's `trust proxy` expects:
  *  a boolean, a hop count, or a preset/subnet string (e.g. "loopback"). */
@@ -51,8 +52,10 @@ function parseTrustProxy(value: string): boolean | number | string {
 export function createApp() {
   const app = express();
 
-  // The API sits behind a proxy that sets X-Forwarded-For: the Next.js session
-  // proxy in dev (over loopback), and a reverse proxy (Railway) in prod.
+  // The API sits behind a proxy that sets X-Forwarded-For: Railway's edge in prod (TRUST_PROXY=1),
+  // nothing in dev. Calls hok-web's server makes for a browser carry the visitor's IP in a
+  // secret-checked header instead (common/middleware/client-ip.ts), so this only has to be right
+  // for direct browser calls.
   // Express must be told how far to trust XFF so the rate limiter keys on the
   // real client IP -- otherwise express-rate-limit throws when it sees an
   // untrusted XFF. Configured via TRUST_PROXY (default "loopback"): a hop count,
@@ -122,7 +125,8 @@ export function createApp() {
 
   // Every module's router mounts under /api/v1.
   const apiV1 = express.Router();
-  app.use("/api/v1", apiV1);
+  // Counts only 401s per IP: a client flooding junk bearer tokens is cut off (rate-limit.middleware.ts).
+  app.use("/api/v1", tokenFailureRateLimiter, apiV1);
   apiV1.use("/auth", authRouter);
   apiV1.use("/users", usersRouter);
   // Nested to-do routes first, so /clients/:id/todos never reaches the clients router.

@@ -26,6 +26,7 @@ export const requestLogger = pinoHttp({
     paths: [
       "req.headers.authorization",
       "req.headers.cookie",
+      'req.headers["x-hok-proxy-secret"]',
       "res.headers.authorization",
       'res.headers["set-cookie"]',
       "req.params.token",

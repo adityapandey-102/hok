@@ -56,6 +56,13 @@ export class ConflictError extends AppError {
   }
 }
 
+/** A dependency (e.g. Supabase Auth) is down or overloaded: the request may succeed if retried. Never a reason to end a session. */
+export class ServiceUnavailableError extends AppError {
+  constructor(message = "Service temporarily unavailable. Please try again.", code: string = ERROR_CODES.SERVICE_UNAVAILABLE, cause?: unknown) {
+    super(503, message, code, undefined, cause);
+  }
+}
+
 /**
  * For unexpected persistence/infra failures -- message is safe to show,
  * real detail goes to server logs only. `cause` is the original error

@@ -1,11 +1,11 @@
-import { and, asc, desc, eq, getTableColumns, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNull, notInArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 // Cross-module Infrastructure-only read: `profiles` is owned by the Users
 // module's schema (the actor's name on a bell entry). See docs/adr/0003.
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { notificationPreferences, notifications, pushSubscriptions } from "./notifications.schema";
 import type { NotificationEntity, NotificationPreferences, PushSubscriptionEntity } from "../domain/notification.entity";
-import { REMINDER_TYPES } from "../domain/notification.entity";
+import { MAX_PUSH_DEVICES, REMINDER_TYPES } from "../domain/notification.entity";
 import type {
   NewNotificationRecord,
   NewPushSubscription,
@@ -173,9 +173,12 @@ export class DrizzleNotificationsRepository implements NotificationsRepositoryPo
     });
   }
 
+  /** Saves this browser, then keeps only the user's MAX_PUSH_DEVICES most recently used devices (the oldest drops off). */
   saveSubscription(s: NewPushSubscription) {
-    return guarded("save the push subscription", async () => {
-      await db
+    return guarded("save the push subscription", () => db.transaction(async (tx) => {
+      // Serialises one user's concurrent subscribes so the cap can't be overshot.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${s.userId}))`);
+      await tx
         .insert(pushSubscriptions)
         .values({ userId: s.userId, endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth, userAgent: s.userAgent })
         .onConflictDoUpdate({
@@ -183,7 +186,14 @@ export class DrizzleNotificationsRepository implements NotificationsRepositoryPo
           // Same browser: fresh keys, and it now belongs to whoever subscribed last.
           set: { userId: s.userId, p256dh: s.p256dh, auth: s.auth, userAgent: s.userAgent, lastUsedAt: sql`now()` },
         });
-    });
+      const keep = tx
+        .select({ id: pushSubscriptions.id })
+        .from(pushSubscriptions)
+        .where(eq(pushSubscriptions.userId, s.userId))
+        .orderBy(desc(pushSubscriptions.lastUsedAt), desc(pushSubscriptions.createdAt))
+        .limit(MAX_PUSH_DEVICES);
+      await tx.delete(pushSubscriptions).where(and(eq(pushSubscriptions.userId, s.userId), notInArray(pushSubscriptions.id, keep)));
+    }));
   }
 
   findSubscriptionsForUsers(userIds: string[]) {

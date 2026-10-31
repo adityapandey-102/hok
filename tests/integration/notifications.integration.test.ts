@@ -225,6 +225,16 @@ describe("push devices", () => {
     expect((await request(app).delete(`/api/v1/notifications/push/subscriptions/${d!.id}`).set("Authorization", auth.editor!)).status).toBe(204);
     expect((await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint))).length).toBe(0);
   });
+
+  it("keeps at most 2 devices per user: a third drops the least recently used (security audit run 2)", async () => {
+    const endpoints = [1, 2, 3].map((n) => `${endpoint}-cap${n}`);
+    for (const e of endpoints) {
+      expect((await request(app).post("/api/v1/notifications/push/subscriptions").set("Authorization", auth.editor!).send({ ...sub, endpoint: e })).status).toBe(201);
+    }
+    const kept = await db.select({ endpoint: pushSubscriptions.endpoint }).from(pushSubscriptions).where(inArray(pushSubscriptions.endpoint, endpoints));
+    expect(kept.map((r) => r.endpoint).sort()).toEqual(endpoints.slice(1));
+    await db.delete(pushSubscriptions).where(inArray(pushSubscriptions.endpoint, endpoints));
+  });
 });
 
 describe("dispatcher bookkeeping with a fake push service", () => {

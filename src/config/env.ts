@@ -52,8 +52,30 @@ const envSchema = z.object({
   /** Auth rate-limit window (ms) and max requests per window per IP. Defaults: 15 min / 30 attempts. */
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().default(30),
-  /** POST /auth/login only: max attempts per target email per window, across all IPs. */
+  /**
+   * POST /auth/login only, per window: max FAILED attempts per target email across all IPs (a browser
+   * that signed in to that account before, the trusted-device cookie, is exempt), and max failed attempts
+   * per email from one IP. The pair stops distributed guessing without letting a stranger lock the owner out.
+   */
   AUTH_LOGIN_EMAIL_MAX: z.coerce.number().int().min(1).default(10),
+  AUTH_LOGIN_IP_EMAIL_MAX: z.coerce.number().int().min(1).default(5),
+  /** POST /auth/password-reset-request: max requests per target email per hour, across all IPs (stops mail-flooding one person). */
+  AUTH_RESET_EMAIL_MAX_PER_HOUR: z.coerce.number().int().min(1).default(3),
+  /** Every authenticated route, per IP: max requests answered 401 per AUTH_RATE_LIMIT_WINDOW_MS (junk-token flooding). */
+  AUTH_TOKEN_FAILURE_MAX: z.coerce.number().int().min(1).default(30),
+  /**
+   * Shared secret between hok-web's server and this API (same long random value in both apps; never a
+   * NEXT_PUBLIC_ variable). hok-web's server sends it with the visitor's IP (x-hok-client-ip) on calls it
+   * makes for a browser (login, refresh, Server Components); only then is that IP used by the rate
+   * limiters -- otherwise every such call would share the web host's IP. Also keys the trusted-device
+   * cookie. Unset = forwarded IPs are ignored and trusted devices are off. Required in production.
+   */
+  INTERNAL_PROXY_SECRET: z
+    .string()
+    .trim()
+    .transform((v) => v || undefined)
+    .optional()
+    .refine((v) => v === undefined || v.length >= 32, "Must be at least 32 characters"),
   /**
    * Public client portal (M8), per IP: reads per 15 minutes, comment posts per
    * hour; plus a firm-wide hourly ceiling on comment posts and a daily cap
@@ -106,6 +128,10 @@ const envSchema = z.object({
   // bucket (or a spoofed XFF would be trusted). Make the operator state the hop count on purpose.
   if (!process.env.TRUST_PROXY?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["TRUST_PROXY"], message: "In production set TRUST_PROXY explicitly to the number of proxies in front of the API (e.g. 1 or 2)" });
+  }
+  // Without it, every login/refresh hok-web makes for a browser shares the web host's IP bucket.
+  if (!e.INTERNAL_PROXY_SECRET) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["INTERNAL_PROXY_SECRET"], message: "In production set INTERNAL_PROXY_SECRET (same value as hok-web's)" });
   }
   // A hosted database must be reached over SSL: without sslmode in the URL or the CA, the driver would
   // connect in plain text if the server allows it, sending the password and all data unencrypted.

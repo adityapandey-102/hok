@@ -44,4 +44,6 @@ export interface UsersRepositoryPort {
   unbanAuthUser(id: string): Promise<void>;
   /** Removes every web-push device of the account (on deactivation). */
   deletePushSubscriptions(id: string): Promise<void>;
+  /** Turns off the account's calendar subscribe link (on deactivation), so reactivating never revives it. */
+  clearCalendarFeed(id: string): Promise<void>;
 }

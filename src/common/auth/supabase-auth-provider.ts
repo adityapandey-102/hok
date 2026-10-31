@@ -1,7 +1,8 @@
+import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { sql } from "drizzle-orm";
 import { db } from "../database/drizzle-client";
 import { supabaseClient, supabaseAuthClient } from "../database/supabase-client";
-import { BadRequestError, ConflictError, InternalError, UnauthorizedError } from "../errors/app-error";
+import { BadRequestError, ConflictError, InternalError, ServiceUnavailableError, UnauthorizedError } from "../errors/app-error";
 import { ERROR_CODES } from "../errors/error-codes";
 import type { AuthProvider, AuthSession, NewAuthUser } from "./auth-provider";
 
@@ -20,6 +21,20 @@ function toAuthSession(session: {
 }
 
 /**
+ * Supabase Auth itself failed (network error, timeout, 5xx, or its own rate limit) -- as opposed to
+ * rejecting the credentials. Those must surface as 503, never 401: hok-web ends the session on 401.
+ */
+export function isUpstreamFailure(error: unknown): boolean {
+  if (isAuthRetryableFetchError(error)) return true;
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === "number" && (status >= 500 || status === 429);
+}
+
+function throwIfUpstream(error: unknown): void {
+  if (isUpstreamFailure(error)) throw new ServiceUnavailableError(undefined, undefined, error);
+}
+
+/**
  * The only file in this codebase allowed
  * to import the Supabase Auth clients directly -- every other module talks
  * to AuthProvider. Two clients purely because Supabase itself splits the
@@ -31,12 +46,14 @@ function toAuthSession(session: {
 export class SupabaseAuthProvider implements AuthProvider {
   async signInWithPassword(email: string, password: string): Promise<AuthSession> {
     const { data, error } = await supabaseAuthClient.auth.signInWithPassword({ email, password });
+    throwIfUpstream(error);
     if (error || !data.session) throw new UnauthorizedError("Invalid email or password", ERROR_CODES.AUTH_INVALID_CREDENTIALS);
     return toAuthSession(data.session);
   }
 
   async refreshSession(refreshToken: string): Promise<AuthSession> {
     const { data, error } = await supabaseAuthClient.auth.refreshSession({ refresh_token: refreshToken });
+    throwIfUpstream(error);
     if (error || !data.session) throw new UnauthorizedError("Invalid or expired session", ERROR_CODES.AUTH_SESSION_INVALID);
     return toAuthSession(data.session);
   }
@@ -50,14 +67,9 @@ export class SupabaseAuthProvider implements AuthProvider {
 
   async verifyAccessToken(token: string): Promise<{ userId: string } | null> {
     const { data, error } = await supabaseClient.auth.getUser(token);
+    throwIfUpstream(error);
     if (error || !data.user) return null;
     return { userId: data.user.id };
-  }
-
-  async requestPasswordReset(email: string, redirectTo: string): Promise<void> {
-    // Never surfaces whether the email exists -- errors here are logged but not thrown,
-    // so the API's response is identical either way.
-    await supabaseAuthClient.auth.resetPasswordForEmail(email, { redirectTo });
   }
 
   async setPassword(userId: string, newPassword: string): Promise<void> {
@@ -67,6 +79,7 @@ export class SupabaseAuthProvider implements AuthProvider {
 
   async verifyPassword(email: string, password: string): Promise<boolean> {
     const { data, error } = await supabaseAuthClient.auth.signInWithPassword({ email, password });
+    throwIfUpstream(error);
     if (error || !data.session) return false;
     await this.signOut(data.session.access_token); // the check must not leave an extra session behind
     return true;

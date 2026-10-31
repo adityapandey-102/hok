@@ -1,6 +1,6 @@
 import http from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { fetchLinkPreview } from "./http-link-previewer";
+import { createLimiter, decodeUtf8, fetchLinkPreview } from "./http-link-previewer";
 
 /**
  * The SSRF guard on the real network stack: a page served on this machine
@@ -45,5 +45,36 @@ describe("fetchLinkPreview: SSRF guard", () => {
 
   it("never reached the local server", () => {
     expect(hits).toBe(0);
+  });
+});
+
+describe("decodeUtf8", () => {
+  it("gives up on invalid UTF-8", () => {
+    expect(decodeUtf8([Buffer.from([0x3c, 0xff, 0xfe, 0x3e])], false)).toBeNull();
+  });
+
+  it("tolerates a character split by the size cap", () => {
+    expect(decodeUtf8([Buffer.from("ab\u00e9").subarray(0, 3)], true)).toBe("ab");
+  });
+});
+
+describe("createLimiter", () => {
+  it("never runs more than the limit at once and drops overflow", async () => {
+    const limiter = createLimiter(2, 3);
+    let active = 0;
+    let peak = 0;
+    let finished = 0;
+    const job = async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 10));
+      active -= 1;
+      finished += 1;
+    };
+    const accepted = Array.from({ length: 8 }, () => limiter.run(job));
+    expect(accepted.filter(Boolean)).toHaveLength(5); // 2 running + 3 waiting
+    await new Promise((r) => setTimeout(r, 100));
+    expect(peak).toBe(2);
+    expect(finished).toBe(5);
   });
 });

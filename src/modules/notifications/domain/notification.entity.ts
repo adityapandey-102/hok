@@ -157,3 +157,6 @@ export interface PushMessage {
   /** Same tag = the newer notification replaces the older one on the device. */
   tag: string;
 }
+
+/** Push devices (browsers) kept per user; subscribing another one drops the least recently used. */
+export const MAX_PUSH_DEVICES = 2;

@@ -4,6 +4,7 @@ import { asyncHandler } from "../../../common/http/async-handler";
 import { validateBody, validateQuery } from "../../../common/http/validate.middleware";
 import { uuidParam } from "../../../common/http/uuid-param";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
+import { pushWriteRateLimiter } from "../../../common/middleware/rate-limit.middleware";
 import { notificationsService } from "../notifications.module";
 import {
   notificationQueryDtoSchema,
@@ -82,6 +83,7 @@ notificationsRouter.get(
 
 notificationsRouter.post(
   "/push/subscriptions",
+  pushWriteRateLimiter,
   validateBody(pushSubscriptionDtoSchema),
   asyncHandler(async (req, res) => {
     await notificationsService.subscribe(userOf(req), req.body as PushSubscriptionDto);
@@ -111,6 +113,7 @@ notificationsRouter.delete(
 /** Sends "notifications are on" to every device of the caller. 503 PUSH_NOT_CONFIGURED without VAPID keys. */
 notificationsRouter.post(
   "/push/test",
+  pushWriteRateLimiter,
   asyncHandler(async (req, res) => {
     res.json(await notificationsService.sendTest(userOf(req)));
   }),

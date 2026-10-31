@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../../common/middleware/auth.middleware";
-import { authRateLimiter, loginEmailRateLimiter } from "../../../common/middleware/rate-limit.middleware";
+import { authRateLimiter, loginEmailRateLimiter, loginIpEmailRateLimiter, resetEmailRateLimiter } from "../../../common/middleware/rate-limit.middleware";
+import { issueDeviceToken } from "../../../common/auth/trusted-device";
 import { asyncHandler } from "../../../common/http/async-handler";
 import { validateBody } from "../../../common/http/validate.middleware";
 import { AuthService } from "../application/auth.service";
@@ -8,7 +9,7 @@ import { DrizzleAuthRepository } from "../infrastructure/drizzle-auth.repository
 import { bootstrapDtoSchema, type BootstrapDto } from "./dto/bootstrap.dto";
 import { loginDtoSchema, type LoginDto } from "./dto/login.dto";
 import { refreshDtoSchema, type RefreshDto } from "./dto/refresh.dto";
-import { passwordResetRequestDtoSchema, type PasswordResetRequestDto } from "./dto/password-reset-request.dto";
+import { passwordResetRequestDtoSchema } from "./dto/password-reset-request.dto";
 import { passwordUpdateDtoSchema, type PasswordUpdateDto } from "./dto/password-update.dto";
 import { exchangeCodeDtoSchema, type ExchangeCodeDto } from "./dto/exchange-code.dto";
 import { updateOwnProfileDtoSchema, type UpdateOwnProfileDto } from "./dto/update-own-profile.dto";
@@ -53,10 +54,13 @@ authRouter.post(
 authRouter.post(
   "/login",
   authRateLimiter,
+  loginIpEmailRateLimiter,
   loginEmailRateLimiter,
   validateBody(loginDtoSchema),
   asyncHandler(async (req, res) => {
-    res.json(await authService.login(req.body as LoginDto));
+    const dto = req.body as LoginDto;
+    // hok-web keeps deviceToken in an httpOnly cookie and sends it back on later logins (trusted-device.ts).
+    res.json({ ...(await authService.login(dto)), deviceToken: issueDeviceToken(dto.email) });
   }),
 );
 
@@ -81,12 +85,14 @@ authRouter.post(
 authRouter.post(
   "/password-reset-request",
   authRateLimiter,
+  resetEmailRateLimiter,
   validateBody(passwordResetRequestDtoSchema),
-  asyncHandler(async (req, res) => {
-    await authService.requestPasswordReset(req.body as PasswordResetRequestDto);
-    // Always 204, whether or not the email matches an account -- never confirms existence.
+  (_req, res) => {
+    // Turned off (security audit run 2): a Supabase recovery link is a full session for whoever
+    // reads the mailbox, which bypasses the Admin-issues-passwords model. Still 204 for any email,
+    // so old clients keep working and nothing about accounts is revealed.
     res.status(204).send();
-  }),
+  },
 );
 
 authRouter.post(

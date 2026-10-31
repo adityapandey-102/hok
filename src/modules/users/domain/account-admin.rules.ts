@@ -91,6 +91,11 @@ export function assertCanDeactivate(target: { role: Role; isOwner: boolean }, ca
   if (target.role === "admin") assertCallerIsOwner(callerIsOwner, "deactivate an Admin");
 }
 
+/** Reactivating an Admin is Owner-only, like deactivating one (security audit run 2). */
+export function assertCanReactivate(target: { role: Role }, callerIsOwner: boolean): void {
+  if (target.role === "admin") assertCallerIsOwner(callerIsOwner, "reactivate an Admin");
+}
+
 /** Regenerating an Admin's password is Owner-only (checked after assertPasswordCanBeRegenerated). */
 export function assertCanRegenerateAdminPassword(target: { role: Role }, callerIsOwner: boolean): void {
   if (target.role === "admin") assertCallerIsOwner(callerIsOwner, "regenerate an Admin's password");

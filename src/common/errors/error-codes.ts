@@ -30,6 +30,8 @@ export const ERROR_CODES = {
   /** The body is over the route's size limit (413) -- e.g. the public portal's small limit. */
   PAYLOAD_TOO_LARGE: "PAYLOAD_TOO_LARGE",
   DATABASE_ERROR: "DATABASE_ERROR",
+  /** A dependency (Supabase Auth) is unreachable, overloaded or erroring (503) -- retry, don't sign out. */
+  SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
   INTERNAL: "INTERNAL",
 
   // -- Auth / session ---------------------------------------------------------
