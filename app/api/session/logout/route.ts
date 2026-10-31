@@ -3,14 +3,15 @@ import { getAccessToken, clearSession } from "../../../../lib/session/server";
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "../../../../lib/session/constants";
 import { safeNext } from "../../../../lib/session/safe-next";
 import { rejectCrossSite } from "../../../../lib/session/same-origin";
+import { forwardedClientHeaders } from "../../../../lib/session/forwarded";
 
 /** Best-effort server-side revoke of the current session (needs the bearer token). */
-async function revokeUpstream() {
+async function revokeUpstream(request: NextRequest) {
   const accessToken = await getAccessToken();
   if (!accessToken) return;
   await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL!}/auth/logout`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${accessToken}`, ...forwardedClientHeaders(request.headers) },
     cache: "no-store",
   }).catch(() => {});
 }
@@ -19,7 +20,7 @@ async function revokeUpstream() {
 export async function POST(request: NextRequest) {
   const rejected = rejectCrossSite(request);
   if (rejected) return rejected;
-  await revokeUpstream();
+  await revokeUpstream(request);
   await clearSession();
   return new NextResponse(null, { status: 204 });
 }
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
  * on the redirect response here breaks that loop.
  */
 export async function GET(request: NextRequest) {
-  await revokeUpstream();
+  await revokeUpstream(request);
   const loginUrl = new URL("/login", request.url);
   const next = request.nextUrl.searchParams.get("next");
   if (next) loginUrl.searchParams.set("next", safeNext(next));

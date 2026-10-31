@@ -2,6 +2,7 @@
  * Shared by the proxy (edge-style runtime: no node:* imports here), the
  * server-side fetch wrapper and the session route handlers.
  */
+import { forwardedClientHeaders } from "./forwarded";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
@@ -32,8 +33,9 @@ export function isIpAddress(value: string): boolean {
 
 /**
  * The visitor's IP from the hosting proxy's headers, or null unless it is a
- * syntactically valid address -- the value is forwarded to hok-api as
- * X-Forwarded-For and used as a rate-limit key, so junk must not pass through.
+ * syntactically valid address -- the value is forwarded to hok-api (forwarded.ts)
+ * and used as a rate-limit key, so junk must not pass through. On Vercel both
+ * headers are set by Vercel's edge, overwriting anything the browser sent.
  */
 export function clientIpFrom(headers: { get(name: string): string | null }): string | null {
   const candidate = (headers.get("x-forwarded-for")?.split(",")[0] ?? headers.get("x-real-ip") ?? "").trim();
@@ -50,9 +52,7 @@ export function isRefreshTokenRejected(status: number): boolean {
  * limiter counts the visitor and not this web server. Throws on network failure.
  */
 export function postRefresh(refreshToken: string, headers: { get(name: string): string | null }): Promise<Response> {
-  const forwarded: Record<string, string> = { "Content-Type": "application/json" };
-  const clientIp = clientIpFrom(headers);
-  if (clientIp) forwarded["x-forwarded-for"] = clientIp;
+  const forwarded: Record<string, string> = { "Content-Type": "application/json", ...forwardedClientHeaders(headers) };
   return fetch(`${API_BASE_URL}/auth/refresh`, {
     method: "POST",
     headers: forwarded,

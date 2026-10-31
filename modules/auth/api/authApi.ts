@@ -53,10 +53,6 @@ export const authApi = {
     return postSession<void>("logout").catch(() => undefined);
   },
 
-  requestPasswordReset(payload: { email: string }): Promise<void> {
-    return apiFetch("/auth/password-reset-request", { method: "POST", body: JSON.stringify(payload) });
-  },
-
   /** Only used by the /auth/callback page, for a project configured for PKCE (a `?code=` link). */
   exchangeCode(payload: { code: string }): Promise<{ profile: Profile }> {
     return postSession("exchange-code", payload);

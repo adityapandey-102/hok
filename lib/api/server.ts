@@ -2,6 +2,7 @@ import { headers as requestHeaders } from "next/headers";
 import { getAccessToken, getRefreshToken, setSession } from "../session/server";
 import { isExpired } from "../session/jwt";
 import { isRefreshTokenRejected, postRefresh } from "../session/refresh";
+import { forwardedClientHeaders } from "../session/forwarded";
 import { describeFetchError, logger } from "../logging/logger";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
@@ -55,6 +56,8 @@ export async function apiFetchServer(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  // The visitor's IP, so hok-api's per-IP limiters don't lump every visitor into this server's IP.
+  for (const [name, value] of Object.entries(forwardedClientHeaders(await requestHeaders()))) headers.set(name, value);
 
   let response: Response;
   try {
