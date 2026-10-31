@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HOK Requirements Summary</title>
+<style>
+  @page { size: A4; margin: 14mm 14mm 16mm 14mm; }
+  :root {
+    --ink: #1d2433; --muted: #5b6475; --line: #dde2ea; --soft: #f4f6fa;
+    --accent: #3b5bdb; --accent-soft: #e8edff; --ok: #2b8a3e; --no: #c92a2a; --warn: #e67700;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.45; margin: 0; background: #fff; }
+  h1 { font-size: 22pt; margin: 0 0 2px; letter-spacing: -0.3px; }
+  h2 { font-size: 13.5pt; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 2px solid var(--accent); color: var(--accent); }
+  h3 { font-size: 11pt; margin: 0 0 4px; }
+  p { margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: 10pt; margin-bottom: 10px; }
+  .hero { background: var(--accent-soft); border-left: 4px solid var(--accent); padding: 10px 14px; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.8pt; }
+  th, td { border: 1px solid var(--line); padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  td.c, th.c { text-align: center; }
+  .y { color: var(--ok); font-weight: 700; }
+  .n { color: var(--no); font-weight: 700; }
+  .o { color: var(--warn); font-weight: 600; font-size: 9pt; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card { border: 1px solid var(--line); border-radius: 6px; padding: 9px 12px; break-inside: avoid; }
+  .card .num { display: inline-block; background: var(--accent); color: #fff; border-radius: 50%; width: 19px; height: 19px; text-align: center; font-size: 9pt; line-height: 19px; margin-right: 6px; }
+  ul { margin: 2px 0 0; padding-left: 17px; }
+  li { margin-bottom: 2px; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 3px 0 9px; font-size: 9.6pt; }
+  .step { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 2px 9px; }
+  .arrow { color: var(--muted); }
+  .pill { display: inline-block; border-radius: 10px; padding: 0 7px; font-size: 9pt; font-weight: 600; }
+  .p1 { background: #fff3bf; } .p2 { background: #d0ebff; } .p3 { background: #d3f9d8; }
+  .note { font-size: 9pt; color: var(--muted); }
+  .avoid { break-inside: avoid; }
+  .pagebreak { break-before: page; }
+  .q td:first-child { width: 34%; }
+  .q tr { break-inside: avoid; }
+  .q td:last-child { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>HOK — Agency Operations Platform</h1>
+<div class="sub">Requirements Summary &nbsp;·&nbsp; Version 0.3 (decisions included) &nbsp;·&nbsp; 13 Oct 2026</div>
+
+<div class="hero">
+  <p><b>What are we building?</b> One website with two sides. The <b>public side</b> is the firm’s portfolio. The <b>private side</b>
+  lets the firm manage its <b>clients</b>, plan <b>events &amp; shoots</b>, keep <b>content links</b> in one place, share a
+  <b>live dashboard with each client</b>, and <b>assign tasks</b> to the team.</p>
+  <p style="margin:0"><b>The main problem it solves:</b> no more lost Drive links, missed shoots, or client feedback buried in chats.</p>
+</div>
+
+<h2>1. Who uses it?</h2>
+<table>
+  <tr><th>User</th><th>What they do</th></tr>
+  <tr><td><b>Admin</b></td><td>Controls everything. Sees all clients &amp; all data. Creates staff accounts and stage templates. The only one who assigns tasks. Can also have their own clients.</td></tr>
+  <tr><td><b>Social Media Manager</b></td><td>Manages <b>their own clients</b>: events, calendar, content links, client comments. Gets tasks from Admin.</td></tr>
+  <tr><td><b>Marketing Manager</b></td><td>Same as Social Media Manager.</td></tr>
+  <tr><td><b>Marketing Agent, Developer, Editor</b></td><td><b>Tasks only</b>: receive tasks from Admin, update the status with comments, and mark them done.</td></tr>
+  <tr><td><b>Client</b> (outside)</td><td>No login. Opens a <b>private link</b> to see their dashboard and leave comments.</td></tr>
+</table>
+<p class="note" style="margin-top:5px">🔒 <b>Privacy rule:</b> a manager sees only their own clients. Nobody else can see them except Admin. One client = one manager.</p>
+
+<h2>2. Who can do what?</h2>
+<table>
+  <tr><th>Feature</th><th class="c">Admin</th><th class="c">Social Media /<br>Marketing Manager</th><th class="c">Mkt Agent /<br>Developer / Editor</th><th class="c">Client<br>(link)</th></tr>
+  <tr><td>Manage staff accounts</td><td class="c y">✓</td><td class="c n">✗</td><td class="c n">✗</td><td class="c n">✗</td></tr>
+  <tr><td>Stage templates</td><td class="c y">✓ create</td><td class="c">pick one</td><td class="c n">✗</td><td class="c n">✗</td></tr>
+  <tr><td>Client profiles</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c n">✗</td><td class="c n">✗</td></tr>
+  <tr><td>Events &amp; shoots</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c n">✗</td><td class="c">view</td></tr>
+  <tr><td>Content links (assets)</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c n">✗</td><td class="c n">✗</td></tr>
+  <tr><td>Calendars</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c n">✗</td><td class="c">view</td></tr>
+  <tr><td>Client comments</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c n">✗</td><td class="c y">✓ post</td></tr>
+  <tr><td>Assign tasks</td><td class="c y">✓</td><td class="c n">✗</td><td class="c n">✗</td><td class="c n">✗</td></tr>
+  <tr><td>Do / update / close my tasks</td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td><td class="c n">✗</td></tr>
+  <tr><td>Dashboard</td><td class="c">everything</td><td class="c">my clients</td><td class="c">my tasks</td><td class="c">my events</td></tr>
+</table>
+
+<h2 class="pagebreak">3. Main features</h2>
+<div class="grid">
+  <div class="card"><h3><span class="num">1</span>Client Profiles</h3>
+    <ul><li>Business name, logo link, contact, social handles, services, time zone, notes</li>
+    <li>Each client belongs to one manager</li>
+    <li>Admin can move a client to another manager</li></ul></div>
+
+  <div class="card"><h3><span class="num">2</span>Events &amp; Shoots</h3>
+    <ul><li>Shoot, campaign, meeting… with date, time, time zone, place</li>
+    <li>Admin makes <b>stage templates</b> (e.g. “Photo Shoot”: Planned → Shoot → Editing → Client Review → Completed)</li>
+    <li>Manager picks a template when creating the event; its stages are used as they are</li></ul></div>
+
+  <div class="card"><h3><span class="num">3</span>Content Links (Assets)</h3>
+    <ul><li>Paste a link (Drive, Dropbox, Canva…). <b>No file upload</b></li>
+    <li>Add type (photo / video / doc), a comment and <b>tags</b></li>
+    <li>Search by tag or comment, so you never lose where content is</li>
+    <li>Internal only. Clients don’t see these</li></ul></div>
+
+  <div class="card"><h3><span class="num">4</span>Calendars</h3>
+    <ul><li><b>Client calendar</b>: all events of one client</li>
+    <li><b>My calendar</b>: all my clients’ events + my own events</li>
+    <li><b>Admin calendar</b>: whole company</li>
+    <li>Works across <b>time zones</b>: everyone sees times in their own zone</li></ul></div>
+
+  <div class="card"><h3><span class="num">5</span>Client Portal (shared link)</h3>
+    <ul><li>Manager creates a private link for the client. No PIN, no login</li>
+    <li>Client sees: current event &amp; its stage, upcoming events, calendar</li>
+    <li>Link can be turned off or replaced anytime. Simple plain design</li></ul></div>
+
+  <div class="card"><h3><span class="num">6</span>Client Comments</h3>
+    <ul><li>Client writes a comment from the portal</li>
+    <li>Only that client’s manager gets a <b>push notification</b></li>
+    <li>Manager sets status: <b>Received → In Progress → Solved</b> and can reply</li></ul></div>
+
+  <div class="card"><h3><span class="num">7</span>Team Tasks</h3>
+    <ul><li>Admin gives a task to <b>one</b> staff member</li>
+    <li>Staff updates the status with a comment: To Do → In Progress → <b>Done</b> (or Blocked). They close it themselves</li>
+    <li>Admin is notified of every update and can reopen</li></ul></div>
+
+  <div class="card"><h3><span class="num">8</span>Editor Tasks (extra fields)</h3>
+    <ul><li><b>Raw files link</b> (Google Drive)</li>
+    <li><b>Reference edit link</b> (the style to follow)</li>
+    <li><b>Script</b></li></ul></div>
+
+  <div class="card"><h3><span class="num">9</span>Notifications</h3>
+    <ul><li>Phone/browser push + bell icon in the app</li>
+    <li>For: new client comment, new task, task update (event reminders later)</li>
+    <li>On iPhone: add the site to the Home Screen to get push</li></ul></div>
+
+  <div class="card"><h3><span class="num">10</span>Dashboards</h3>
+    <ul><li>Each user sees a home screen made for their role</li>
+    <li>Today’s events, pending comments, due tasks, progress at a glance</li></ul></div>
+</div>
+
+<div class="avoid">
+<h2>4. How it works: examples</h2>
+<p><b>New client</b></p>
+<div class="flow"><span class="step">Manager adds client</span><span class="arrow">→</span><span class="step">Creates portal link</span><span class="arrow">→</span><span class="step">Sends link to client on WhatsApp</span></div>
+<p><b>Shoot day</b></p>
+<div class="flow"><span class="step">Create event, pick “Photo Shoot” template</span><span class="arrow">→</span><span class="step">Shows on calendars &amp; portal</span><span class="arrow">→</span><span class="step">Stage moves to “Editing”</span><span class="arrow">→</span><span class="step">Client sees progress</span></div>
+<p><b>Saving content</b></p>
+<div class="flow"><span class="step">Files are in Drive</span><span class="arrow">→</span><span class="step">Manager pastes link + tags “reel”, “diwali”</span><span class="arrow">→</span><span class="step">Found later by tag search</span></div>
+<p><b>Client feedback</b></p>
+<div class="flow"><span class="step">Client comments “change music”</span><span class="arrow">→</span><span class="step">Manager gets push</span><span class="arrow">→</span><span class="step">In Progress</span><span class="arrow">→</span><span class="step">Solved + reply</span></div>
+<p><b>Editing task</b></p>
+<div class="flow"><span class="step">Admin assigns “Edit reel” + Drive link, reference, script</span><span class="arrow">→</span><span class="step">Editor updates status + comment</span><span class="arrow">→</span><span class="step">Editor marks Done</span><span class="arrow">→</span><span class="step">Admin notified</span></div>
+</div>
+
+<h2>5. Decisions made</h2>
+<table class="q">
+  <thead><tr><th>Topic</th><th>Decision</th></tr></thead>
+  <tr><td>Marketing Agent</td><td>Tasks only (like Developer / Editor)</td></tr>
+  <tr><td>Sharing clients</td><td>No. One manager per client; Admin can move it</td></tr>
+  <tr><td>Portal security</td><td>Link only; can be turned off or replaced</td></tr>
+  <tr><td>Event stages</td><td>Admin-made templates, picked when creating an event</td></tr>
+  <tr><td>Content links on portal</td><td>Not in first version</td></tr>
+  <tr><td>Who gets pushed on a client comment</td><td>Only the client’s manager</td></tr>
+  <tr><td>Who assigns tasks</td><td>Only Admin</td></tr>
+  <tr><td>Task rules</td><td>One person per task; they can mark it Done</td></tr>
+  <tr><td>Mobile</td><td>Mobile-friendly website you can install (no app store)</td></tr>
+  <tr><td>Size</td><td>~20–50 staff, ~100–500 clients</td></tr>
+  <tr><td>Time zones / language</td><td>Multiple time zones, English</td></tr>
+  <tr><td>Email / WhatsApp messages</td><td>None. Notifications are phone/browser push + the in-app bell only</td></tr>
+  <tr><td>Portal look</td><td>Plain, no branding</td></tr>
+  <tr><td>Google Calendar</td><td>Dropped for now</td></tr>
+  <tr><td>Deadline</td><td>No fixed date. Quality first</td></tr>
+  <tr><td>Technology &amp; look</td><td>Same setup and same design system as the Needleye project</td></tr>
+  <tr><td>Portfolio website</td><td>The HOK template becomes the firm’s public website, in the same app. Moved in as it is now; redesigned with real content later</td></tr>
+  <tr><td>Hosting</td><td>First on our own machine. Later: Railway (backend), Supabase (database + logins), Vercel (website)</td></tr>
+</table>
+
+<div class="avoid">
+<h2>6. Build plan</h2>
+<table>
+  <tr><th style="width:110px">Phase</th><th>What gets built</th></tr>
+  <tr><td><span class="pill p1">Phase 1 · MVP</span></td><td>Portfolio website (template moved in) · Login &amp; roles · Client profiles · Stage templates &amp; events · Calendars · Content links · Team tasks (incl. editor fields) · <b>Client portal &amp; comments</b> · Push + in-app notifications · Dashboards</td></tr>
+  <tr><td><span class="pill p2">Phase 2</span></td><td>Client to-do lists · Reminders 2 hours before (bell animates) · Global search · Activity history · Last seen · Link previews · Reports</td></tr>
+  <tr><td><span class="pill p2">Later</span></td><td>Portfolio redesign with the firm’s real services, work, team and blog</td></tr>
+</table>
+</div>
+
+<h2>7. Not included (for now)</h2>
+<ul>
+  <li>Uploading or storing actual photo/video files (we only save links)</li>
+  <li>Posting directly to Instagram / Facebook etc.</li>
+  <li>Billing, invoices, payments · Ad performance / analytics reports</li>
+  <li>App-store mobile apps · Email/WhatsApp messages to clients</li>
+</ul>
+
+<p class="note" style="margin-top:14px">Full detail: <b>docs/REQUIREMENTS.md</b> &nbsp;·&nbsp; Technical design: <b>docs/ARCHITECTURE.md</b></p>
+
+</body>
+</html>

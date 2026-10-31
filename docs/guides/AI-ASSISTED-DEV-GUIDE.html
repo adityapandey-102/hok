@@ -1,0 +1,448 @@
+<!doctype html><html><head><meta charset="utf-8"><title>AI-Assisted Development Guide</title><style>@page{size:A4;margin:14mm}body{font-family:'Segoe UI',Arial,sans-serif;color:#1d2433;font-size:10.2pt;line-height:1.5;max-width:180mm;margin:0 auto}
+h1{font-size:21pt;color:#7a1d34;margin:0 0 4px}h2{font-size:14pt;color:#7a1d34;border-bottom:2px solid #7a1d34;padding-bottom:3px;margin:20px 0 8px;break-after:avoid}h3{font-size:11.5pt;margin:14px 0 6px;break-after:avoid}
+table{border-collapse:collapse;width:100%;font-size:9.2pt;margin:6px 0 10px}th,td{border:1px solid #dde2ea;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f5efe5}tr{break-inside:avoid}
+code{background:#f4f6fa;padding:1px 4px;border-radius:3px;font-size:8.8pt}pre{background:#f4f6fa;padding:8px 10px;border-radius:6px;font-size:8.5pt;white-space:pre-wrap;break-inside:avoid}pre code{background:none;padding:0}
+blockquote{border-left:3px solid #9c7b3f;margin:6px 0;padding:2px 10px;color:#4a403a}.mermaid{text-align:center;margin:10px 0;break-inside:avoid}hr{border:none;border-top:1px solid #dde2ea;margin:14px 0}ul,ol{margin:4px 0 8px}li{margin-bottom:2px}</style></head><body><h1>AI-Assisted Development with Claude Code: Context Architecture &amp; Multi-Agent Guide</h1>
+<p><em>A field report from the HOK project, and a reusable template for solo developers and teams.</em>
+Version 1.0 · 16 Oct 2026 · Project: HOK (House of Khalak) agency platform</p>
+<hr>
+<h2>1. Summary</h2>
+<ul>
+<li>We built a two-repo product (API + web) with Claude Code. To go faster, we moved from one session to <strong>five parallel helper agents</strong> managed by a lead session, which gave each agent new work whenever it went idle.</li>
+<li>Within about <strong>30 minutes of each run, the Claude Pro usage limit was exhausted</strong>, twice. Work stopped mid-task each time.</li>
+<li><strong>Cause:</strong> on a fixed usage budget, parallel agents don&#39;t add capacity; they spend it faster. Long-lived agents that were resumed again and again grew to <strong>270k–440k tokens each</strong>, and every step re-processed that history. Coordination overhead made the same work cost roughly 2–4× more.</li>
+<li><strong>What we did:</strong> stopped all agents, wrote a handoff snapshot, cut the always-loaded context in half, and adopted a <strong>lean workflow</strong>: the lead works sequentially, with at most 2 short-lived helpers on a cheaper model, and verification once per milestone.</li>
+<li><strong>Main lesson:</strong> match the agent setup to the <strong>budget</strong> and to <strong>how independent the work really is</strong>, not to how big the project feels.</li>
+</ul>
+<hr>
+<h2>2. The story: what happened</h2>
+<h3>2.1 Context</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Product</td>
+<td>HOK: public portfolio website + agency management (clients, events, calendars, asset links, client portal, staff tasks, notifications)</td>
+</tr>
+<tr>
+<td>Stack</td>
+<td>Express + TypeScript API (modular monolith, Drizzle, Supabase), Next.js 16 web, local Docker Supabase</td>
+</tr>
+<tr>
+<td>Size</td>
+<td>2 repos, about 12 business modules, 12 milestones (M0–M11)</td>
+</tr>
+<tr>
+<td>Plan</td>
+<td>Claude Pro, Claude Code in VS Code</td>
+</tr>
+<tr>
+<td>Quality bar</td>
+<td>Clean architecture per module, RBAC on every endpoint, tests (unit, integration, RBAC matrix, e2e), docs kept in sync</td>
+</tr>
+</tbody></table>
+<h3>2.2 Timeline</h3>
+<table>
+<thead>
+<tr>
+<th>When</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Days 1–2</td>
+<td>Requirements, architecture and plan written with the lead session. Project context file (<code>CLAUDE.md</code>) created. M0 (setup) built solo.</td>
+</tr>
+<tr>
+<td>Day 3</td>
+<td><strong>2 agents</strong> (API + web), each owning one repo. Worked well, little conflict.</td>
+</tr>
+<tr>
+<td>Day 4</td>
+<td>Grew to <strong>5 agents</strong> (API, screens, web, assets, tasks), 3 on Opus. Rule: <em>&quot;when an agent is idle, give it the next milestone.&quot;</em> A coordination doc defined folders, ports and migration ranges. M0–M4 completed and verified.</td>
+</tr>
+<tr>
+<td>Day 4, later</td>
+<td><strong>Usage limit hit.</strong> All 5 agents stopped mid-edit at the same moment.</td>
+</tr>
+<tr>
+<td>Day 5</td>
+<td>Agents resumed, and the <strong>limit was hit again within about 30 minutes</strong>. Several side incidents surfaced (below).</td>
+</tr>
+<tr>
+<td>Day 5</td>
+<td>All agents stopped. Snapshot written. Lean workflow adopted.</td>
+</tr>
+</tbody></table>
+<h3>2.3 Side incidents caused by parallelism</h3>
+<table>
+<thead>
+<tr>
+<th>Incident</th>
+<th>Root cause</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>An agent registered a database schema in a shared file before creating it, which broke other agents&#39; runs</td>
+<td>Several agents editing shared wiring files</td>
+</tr>
+<tr>
+<td>Lint went red in one agent&#39;s files while others were checking theirs</td>
+<td>No single owner of &quot;green&quot;</td>
+</tr>
+<tr>
+<td>A migration command applied <strong>unapproved</strong> migrations</td>
+<td><code>migration up</code> applies <em>all</em> pending files, and other agents had written theirs</td>
+</tr>
+<tr>
+<td>One agent&#39;s migration failed (constraint name clash) during another&#39;s apply</td>
+<td>Migrations written in parallel, applied together</td>
+</tr>
+<tr>
+<td>Port clashes, orphaned dev servers, Playwright traces overwriting each other</td>
+<td>Shared machine resources</td>
+</tr>
+<tr>
+<td>The lead&#39;s own context bloated</td>
+<td>Every agent edit produced a &quot;file changed&quot; notice for the lead</td>
+</tr>
+</tbody></table>
+<h3>2.4 What went right</h3>
+<ul>
+<li>With clear folder ownership, the code itself was good. Every milestone passed its tests and checks.</li>
+<li>Infrastructure for parallel work held up: separate ports per agent, and separate build folders via <code>NEXT_DIST_DIR</code> so several web servers could run at once.</li>
+<li>Human approval gates (migrations, commits, Docker) held, apart from the bulk <code>migration up</code> problem.</li>
+</ul>
+<hr>
+<h2>3. Root-cause analysis: where the tokens went</h2>
+<div class="mermaid">flowchart TD
+    A[Lead session] -->|spawn + brief| B1[Agent 1]
+    A --> B2[Agent 2]
+    A --> B3[Agent 3]
+    A --> B4[Agent 4]
+    A --> B5[Agent 5]
+    B1 & B2 & B3 & B4 & B5 -->|long reports| A
+    A -->|idle? give next milestone| B1 & B2 & B3 & B4 & B5
+    B1 & B2 & B3 & B4 & B5 -->|edit same files| S[(Shared files: API contract, seed, README, router)]
+    S -->|re-read before every edit| B1 & B2 & B3 & B4 & B5
+    S -->|change notices| A
+    X[Context grows every task: 270k to 440k tokens per agent] -.-> B1 & B2 & B3 & B4 & B5
+</div>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Cause</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><strong>Long-lived, resumed agents</strong></td>
+<td>Each new task was appended to a growing history, and every tool call re-processes it. This was the biggest single cost.</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>5 in parallel, 3 on the top model</strong></td>
+<td>Five contexts burning at once at the highest price.</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Shared-file churn</strong></td>
+<td>Constant re-reading of large shared files, plus change notices to the lead.</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Repeated heavy verification</strong></td>
+<td>Full suites, browser e2e and screenshots (images are expensive) several times per milestone.</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Chatty coordination</strong></td>
+<td>Long reports, relayed notes, resume messages, status checks.</td>
+</tr>
+</tbody></table>
+<p><strong>The key economic point:</strong> on a subscription with a fixed usage window, total useful work per window is roughly <em>budget ÷ cost per unit of work</em>. Parallelism doesn&#39;t raise the budget, and its overhead raises the cost per unit. The result is <strong>less</strong> work per window, plus idle time waiting for the reset.</p>
+<hr>
+<h2>4. Measures taken</h2>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Stopped all agents</td>
+<td>Stop the burn</td>
+</tr>
+<tr>
+<td><code>docs/STATUS.md</code>: a snapshot of every agent&#39;s stopping point</td>
+<td>Resume without re-exploring</td>
+</tr>
+<tr>
+<td><code>CLAUDE.md</code> cut from 134 to 72 lines; history moved to <code>docs/DECISIONS.md</code></td>
+<td>Less always-loaded context for every session and agent</td>
+</tr>
+<tr>
+<td><code>docs/WORKFLOW.md</code>: lean rules (below)</td>
+<td>Prevent recurrence</td>
+</tr>
+<tr>
+<td>Rule saved to the assistant&#39;s long-term memory</td>
+<td>Future sessions follow it automatically</td>
+</tr>
+<tr>
+<td>Model policy: Opus leads and reviews, Sonnet implements</td>
+<td>Lower cost without lowering quality</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>5. The lean workflow we adopted (WORKFLOW.md)</h2>
+<div class="mermaid">flowchart LR
+    P[Plan milestone: brief, files, contract, acceptance] --> D{Truly independent chunk?}
+    D -- No --> L[Lead implements sequentially]
+    D -- Yes, at most 2 --> H[Fresh Sonnet helper: one task, 20-line brief, own folder only]
+    H --> R[Report of 10 lines or fewer]
+    L --> W[Lead wires shared files once]
+    R --> W
+    W --> V[Verify once: lint, types, unit, integration, RBAC, build, 1 e2e]
+    V --> G{Human gate: migration, commit}
+    G --> S[Update STATUS.md] --> P
+</div>
+<p><strong>The rules:</strong></p>
+<ol>
+<li><strong>Default: the lead works alone</strong>, milestone by milestone.</li>
+<li><strong>Helpers only for truly independent chunks</strong>, at most 2 at a time, on the cheaper model.</li>
+<li><strong>Fresh, short-lived helpers.</strong> One task, then they end. Never resume one for new work.</li>
+<li><strong>Task brief, not exploration</strong>: 20 lines or fewer, naming exact files, the contract, acceptance criteria and &quot;read only these&quot;.</li>
+<li><strong>Shared files belong to the lead</strong>, wired once at the end.</li>
+<li><strong>Verify once per milestone</strong>; only targeted tests while working.</li>
+<li><strong>Reports of 10 lines or fewer</strong>: outcome, files, checks with counts, blockers.</li>
+<li><strong>Approvals batched per milestone.</strong> Only the lead applies migrations, one by one.</li>
+<li><strong>Handoff = STATUS.md</strong>, updated at each milestone end.</li>
+<li><strong>The lead stays lean</strong>: no polling, short replies, <code>/compact</code> or a new session between milestones.</li>
+</ol>
+<h3>Model policy: does a cheaper helper model compromise quality?</h3>
+<table>
+<thead>
+<tr>
+<th>Work</th>
+<th>Model</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Architecture, data model, security design (auth, RBAC, public endpoints, tokens), final review</td>
+<td><strong>Top model (e.g. Opus)</strong></td>
+<td>Judgment across many files; subtle risks</td>
+</tr>
+<tr>
+<td>Well-specified implementation following an existing pattern, UI built from existing components, tests, docs, lint fixes</td>
+<td><strong>Cheaper model (e.g. Sonnet)</strong></td>
+<td>Strong at bounded, pattern-following work</td>
+</tr>
+<tr>
+<td>Quality protection, whatever the model</td>
+<td><strong>Automated gates + lead review</strong></td>
+<td>Lint, typecheck, unit/integration tests, RBAC matrix, API-contract test, query budget, e2e</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>6. Choosing a setup by project scale and budget</h2>
+<div class="mermaid">flowchart TD
+    Q1{Usage budget?} -- Pro / small --> Q2{Tasks independent?}
+    Q1 -- Max / API / large --> Q3{Tasks independent?}
+    Q2 -- Mostly coupled --> T1[Tier M: lean, lead + up to 2 helpers]
+    Q2 -- Tiny project --> T0[Tier S: solo session]
+    Q3 -- Coupled --> T1
+    Q3 -- Separate modules or services --> T2[Tier L: lead + 3-5 workers with ownership]
+    Q3 -- Separate repos / teams / bulk mechanical work --> T3[Tier XL: orchestrator per service + fan-out]
+</div>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Typical project</th>
+<th>Budget</th>
+<th>Setup</th>
+<th>Avoid</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>S: Solo</strong></td>
+<td>Landing site, script, small app, 1 repo</td>
+<td>Any</td>
+<td>One session, no agents</td>
+<td>Any agents (pure overhead)</td>
+</tr>
+<tr>
+<td><strong>M: Lean</strong></td>
+<td>Medium product like HOK: 1–2 repos, about 5–20 coupled modules</td>
+<td>Pro</td>
+<td>Lead (top model) + at most 2 fresh helpers (cheaper model) for independent chunks</td>
+<td>Long-lived agents; more than 2 parallel</td>
+</tr>
+<tr>
+<td><strong>L: Team</strong></td>
+<td>Large app, many modules with clean boundaries</td>
+<td>Max / API</td>
+<td>Lead + 3–5 workers; strict ownership; one integrator owns shared files; fresh agent per task</td>
+<td>Reassign-when-idle loops; shared-file edits by workers</td>
+</tr>
+<tr>
+<td><strong>XL: Org</strong></td>
+<td>Microservices, mobile + backend, many repos/teams; bulk refactors; research fan-out</td>
+<td>Max 20× / API</td>
+<td>One orchestrator per service/repo; fan-out of short workers for mechanical work</td>
+<td>Cross-service agents; one giant context</td>
+</tr>
+</tbody></table>
+<p><strong>Rule of thumb:</strong> parallel agents pay off when <strong>budget is large and tasks are independent</strong>. If either is missing, sequential work finishes sooner in calendar time.</p>
+<hr>
+<h2>7. Template: context architecture for an AI-assisted codebase</h2>
+<h3>7.1 The five context layers</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>File(s)</th>
+<th>Loaded</th>
+<th>Size rule</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>L0 Personal memory</strong></td>
+<td>Assistant memory (user preferences, standing rules)</td>
+<td>Every session</td>
+<td>A few one-line facts</td>
+</tr>
+<tr>
+<td><strong>L1 Constitution</strong></td>
+<td><code>CLAUDE.md</code> (root + one per repo)</td>
+<td>Every session <strong>and every agent</strong></td>
+<td>80 lines or fewer: rules, summary, pointers only</td>
+</tr>
+<tr>
+<td><strong>L2 Reference</strong></td>
+<td><code>docs/REQUIREMENTS.md</code>, <code>docs/ARCHITECTURE.md</code>, <code>docs/adr/*</code>, <code>docs/engineering-practices.md</code>, skills</td>
+<td>On demand</td>
+<td>Any size; never auto-loaded</td>
+</tr>
+<tr>
+<td><strong>L3 State</strong></td>
+<td><code>docs/STATUS.md</code> (handoff), <code>docs/DECISIONS.md</code> (log)</td>
+<td>At session start / when deciding</td>
+<td>STATUS: one page</td>
+</tr>
+<tr>
+<td><strong>L4 Task</strong></td>
+<td>Task brief per agent</td>
+<td>Only for that agent</td>
+<td>20 lines or fewer</td>
+</tr>
+<tr>
+<td><strong>Truth</strong></td>
+<td>Code, tests, API contract (OpenAPI)</td>
+<td>When needed</td>
+<td>Always wins over docs</td>
+</tr>
+</tbody></table>
+<p><strong>Principle:</strong> store knowledge once, load only what the task needs.</p>
+<h3>7.2 Recommended repo layout</h3>
+<pre><code>project/
+├── CLAUDE.md                  # L1 constitution (≤80 lines)
+├── docs/
+│   ├── STATUS.md              # L3 handoff: milestone states, next actions
+│   ├── DECISIONS.md           # L3 decision log + changelog
+│   ├── WORKFLOW.md            # how humans + agents work here
+│   ├── REQUIREMENTS.md        # L2
+│   ├── ARCHITECTURE.md        # L2
+│   └── adr/                   # L2 architecture decision records
+├── .claude/skills/&lt;name&gt;/SKILL.md   # L2 rules loaded when relevant
+├── api/ (CLAUDE.md, README.md, openapi.yaml, docs/)
+└── web/ (CLAUDE.md, README.md, docs/)
+</code></pre>
+<h3>7.3 <code>CLAUDE.md</code> skeleton</h3>
+<pre><code class="language-markdown"># CLAUDE.md: &lt;Project&gt;
+## 0. Working rules (hard)
+- Ask before actions outside the project (apps, containers, processes, credentials, DB writes).
+- Explicit &quot;yes&quot; before every commit/push. Never touch production unless asked.
+- Allowed without asking: edit files, run lint/typecheck/tests/build locally.
+## 1. What this is (5 lines)
+## 2. Where things are
+- Status: docs/STATUS.md · Decisions: docs/DECISIONS.md · Workflow: docs/WORKFLOW.md
+- Requirements / Architecture / ADRs: docs/…
+## 3. Stack + conventions (5–10 lines, link details)
+</code></pre>
+<h3>7.4 <code>STATUS.md</code> skeleton</h3>
+<pre><code class="language-markdown"># Status (updated &lt;date&gt;)
+| Milestone | State | Evidence (checks + counts) |
+## Database / environment state
+## Open issues and blockers
+## Next actions (ordered)
+</code></pre>
+<h3>7.5 Task brief template (for a helper agent)</h3>
+<pre><code class="language-markdown">Goal: &lt;one sentence&gt;
+Read only: &lt;3–6 files, incl. the module to copy as a pattern&gt;
+Own (may edit): &lt;folders&gt;   Do not edit: &lt;shared files&gt;
+Contract: &lt;endpoints / types / props&gt;
+Acceptance: &lt;tests to add + commands that must pass&gt;
+Gates: write migrations but don&#39;t apply; no git; no servers left running
+Report (≤10 lines): outcome · files · checks with counts · blockers
+</code></pre>
+<h3>7.6 Report template</h3>
+<pre><code class="language-markdown">Outcome: done | blocked | partial
+Files: &lt;list&gt;
+Checks: lint ✓ · typecheck ✓ · unit 182/182 · integration 58/58 · e2e 1/1
+Needs approval: &lt;migration / none&gt;
+Risks or follow-ups: &lt;one line each&gt;
+</code></pre>
+<h3>7.7 Gates that protect quality regardless of model</h3>
+<ul>
+<li>Lint + typecheck + unit tests on every change.</li>
+<li>Integration tests against a real local database.</li>
+<li>RBAC matrix: every endpoint × every role.</li>
+<li>API contract test (routes and enums must match the documentation).</li>
+<li>Query budget (no N+1, capped pages).</li>
+<li>One critical-path e2e per milestone.</li>
+<li>Human gates: migrations, commits, pushes, production.</li>
+</ul>
+<hr>
+<h2>8. Checklists</h2>
+<p><strong>Before spawning an agent</strong></p>
+<ul>
+<li><input disabled="" type="checkbox"> Is the chunk independent (own folder, no shared tables or screens in flight)?</li>
+<li><input disabled="" type="checkbox"> Is a cheaper model enough (pattern exists, no security design)?</li>
+<li><input disabled="" type="checkbox"> Is the brief 20 lines or fewer, with exact files and acceptance criteria?</li>
+<li><input disabled="" type="checkbox"> Are fewer than 2 helpers running (Tier M)?</li>
+</ul>
+<p><strong>When an agent finishes</strong></p>
+<ul>
+<li><input disabled="" type="checkbox"> Review the report, spot-check the checks.</li>
+<li><input disabled="" type="checkbox"> Wire shared files once (lead).</li>
+<li><input disabled="" type="checkbox"> End the agent; don&#39;t reuse it.</li>
+</ul>
+<p><strong>At milestone end</strong></p>
+<ul>
+<li><input disabled="" type="checkbox"> One full verification run.</li>
+<li><input disabled="" type="checkbox"> Batched human approval (migration + seed), then commit with explicit yes.</li>
+<li><input disabled="" type="checkbox"> Update STATUS.md; <code>/compact</code> or start a fresh session.</li>
+</ul>
+<hr>
+<h2>9. Lessons learned</h2>
+<ol>
+<li><strong>Agent count is not speed.</strong> On a fixed budget, throughput comes from low cost per unit of work.</li>
+<li><strong>Context grows silently.</strong> Resuming the same agent for new work is the most expensive habit.</li>
+<li><strong>Shared files are the real bottleneck</strong> of parallel coding. Give them one owner.</li>
+<li><strong>Bulk operations need human-aware design.</strong> &quot;Apply all pending&quot; collided with per-item approvals.</li>
+<li><strong>Keep the always-loaded context tiny</strong>; link to everything else.</li>
+<li><strong>A one-page STATUS.md</strong> makes stopping and resuming cheap and safe.</li>
+<li><strong>Use cheaper models for bounded work, top models for judgment</strong>, with automated gates protecting quality.</li>
+<li><strong>Measure by verified work delivered per usage window</strong>, not by how many agents are busy.</li>
+</ol>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script><script>mermaid.initialize({startOnLoad:true,theme:"neutral",flowchart:{useMaxWidth:true}});</script></body></html>

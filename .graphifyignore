@@ -1,0 +1,17 @@
+node_modules/
+.next/
+dist/
+coverage/
+test-results/
+playwright-report/
+.turbo/
+supabase/.temp/
+hok-web/components/ui/iconPaths.ts
+hok-web/public/
+*.pdf
+*.png
+*.jpg
+*.webp
+*.svg
+*.min.js
+*.map

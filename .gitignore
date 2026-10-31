@@ -1,0 +1,17 @@
+# Never publish: secrets, audit reports, generated graphs, old repo backups, local agent settings
+.env
+.env.*
+!.env.example
+security-audit/
+graphify-out/
+.repo-backups/
+.claude/settings.local.json
+node_modules/
+.next/
+.next-*/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.pem
+*.log

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOK Production Readiness</title>
+<style>
+  :root {
+    --bg: #f6f4f1; --card: #ffffff; --text: #1f1b1c; --muted: #6b6466; --line: #e7e2dd;
+    --accent: #8a5a2b; --green: #1f7a45; --green-bg: #e6f4ec; --amber: #9a6200; --amber-bg: #fdf3e1;
+    --red: #b42318; --red-bg: #fdecea; --blue: #1d4ed8; --blue-bg: #e8eefc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161314; --card: #211d1e; --text: #f2eeec; --muted: #a8a0a2; --line: #352f30;
+      --accent: #d8a56f; --green: #5fd08f; --green-bg: #173323; --amber: #f0b54a; --amber-bg: #3a2c12;
+      --red: #ff8a80; --red-bg: #3d1a18; --blue: #8fb0ff; --blue-bg: #1b2440;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 40px 0 12px; }
+  h3 { font-size: 16px; margin: 20px 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .verdict { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .big { font-size: 56px; font-weight: 700; color: var(--accent); line-height: 1; }
+  .verdict p { margin: 0; flex: 1; min-width: 240px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; font-size: 15px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .03em; }
+  tr:last-child td { border-bottom: 0; }
+  .bar { height: 8px; background: var(--line); border-radius: 99px; width: 90px; display: inline-block; vertical-align: middle; margin-right: 8px; }
+  .bar span { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+  .pill { display: inline-block; padding: 1px 10px; border-radius: 99px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .ok { background: var(--green-bg); color: var(--green); }
+  .warn { background: var(--amber-bg); color: var(--amber); }
+  .bad { background: var(--red-bg); color: var(--red); }
+  .info { background: var(--blue-bg); color: var(--blue); }
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin: 6px 0; }
+  .list { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px 20px; }
+  .check { list-style: none; padding: 0; }
+  .check li { padding: 12px 0; border-bottom: 1px solid var(--line); display: flex; gap: 12px; }
+  .check li:last-child { border-bottom: 0; }
+  .num { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+  .callout { border-left: 4px solid var(--red); background: var(--red-bg); padding: 12px 16px; border-radius: 8px; margin: 12px 0; }
+  .callout.amber { border-color: var(--amber); background: var(--amber-bg); }
+  code { font: 13px/1.4 ui-monospace, Consolas, monospace; background: var(--bg); border: 1px solid var(--line); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+  .tablewrap { overflow-x: auto; }
+  @media print { body { background: #fff; } .card, table, .list { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>HOK production readiness</h1>
+  <p class="sub">Checked on 24 October 2026, the day before launch. Covers the staff app, client portal and API.</p>
+
+  <div class="card verdict">
+    <div class="big">90%</div>
+    <p><strong>Safe to launch tomorrow</strong>, as long as you finish the <a href="#before">Before launch</a> list (settings in Railway, Vercel and Supabase that only you can enter). No known security issue is left open: <strong>#1</strong> and the last library vulnerability (zod) were fixed later the same day. What's left is setup, plus monitoring after launch.</p>
+  </div>
+
+  <h2>Scores</h2>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Area</th><th>Score</th><th>Why</th></tr>
+    <tr><td>Features work end to end</td><td><span class="bar"><span style="width:90%"></span></span>9/10</td><td>Every automated test passes</td></tr>
+    <tr><td>Security</td><td><span class="bar"><span style="width:90%"></span></span>9/10</td><td>Three issues found and fixed today (Next.js, push addresses, #1). 0 known vulnerabilities in libraries</td></tr>
+    <tr><td>Speed under load</td><td><span class="bar"><span style="width:80%"></span></span>8/10</td><td>Fine for a firm this size. Every request makes one extra trip to Supabase Auth (fix after launch)</td></tr>
+    <tr><td>Production setup</td><td><span class="bar"><span style="width:70%"></span></span>7/10</td><td>Depends on settings you still have to enter. The API now refuses to start if the main ones are wrong</td></tr>
+    <tr><td>Monitoring and backups</td><td><span class="bar"><span style="width:60%"></span></span>6/10</td><td>Logs, health checks and safe shutdown are in place. Nothing alerts you when errors happen, and backups depend on your Supabase plan</td></tr>
+  </table>
+  </div>
+
+  <h2>What was tested</h2>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Check</th><th>Result</th></tr>
+    <tr><td>API lint, typecheck, build</td><td><span class="pill ok">Pass</span></td></tr>
+    <tr><td>API unit tests</td><td><span class="pill ok">576 pass</span></td></tr>
+    <tr><td>API integration tests (real database)</td><td><span class="pill ok">221 pass</span></td></tr>
+    <tr><td>Permission check (every role × every endpoint)</td><td><span class="pill ok">547 / 547</span></td></tr>
+    <tr><td>Web lint, typecheck, unit tests</td><td><span class="pill ok">155 pass</span></td></tr>
+    <tr><td>Web production build + page-size budget</td><td><span class="pill ok">27 pages, all under 300 KB</span></td></tr>
+    <tr><td>Browser tests (the real app in Chrome)</td><td><span class="pill ok">71 / 71</span> run in 3 batches so the login limit resets between them</td></tr>
+    <tr><td>Load test (20 people at once, 8 busiest pages)</td><td><span class="pill ok">0 errors</span> 50–60 requests/second per page; 95% answered within 0.55 s</td></tr>
+    <tr><td>Security review (by hand, both apps)</td><td><span class="pill ok">Done</span> see below</td></tr>
+    <tr><td>Known vulnerabilities in libraries</td><td><span class="pill ok">0 left</span> Next.js 16.4.3, zod 4.6.7, body-parser patched</td></tr>
+  </table>
+  </div>
+
+  <h2>Fixed today</h2>
+  <h3>From the code review (your items 2–5): all fixed ✓</h3>
+  <div class="list"><ul>
+    <li><strong>Team saves:</strong> one deactivated member no longer blocks every save of that client's team. The dialog marks such people <em>Inactive</em>, and they can't be made lead.</li>
+    <li><strong>Phone layout:</strong> tapping a tab while the "More" drawer is open now closes it. Toasts sit above the tab bar. Dropdowns (time zone, team pickers) are no longer cut off inside panels.</li>
+    <li><strong>Phone numbers:</strong> old numbers saved without "+" are no longer silently turned into +91 numbers. "0044…" is read as +44.</li>
+    <li><strong>Time zones:</strong> search is fast (it was rebuilding about 840 formatters on every keystroke), and zone names can no longer cause a page-load error.</li>
+    <li><strong>Client search:</strong> also finds clients by contact person name and industry, as the search box says.</li>
+    <li><strong>Out-of-date text:</strong> "the clients you own" wording in the guide, dashboard, clients list, CLAUDE.md and API docs updated for client teams.</li>
+  </ul></div>
+
+  <h3>From the security and production review: all 7 fixed ✓</h3>
+  <p class="sub" style="margin:0 0 8px">The coloured label shows how serious each problem <em>was</em>. Every one is already fixed in the code and tested.</p>
+  <div class="list"><ul>
+    <li><span class="pill ok">✓ Fixed</span> <span class="pill bad">was Critical</span> <strong>Next.js 16.2.11 → 16.4.3.</strong> The old version had several known remote-code-execution holes (image optimisation, Windows hosting, <code>use cache</code>) and cache-poisoning bugs.</li>
+    <li><span class="pill ok">✓ Fixed</span> <span class="pill warn">was High</span> <strong>body-parser</strong> (part of Express) patched against a denial-of-service bug.</li>
+    <li><span class="pill ok">✓ Fixed</span> <span class="pill warn">was Medium</span> <strong>Push notification addresses:</strong> only real browser push services (Google, Mozilla, Apple, Microsoft) are accepted. Before, a signed-in user could make the server send requests to any internal address.</li>
+    <li><span class="pill ok">✓ Fixed</span> <span class="pill info">Hardening</span> <strong>Security headers on every page:</strong> no framing by other sites (clickjacking), no MIME sniffing, a safer Referer, and camera, microphone and location off. The "X-Powered-By: Next.js" header is gone.</li>
+    <li><span class="pill ok">✓ Fixed</span> <span class="pill info">Hardening</span> <strong>Production safety check:</strong> the API refuses to start in production if <code>CORS_ALLOWED_ORIGIN</code>, <code>WEB_APP_URL</code> or <code>PUBLIC_API_URL</code> is missing, not https, or still localhost.</li>
+    <li><span class="pill ok">✓ Fixed</span> <span class="pill info">Hardening</span> <strong>Database timeout:</strong> a runaway query is stopped after 15 seconds instead of tying up one of the few database connections.</li>
+    <li><span class="pill ok">✓ Fixed</span> <span class="pill info">Tests</span> Browser tests updated so they keep working as test data builds up.</li>
+  </ul></div>
+
+  <h2>Security review: checked and fine</h2>
+  <div class="list"><ul>
+    <li>Login, refresh and logout. Cookies are httpOnly, Secure in production and SameSite=Lax. Cross-site form protection on every session route.</li>
+    <li>Login is rate-limited (30 tries per 15 minutes). Passwords must be at least 8 characters, and nobody can sign themselves up.</li>
+    <li>Every endpoint checks the role. Managers see only their teams' clients (547 automated checks); a client they can't see returns "not found".</li>
+    <li>Database row security (RLS) is on for every table.</li>
+    <li>Client portal and calendar links are stored only as hashes, rate-limited, kept out of logs and search engines, and never framed.</li>
+    <li>Links typed by users (assets, logos, social accounts, task links) accept only http/https, so <code>javascript:</code> links are refused.</li>
+    <li>Link previews are protected against requests to internal addresses.</li>
+    <li>No secrets committed to git. Logs hide tokens, cookies and portal links. Error details are never shown in production. The API runs as a non-root user.</li>
+  </ul></div>
+
+  <h2 id="before">Before launch (you, in the hosting dashboards)</h2>
+  <ol class="list check">
+    <li><span class="num">1</span><div><strong>Railway (API) environment</strong><ul>
+      <li><code>NODE_ENV=production</code> (the Dockerfile sets it).</li>
+      <li><code>DATABASE_URL</code>, <code>SUPABASE_URL</code>, <code>SUPABASE_SERVICE_ROLE_KEY</code>, <code>SUPABASE_ANON_KEY</code>.</li>
+      <li><code>CORS_ALLOWED_ORIGIN</code>, <code>WEB_APP_URL</code> and <code>PUBLIC_API_URL</code>, all <code>https://…</code>. The API won't start otherwise.</li>
+      <li>VAPID keys if you want push notifications.</li>
+      <li><code>TRUST_PROXY</code> set for Railway's proxy, so rate limits see real visitor addresses.</li>
+    </ul>
+    <div class="callout amber"><strong>Test this after deploying:</strong> log in from two different networks and check that the API logs show different IPs. If every request shows the same address, the whole firm shares one login limit (30 sign-ins and token refreshes per 15 minutes) and people will get "Too many attempts". Raise <code>AUTH_RATE_LIMIT_MAX</code> (e.g. 100) if in doubt. Also check Supabase → Auth → Rate limits: sign-ins per 5 minutes all come from the API server's one address.</div></div></li>
+    <li><span class="num">2</span><div><strong>Vercel (web)</strong>: set <code>NEXT_PUBLIC_API_BASE_URL</code> and <code>NEXT_PUBLIC_WEB_APP_URL</code> to the production addresses, then redeploy after this upgrade.</div></li>
+    <li><span class="num">3</span><div><strong>Supabase (hosted)</strong><ul>
+      <li>Apply the seven new migrations (the security audit fixes added <code>20261030000001_role_from_app_metadata</code>, <code>20261030000002_role_from_app_metadata_on_update</code>, <code>20261030000003_profiles_owner</code> and <code>20261030000004_revoke_data_api_reads</code>), in order. The first three are: <code>20261022000001_calendar_feed</code>, <code>20261022000002_client_contact_lists</code>, <code>20261023000001_client_teams_project_manager</code>.</li>
+      <li>Auth settings: turn <strong>sign-ups off</strong>; set the Site URL and redirect URLs to the production web address; set the minimum password length to 8.</li>
+      <li>Check that daily backups are on for your plan.</li>
+    </ul></div></li>
+    <li><span class="num">4</span><div>Set <code>TRUST_PROXY</code> explicitly on the API (it now refuses to start in production without it). The first Admin becomes the Owner: only the Owner can create, demote or deactivate Admins or reset an Admin's password. Email sign-in links (<code>/auth/callback</code>) are off until an email service is added. Set <code>BOOTSTRAP_TOKEN</code> (a long random value) on the API, create the first Admin on /setup with that key, then remove <code>BOOTSTRAP_TOKEN</code> so setup is off again. Create the first Admin account. The test accounts with password <code>Hok@2026</code> must not exist in production.</div></li>
+    <li><span class="num">5</span><div>Decide whether <code>/api-docs</code> should be public on production. Today it lists every endpoint (harmless, but not needed).</div></li>
+  </ol>
+
+  <h2>Hosting check: API on DigitalOcean $5, web on Vercel, database on Supabase</h2>
+  <div class="callout amber" style="border-color:var(--green);background:var(--green-bg)"><strong>Verdict: compatible, and the bill should stay at $5.</strong> Checked 27 October against DigitalOcean's pricing and limits pages and by measuring a production-style build of the API.</div>
+  <div class="list"><ul>
+    <li><strong>The plan:</strong> $5 a month flat for 1 shared CPU, 512 MiB of memory and 50 GiB of data out, on one server copy.</li>
+    <li><strong>Extra charges:</strong> the compute price is fixed, so heavy use never raises it. The only usage charge is data out beyond 50 GiB, at $0.02 per GiB (shared by the team, not carried over). Measured responses average 6.1 KB. If all 20 staff opened a page every 8 seconds, all workday, every workday, that is about <strong>21 GiB a month</strong>, under the 50 GiB limit. Going 20 GiB over would cost 40 cents. Set a billing alert at about $10.</li>
+    <li><strong>Measured on 27 October</strong> (production-style build against the local database and login service, 20 simulated staff opening a page every 4–12 seconds, 70 seconds): all 395 requests succeeded; 95% finished within 215 ms; memory stayed at 96–110 MB and peaked at <strong>128 MB</strong> when hammered at 46 requests a second; about 5% of one CPU core on this PC (a shared DigitalOcean CPU may be 2–3 times slower, so roughly 15%).</li>
+    <li><strong>Not measured:</strong> the Docker image itself under a 512 MiB / 1 CPU limit, and hosted Supabase over the internet (distance adds delay to each request, so use the same region). Both need your OK to run.</li>
+    <li><strong>Settings on DigitalOcean:</strong> HTTP port <code>4100</code>; health check path <code>/health</code>; <code>NODE_OPTIONS=--max-old-space-size=384</code> (so Node cleans up before the 512 MiB limit); the environment variables from the checklist above.</li>
+    <li><strong>Compatibility with Supabase:</strong> nothing in the API needs a persistent database session, so Supabase's pooled connections work. Use the pooler connection string and pick the region closest to your Supabase project.</li>
+    <li><strong>Two things to watch on the first deploy</strong> (I couldn't test them without touching production):
+      <ul>
+        <li><strong>SSL:</strong> the driver treats <code>sslmode=require</code> as strict certificate checking, which may fail against Supabase with "self-signed certificate in certificate chain". Two fixes: put <code>sslmode=no-verify</code> in the URL (encrypted, but the server's identity isn't checked), or the secure way: set <code>DATABASE_SSL_CA</code> to Supabase's CA certificate (Dashboard &gt; Database &gt; SSL) and leave <code>sslmode</code> out of the URL. The API refuses to start if both are set. In production it also refuses to start if a hosted database would be reached without SSL, so a forgotten setting can never send the password and data unencrypted. Supabase's certificate is public, not a secret; keep <code>DATABASE_URL</code> (it contains the password) as an encrypted secret on DigitalOcean, and turn on "Enforce SSL on incoming connections" in Supabase.</li>
+        <li><strong>Database timeout:</strong> if the pooler refuses it ("unsupported startup parameter"), set <code>DB_STATEMENT_TIMEOUT_MS=0</code> and run <code>alter role postgres set statement_timeout = '15s'</code> on the database instead.</li>
+      </ul></li>
+    <li><strong>After deploying:</strong> open <code>/health/ready</code>; it should say ready. Then repeat the two-networks login check for <code>TRUST_PROXY</code>.</li>
+  </ul></div>
+
+  <h2>Fixed after the first report</h2>
+  <div class="list"><ul>
+    <li><span class="pill ok">Fixed</span> <strong>#1:</strong> client comments and event reminders now go only to team members who are active and still a client manager. Someone deactivated, or moved to Editor, Developer or Agent, stays listed on the team (so the Admin sees whom to take off) but gets nothing more about the client. Covered by a new database test.</li>
+    <li><span class="pill ok">Fixed</span> <strong>zod 3 → 4.6.7</strong> in both apps, which removes the last known vulnerability. Every API and web test still passes.</li>
+  </ul></div>
+
+  <h2>Left open</h2>
+
+  <h3>After launch</h3>
+  <div class="list"><ul>
+    <li><strong>Login check speed:</strong> check sign-in tokens inside the API instead of calling Supabase Auth on every request (about 60 ms saved per request, and higher capacity).</li>
+    <li>Lists run a small team lookup per row that only the detail pages need.</li>
+    <li><strong>Changing a client's lead:</strong> the old and new lead are not notified.</li>
+    <li><strong>People removed from a team:</strong> their personal calendar entries still link to that client.</li>
+    <li>The database itself doesn't guarantee that the lead is on the team (the app does).</li>
+    <li>Add error alerts (e.g. Sentry or Railway alerts) so you hear about failures before clients do.</li>
+    <li>Remove old "E2E …" test clients from the local database.</li>
+  </ul></div>
+</main>
+</body>
+</html>
