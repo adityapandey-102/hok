@@ -1,0 +1,115 @@
+/*
+ * HOK additions to the ported portfolio template, loaded after main.css.
+ * The template's own files in /site/assets are copied unchanged; everything
+ * HOK needed to change lives here instead.
+ *
+ * Font Awesome 6 Pro (a paid licence) was removed. Its <i class="fa…"> icons
+ * are now Lucide SVGs (modules/site/components/SiteIcon.tsx), and the few
+ * icon-font glyphs main.css drew in ::after pseudo-elements are redrawn below
+ * as CSS masks of the same Lucide icons (ISC licence) or plain CSS bars, in
+ * currentColor.
+ */
+
+/* --- SiteIcon: an <i> holding a Lucide SVG, sized like the icon font ---
+   The <i> is a box as tall as the old glyph (1em, from -0.125em below the
+   baseline) and as wide as Font Awesome's advance width for that icon, so text
+   around the icons wraps exactly as it did. Lucide draws inside a padded 24px
+   grid, so its shapes look smaller than FA solid glyphs at the same font-size:
+   the SVG is drawn at 1.3em and centred, overflowing the box evenly. */
+.hok-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  font-style: normal;
+  line-height: 1;
+  vertical-align: -0.125em;
+}
+.hok-icon > svg {
+  display: block;
+  flex: none;
+  width: 1.3em;
+  height: 1.3em;
+}
+/* Font Awesome 6 advance widths (glyph width / 512). */
+.hok-icon--chevron-right,
+.hok-icon--chevron-left { width: 0.625em; }
+.hok-icon--arrow-up,
+.hok-icon--x,
+.hok-icon--play,
+.hok-icon--file-text { width: 0.75em; }
+.hok-icon--arrow-right,
+.hok-icon--arrow-left,
+.hok-icon--menu,
+.hok-icon--quote { width: 0.875em; }
+.hok-icon--star { width: 1.125em; }
+/* FA's quote-right is a small glyph inside its box; Lucide's filled quote
+   nearly fills it, so draw it smaller to match. */
+.hok-icon--quote > svg {
+  width: 0.8em;
+  height: 0.8em;
+}
+
+/* Lucide icons as masks for the pseudo-element glyphs. */
+:root {
+  --hok-icon-arrow-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 7-7 7 7'/%3E%3Cpath d='M12 19V5'/%3E%3C/svg%3E");
+  --hok-icon-chevrons-right: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 17 5-5-5-5'/%3E%3Cpath d='m13 17 5-5-5-5'/%3E%3C/svg%3E");
+}
+
+/* Header menu: the arrow beside each dropdown button (was FA \f062). */
+.header-section .main-navbar .custom-nav .menu-item button::after {
+  content: "";
+  width: 1em;
+  height: 1em;
+  top: 50%;
+  margin-top: -0.5em;
+  background-color: currentColor;
+  -webkit-mask: var(--hok-icon-arrow-up) center / 130% no-repeat;
+  mask: var(--hok-icon-arrow-up) center / 130% no-repeat;
+}
+
+/* FAQ accordion toggle (was FA \f101, angle-double-right). The 38px box stays;
+   the icon is masked into its middle at about the old glyph size. */
+.faq .header-area button::after {
+  content: "";
+  background-color: currentColor;
+  -webkit-mask: var(--hok-icon-chevrons-right) center / 28px no-repeat;
+  mask: var(--hok-icon-chevrons-right) center / 28px no-repeat;
+}
+@media (max-width: 500px) {
+  .faq .header-area button::after {
+    -webkit-mask-size: 20px;
+    mask-size: 20px;
+  }
+}
+
+/* Service accordion: plus closed, minus open (were the FA glyphs "+" and
+   \f068). Drawn as bars with currentColor gradients, because a mask would
+   also clip the circle background this ::after paints. */
+.service-tabing-wrap .accordion-single .accordion-btn::after {
+  content: "";
+  background:
+    linear-gradient(currentColor, currentColor) center / 16px 3px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 3px 16px no-repeat,
+    #1d1d1d;
+}
+.service-tabing-wrap .accordion-single.active .accordion-btn::after {
+  content: "";
+  background:
+    linear-gradient(currentColor, currentColor) center / 16px 3px no-repeat,
+    #1d1d1d;
+}
+
+/* Discreet staff sign-in link in the footer. */
+.hok-staff-login-wrap {
+  white-space: nowrap;
+}
+.hok-staff-login {
+  color: var(--pra-clr);
+  opacity: 0.75;
+}
+.hok-staff-login:hover {
+  color: var(--theme);
+  opacity: 1;
+}

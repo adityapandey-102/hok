@@ -1,0 +1,54 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    ".next-web/types/**/*.ts",
+    ".next-web/dev/types/**/*.ts",
+    ".next-screens/types/**/*.ts",
+    ".next-screens/dev/types/**/*.ts",
+    ".next-assets/types/**/*.ts",
+    ".next-assets/dev/types/**/*.ts",
+    ".next-tasks/types/**/*.ts",
+    ".next-tasks/dev/types/**/*.ts",
+    "**/*.mts",
+    ".next-screens-build/types/**/*.ts",
+    ".next-screens-build/dev/types/**/*.ts",
+    ".next-helper/types/**/*.ts",
+    ".next-helper/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
