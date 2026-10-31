@@ -1,0 +1,18 @@
+import type { Role } from "../../../../domain";
+
+/** Response shape returned to the client (GET /users, GET /users/:id). */
+export interface UserResponseDto {
+  id: string;
+  fullName: string;
+  email: string;
+  role: Role;
+  timeZone: string;
+  phone: string | null;
+  avatarUrl: string | null;
+  active: boolean;
+  /** The one Owner (first Admin): only they manage other Admins, and nobody can demote or deactivate them. */
+  isOwner: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+  lastSeenAt: string | null;
+}

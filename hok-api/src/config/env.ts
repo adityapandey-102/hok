@@ -1,0 +1,157 @@
+import "dotenv/config";
+import { z } from "zod";
+import { DEFAULT_TIME_ZONE, isValidTimeZone } from "../domain/time-zone";
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  /** 4100, not needleye's 4000, so both projects can run on one machine. */
+  API_PORT: z.coerce.number().default(4100),
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  SUPABASE_ANON_KEY: z.string().min(1),
+  DATABASE_URL: z.string().min(1),
+  /** Exact allow-list of web origins (comma-separated), never a wildcard. */
+  CORS_ALLOWED_ORIGIN: z.string().default("http://localhost:3400"),
+  /** Where the frontend lives -- used to build the redirect URL Supabase puts in password-reset emails. */
+  WEB_APP_URL: z.string().default("http://localhost:3400"),
+  /** This API's public address (no /api/v1), for links outside apps fetch, e.g. the calendar subscribe feed. Production: the https URL. */
+  PUBLIC_API_URL: z.string().url().default("http://localhost:4100"),
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+  /** Queries slower than this (ms) are logged at WARN for observability. See common/database/query-timing. */
+  SLOW_QUERY_MS: z.coerce.number().default(250),
+  /**
+   * Max Postgres connections in the pool (the whole app shares one pool). The
+   * main concurrency lever: raise it for higher simultaneous load, but keep it
+   * comfortably under the database's connection limit. Default 10 suits
+   * ~20-50 staff.
+   */
+  DB_POOL_MAX: z.coerce.number().int().min(1).default(10),
+  /**
+   * Supabase's CA certificate (PEM; a one-line value with 
+ for line breaks also works), from
+   * Dashboard > Database > SSL. When set the connection is encrypted AND the server's identity is
+   * checked. Leave sslmode out of DATABASE_URL then: a sslmode there would override this.
+   */
+  DATABASE_SSL_CA: z.string().trim().optional().transform((v) => v || undefined),
+  /**
+   * A query running longer than this (ms) is cancelled by Postgres. Sent as a connection
+   * startup setting; a pooler that refuses it ("unsupported startup parameter") needs 0 here
+   * (off), with `alter role postgres set statement_timeout = '15s'` run on the database instead.
+   */
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(15_000),
+  /**
+   * Secret the deployment owner types on /setup to create the first Admin. Unset = setup is off.
+   * Use a long random value (e.g. `openssl rand -base64 32`); remove it once the Admin exists.
+   */
+  BOOTSTRAP_TOKEN: z
+    .string()
+    .trim()
+    .transform((v) => v || undefined)
+    .optional()
+    .refine((v) => v === undefined || v.length >= 24, "Must be at least 24 characters"),
+  /** Auth rate-limit window (ms) and max requests per window per IP. Defaults: 15 min / 30 attempts. */
+  AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().default(30),
+  /**
+   * POST /auth/login only, per window: max FAILED attempts per target email across all IPs (a browser
+   * that signed in to that account before, the trusted-device cookie, is exempt), and max failed attempts
+   * per email from one IP. The pair stops distributed guessing without letting a stranger lock the owner out.
+   */
+  AUTH_LOGIN_EMAIL_MAX: z.coerce.number().int().min(1).default(10),
+  AUTH_LOGIN_IP_EMAIL_MAX: z.coerce.number().int().min(1).default(5),
+  /** POST /auth/password-reset-request: max requests per target email per hour, across all IPs (stops mail-flooding one person). */
+  AUTH_RESET_EMAIL_MAX_PER_HOUR: z.coerce.number().int().min(1).default(3),
+  /** Every authenticated route, per IP: max requests answered 401 per AUTH_RATE_LIMIT_WINDOW_MS (junk-token flooding). */
+  AUTH_TOKEN_FAILURE_MAX: z.coerce.number().int().min(1).default(30),
+  /**
+   * Shared secret between hok-web's server and this API (same long random value in both apps; never a
+   * NEXT_PUBLIC_ variable). hok-web's server sends it with the visitor's IP (x-hok-client-ip) on calls it
+   * makes for a browser (login, refresh, Server Components); only then is that IP used by the rate
+   * limiters -- otherwise every such call would share the web host's IP. Also keys the trusted-device
+   * cookie. Unset = forwarded IPs are ignored and trusted devices are off. Required in production.
+   */
+  INTERNAL_PROXY_SECRET: z
+    .string()
+    .trim()
+    .transform((v) => v || undefined)
+    .optional()
+    .refine((v) => v === undefined || v.length >= 32, "Must be at least 32 characters"),
+  /**
+   * Public client portal (M8), per IP: reads per 15 minutes, comment posts per
+   * hour; plus a firm-wide hourly ceiling on comment posts and a daily cap
+   * per portal link. Defaults: 300 / 10 / 300 / 30.
+   */
+  PORTAL_READ_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
+  PORTAL_COMMENT_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
+  PORTAL_COMMENT_GLOBAL_MAX_PER_HOUR: z.coerce.number().int().min(1).default(300),
+  PORTAL_COMMENT_MAX_PER_LINK_PER_DAY: z.coerce.number().int().min(1).default(30),
+  /**
+   * Express `trust proxy` setting -- how many/which proxy hops sit in front of
+   * the API, so the rate limiter keys on the real client IP from
+   * X-Forwarded-For instead of the proxy's. Accepts a hop count ("1"), a
+   * preset ("loopback"), or "false" to disable. Default trusts loopback: in
+   * dev the Next.js session proxy calls the API over 127.0.0.1/::1 and forwards
+   * XFF, which would otherwise make express-rate-limit throw. In production set
+   * this to the number of proxies in front of the app. Never a blanket "true"
+   * (that lets any client spoof its IP).
+   */
+  TRUST_PROXY: z.string().default("loopback"),
+  /**
+   * The firm's home IANA time zone: the default for new users and clients.
+   * Everyone can still pick their own zone (multiple time zones, REQUIREMENTS
+   * NFR-08); instants are always stored in UTC.
+   */
+  DEFAULT_TIMEZONE: z.string().default(DEFAULT_TIME_ZONE).refine(isValidTimeZone, "Must be an IANA timezone, e.g. Asia/Kolkata"),
+  /**
+   * Web Push (M9, ARCHITECTURE §8). The VAPID key pair identifies this server
+   * to the browsers' push services: generate one per environment with
+   * `npx web-push generate-vapid-keys` and keep the private key secret (never
+   * commit it). The subject is a contact for the push services: `mailto:` or
+   * an https URL. All three unset = push is off (the in-app bell still works).
+   */
+  VAPID_PUBLIC_KEY: z.string().trim().transform((v) => v || undefined).optional(),
+  VAPID_PRIVATE_KEY: z.string().trim().transform((v) => v || undefined).optional(),
+  VAPID_SUBJECT: z
+    .string()
+    .trim()
+    
+    .transform((v) => v || undefined).optional()
+    .refine((v) => v === undefined || /^(mailto:|https:\/\/)/.test(v), "Must start with mailto: or https://"),
+}).superRefine((e, ctx) => {
+  // The localhost defaults are for dev only: a forgotten one in production means portal and
+  // calendar links that point at localhost, or a browser app CORS turns away. Fail at boot instead.
+  if (e.DATABASE_SSL_CA && /[?&]sslmode=/.test(e.DATABASE_URL)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["DATABASE_URL"], message: "Remove sslmode from DATABASE_URL when DATABASE_SSL_CA is set (the URL setting would win)" });
+  }
+  if (e.NODE_ENV !== "production") return;
+  // The "loopback" default is wrong behind a hosted proxy: every client would share the proxy's rate-limit
+  // bucket (or a spoofed XFF would be trusted). Make the operator state the hop count on purpose.
+  if (!process.env.TRUST_PROXY?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["TRUST_PROXY"], message: "In production set TRUST_PROXY explicitly to the number of proxies in front of the API (e.g. 1 or 2)" });
+  }
+  // Without it, every login/refresh hok-web makes for a browser shares the web host's IP bucket.
+  if (!e.INTERNAL_PROXY_SECRET) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["INTERNAL_PROXY_SECRET"], message: "In production set INTERNAL_PROXY_SECRET (same value as hok-web's)" });
+  }
+  // A hosted database must be reached over SSL: without sslmode in the URL or the CA, the driver would
+  // connect in plain text if the server allows it, sending the password and all data unencrypted.
+  const dbHost = /^[a-z]+:\/\/[^@]*@([^:/?#]+)/i.exec(e.DATABASE_URL)?.[1] ?? "";
+  const sslMode = /[?&]sslmode=([^&]+)/.exec(e.DATABASE_URL)?.[1] ?? "";
+  if (!/^(localhost|127\.0\.0\.1)$/.test(dbHost) &&!e.DATABASE_SSL_CA && !["require", "verify-ca", "verify-full", "no-verify"].includes(sslMode)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["DATABASE_URL"], message: "In production the database connection must use SSL: set DATABASE_SSL_CA (best), or sslmode=require / sslmode=no-verify in DATABASE_URL" });
+  }
+  for (const key of ["CORS_ALLOWED_ORIGIN", "WEB_APP_URL", "PUBLIC_API_URL"] as const) {
+    if (e[key].split(",").some((u) => !u.trim().startsWith("https://") || /localhost|127\.0\.0\.1/.test(u))) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: "Must be the public https:// address in production" });
+    }
+  }
+});
+
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  console.error("Invalid environment configuration:", parsed.error.flatten().fieldErrors);
+  throw new Error("Invalid environment configuration. Check hok-api/.env against .env.example.");
+}
+
+export const env = parsed.data;

@@ -1,0 +1,3366 @@
+openapi: 3.0.3
+info:
+  title: HOK API
+  version: 0.4.0
+  description: |
+    Backend for HOK -- the marketing firm's agency-management platform
+    (clients, events, calendars, asset links, client portal, staff tasks).
+
+    **Hand-maintained.** Update this file in the same change as any route,
+    DTO or auth-flow change (see README "Keeping this documentation in sync").
+    `src/docs/openapi.test.ts` fails if its enums drift from the code or if a
+    mounted route is missing here.
+
+    Every error response has the shape `{ error, code, details?, requestId }`.
+    Clients branch on `code` (see `src/common/errors/error-codes.ts`), never on
+    the message.
+
+    The API never sets or reads cookies: tokens travel in JSON bodies and the
+    `Authorization: Bearer` header. hok-web owns the session cookies.
+
+    `/api/v1/auth/*` credential endpoints (bootstrap, login, refresh,
+    password-reset-request, password-update, exchange-code) are rate-limited per
+    IP (`AUTH_RATE_LIMIT_MAX` per `AUTH_RATE_LIMIT_WINDOW_MS`, default 30 / 15
+    min) and answer `429 RATE_LIMITED` beyond that.
+servers:
+  - url: http://localhost:4100
+    description: Local development
+tags:
+  - name: Health
+  - name: Auth
+    description: Sign-in, sessions, password reset, the caller's own profile, first-Admin bootstrap.
+  - name: Users
+    description: Staff accounts and roles. Admin only (`users:manage`).
+  - name: Clients
+    description: Client profiles and teams. HOK owns every client; each has an assigned team with one lead (`ownerId`). Admin sees all; Social Media / Marketing / Project Managers only clients whose team they're on (any other client is a 404). `clients:read` / `clients:write` for team members; archive, unarchive and team changes are Admin only (`403 CLIENT_ADMIN_ONLY`; the team endpoint needs `clients:reassign`).
+  - name: Stage templates
+    description: Admin-made templates (name + ordered stages). Admin edits (`stage_templates:manage`); managers read active ones to create events.
+  - name: Events
+    description: Client events with copied stages, stage moves + history, cancel/postpone. Scoped by the client's owner (`events:read` / `events:write`).
+  - name: Calendar
+    description: "Personal entries (`personal_events:manage`, owner-only) and the merged calendar feed (`events:read`)."
+  - name: Team members
+    description: Active-staff lookup for pickers (`events:write`).
+  - name: Assets
+    description: Asset link library -- links only, never files. Per client, with type, comment, reusable tags and an optional event. Scoped by the client's owner (`assets:read` / `assets:write`). Internal only; never on the portal.
+  - name: Staff tasks
+    description: Tasks the Admin assigns to staff (one assignee, any role). Admin creates, edits, reassigns, reopens and deletes (`staff_tasks:assign`); the assignee sees only their own tasks (others are 404) and changes the status with an optional comment (`staff_tasks:read` / `staff_tasks:update`). Every status change and comment is an append-only timeline entry.
+  - name: Client to-dos
+    description: A manager's internal to-do list per client (optionally about one of the client's events). Reads need `clients:read`, writes `clients:write`; scoped by the client's owner (others are 404). Read-only on archived clients. Internal only; never on the portal.
+  - name: Notifications
+    description: The caller's own bell (in-app notifications), per-trigger preferences and the devices that receive web push. Every role; always scoped to the caller (someone else's row is a 404).
+  - name: Portal
+    description: The client portal. Staff manage each client's link (portal:manage); the public endpoints take the link token as the only credential.
+  - name: Search
+    description: Global search (every staff role, scoped like each page).
+  - name: Dashboard
+    description: Role dashboards (FR-DSH-01..03) -- every staff role, sections by role.
+  - name: Reports
+    description: Admin reports (FR-RPT-01..04) -- team status, one person's month, one client's month. `dashboard:global` only.
+  - name: Activity
+    description: "The Admin activity log (FR-SYS-02, FR-RPT-05): who did what, newest first."
+  - name: Client comments
+    description: Comments clients post on their portal, worked by the owning manager (comments:read / comments:manage).
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness -- is the process up?
+      description: Touches no dependencies. Used by an orchestrator to decide whether to restart the container.
+      responses:
+        "200":
+          description: The process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+                  timestamp: { type: string, format: date-time }
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness -- can the API reach its database?
+      description: Runs `select 1` against Postgres. 503 when the database is unreachable.
+      responses:
+        "200":
+          description: Ready to serve traffic.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ready] }
+        "503":
+          description: The database is unreachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [not_ready] }
+                  reason: { type: string, enum: [database_unreachable] }
+
+  # ---------------------------------------------------------------- Auth --
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: The caller's own profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The signed-in user's profile (role and time zone included).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: { $ref: "#/components/schemas/Profile" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AccountDeactivated" }
+    patch:
+      tags: [Auth]
+      summary: Edit the caller's own profile (name, phone, time zone, photo URL)
+      description: |
+        Any authenticated role (REQUIREMENTS FR-AUTH-05). Send only the fields
+        to change; `null` (or "") clears `phone` / `avatarUrl`. `role`, `email`
+        and `active` are not accepted here -- unknown keys are ignored, so a
+        body with only `role` is `400 VALIDATION_NO_FIELDS`. The Admin changes
+        those through `PATCH /api/v1/users/{id}`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateOwnProfileRequest" }
+      responses:
+        "200":
+          description: The updated profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: { $ref: "#/components/schemas/Profile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AccountDeactivated" }
+  /api/v1/auth/bootstrap-status:
+    get:
+      tags: [Auth]
+      summary: Does an Admin exist yet? (drives the one-time /setup page)
+      responses:
+        "200":
+          description: Whether any admin account exists.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [adminExists]
+                properties:
+                  adminExists: { type: boolean }
+  /api/v1/auth/bootstrap:
+    post:
+      tags: [Auth]
+      summary: Create the very first Admin (refused once any admin exists)
+      description: |
+        No public sign-up exists. This creates the first `admin` account on a
+        fresh install. The caller must send the server's `BOOTSTRAP_TOKEN` as
+        `setupKey`; with no token configured setup is off
+        (`403 AUTH_BOOTSTRAP_DISABLED`), a wrong key is `403 AUTH_BOOTSTRAP_KEY_INVALID`,
+        and it is refused (`403 AUTH_BOOTSTRAP_ALREADY_DONE`) once any admin exists. It returns no session -- sign in afterwards with the
+        same credentials. Rate-limited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [setupKey, email, password, fullName]
+              properties:
+                setupKey: { type: string, minLength: 1, maxLength: 200, description: "Must equal the server's BOOTSTRAP_TOKEN." }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                fullName: { type: string, minLength: 1, maxLength: 120 }
+                timeZone: { $ref: "#/components/schemas/TimeZone" }
+      responses:
+        "201":
+          description: The admin account exists.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, enum: [true] }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403":
+          description: "`AUTH_BOOTSTRAP_DISABLED` (no setup key configured), `AUTH_BOOTSTRAP_KEY_INVALID` (wrong key) or `AUTH_BOOTSTRAP_ALREADY_DONE` (an admin already exists)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { $ref: "#/components/responses/EmailTaken" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign in with email + password
+      description: |
+        Records `lastLoginAt` and an `auth.login` audit entry. A deactivated account gets no session.
+        Rate-limited per IP (all attempts), per IP + email (failures) and per email from any IP
+        (failures; skipped when `deviceToken` is a valid trusted-device token for this email).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string, maxLength: 1024 }
+                deviceToken: { type: string, maxLength: 200, description: The `deviceToken` from an earlier successful login on this browser. }
+      responses:
+        "200":
+          description: A live session plus the profile, and a trusted-device token for this browser (absent when the server has no INTERNAL_PROXY_SECRET).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/AuthSession" }
+                  - type: object
+                    properties:
+                      deviceToken: { type: string, description: Keep server-side (hok-web stores it in an httpOnly cookie); valid 90 days. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: "`AUTH_INVALID_CREDENTIALS` (wrong email/password, or a deactivated account)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/AccountDeactivated" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: "`SERVICE_UNAVAILABLE` -- Supabase Auth is down or overloaded. Retry; the session is not ended."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate a refresh token for a new session
+      description: A refresh is not a login (does not touch `lastLoginAt`). Rate-limited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200":
+          description: A new session plus the current profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "401":
+          description: "`AUTH_SESSION_INVALID` -- revoked, expired or already used."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/AccountDeactivated" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: "`SERVICE_UNAVAILABLE` -- Supabase Auth is down or overloaded. Retry; the session is not ended."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the caller's session server-side
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: "Signed out on this device only (its session and refresh token end); other devices stay signed in." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/auth/password-reset-request:
+    post:
+      tags: [Auth]
+      summary: Self-service password reset (turned off)
+      description: Turned off since security audit run 2 -- no email is sent; the Admin issues passwords (POST /users/{id}/generate-password). Still answers 204 for any valid email (never reveals accounts). Rate-limited per IP and per target email (`AUTH_RESET_EMAIL_MAX_PER_HOUR`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+      responses:
+        "204": { description: Accepted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/auth/password-update:
+    post:
+      tags: [Auth]
+      summary: Set the caller's own new password
+      security: [{ bearerAuth: [] }]
+      description: |
+        Rate-limited. Needs the current password (`400 AUTH_CURRENT_PASSWORD_INVALID`
+        when wrong). A change ends every session of the account, this one included;
+        sign in again with the new password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string, minLength: 1, maxLength: 200 }
+                newPassword: { type: string, minLength: 8, maxLength: 200 }
+      responses:
+        "204": { description: Password changed; all sessions ended. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/auth/exchange-code:
+    post:
+      tags: [Auth]
+      summary: Exchange an email-link PKCE `code` for a session
+      description: Rate-limited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200":
+          description: A live session plus the profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "401":
+          description: "`AUTH_LINK_INVALID`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  # --------------------------------------------------------------- Users --
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: List staff accounts (searchable, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: search
+          in: query
+          description: Name or email contains (case-insensitive). Max 80 characters.
+          schema: { type: string, maxLength: 80 }
+        - name: role
+          in: query
+          description: Only this role. An unknown role is a 400.
+          schema: { $ref: "#/components/schemas/Role" }
+        - name: limit
+          in: query
+          description: Page size, default 20. Clamped to 1..100 (never honoured above 100). Non-numeric is a 400.
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        "200":
+          description: One page, oldest account first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users, total, limit, offset]
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserAccount" }
+                  total: { type: integer, description: All accounts matching the filters. }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Users]
+      summary: Create a staff account with a generated password
+      description: |
+        No invite email: the account exists, with a real password, at once.
+        The password (first name + 8 random characters, e.g. `Priya-9kQ2Xf7q`)
+        is returned **once**; the Admin passes it on.
+        Creating an Admin is Owner-only (`403 USER_OWNER_ONLY`).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, fullName, role]
+              properties:
+                email: { type: string, format: email }
+                fullName: { type: string, minLength: 1, maxLength: 120 }
+                role: { $ref: "#/components/schemas/Role" }
+                timeZone: { $ref: "#/components/schemas/TimeZone" }
+                phone: { $ref: "#/components/schemas/Phone" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [userId, password]
+                properties:
+                  userId: { type: string, format: uuid }
+                  password: { type: string, description: Shown once. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/EmailTaken" }
+  /api/v1/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: One staff account
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: "#/components/schemas/UserAccount" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+    patch:
+      tags: [Users]
+      summary: Edit a staff account (name, role, time zone, phone, active)
+      description: |
+        Send only the fields to change; `phone: null` clears it. Setting
+        `active` has the same effect as deactivate / reactivate (including the
+        sign-in ban). The Admin cannot change their own role
+        (`400 USER_CANNOT_CHANGE_OWN_ROLE`) or deactivate themselves
+        (`400 USER_CANNOT_DEACTIVATE_SELF`), so at least one Admin always remains.
+        Owner rules (`403`): only the Owner can make someone an Admin, demote
+        an Admin or deactivate an Admin (`USER_OWNER_ONLY`); nobody can demote
+        or deactivate the Owner (`USER_OWNER_PROTECTED`).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullName: { type: string, minLength: 1, maxLength: 120 }
+                role: { $ref: "#/components/schemas/Role" }
+                timeZone: { $ref: "#/components/schemas/TimeZone" }
+                phone: { allOf: [{ $ref: "#/components/schemas/Phone" }], nullable: true }
+                active: { type: boolean }
+      responses:
+        "204": { description: Saved. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+  /api/v1/users/{id}/generate-password:
+    post:
+      tags: [Users]
+      summary: Issue a fresh generated password
+      description: |
+        Refused with `403 USER_PASSWORD_SELF_MANAGED` for the Admin's own
+        account (use `POST /api/v1/auth/password-update`) and for another
+        Admin who has already signed in (they use "Forgot password").
+        Regenerating any Admin's password is Owner-only (`403 USER_OWNER_ONLY`).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "201":
+          description: The new password, shown once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [password]
+                properties:
+                  password: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+  /api/v1/users/{id}/deactivate:
+    post:
+      tags: [Users]
+      summary: Deactivate an account (data kept; sign-in and live tokens refused)
+      description: "`400 USER_CANNOT_DEACTIVATE_SELF` for the caller's own account. `403 USER_OWNER_ONLY` for an Admin target unless the caller is the Owner; `403 USER_OWNER_PROTECTED` for the Owner."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "204": { description: Deactivated. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+  /api/v1/users/{id}/reactivate:
+    post:
+      tags: [Users]
+      summary: Reactivate an account (same password as before)
+      description: Reactivating an Admin is Owner-only (`403 USER_OWNER_ONLY`). Old sessions were ended at deactivation, so the person signs in afresh.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "204": { description: Reactivated. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+
+  # ------------------------------------------------------------- Clients --
+  /api/v1/clients:
+    get:
+      tags: [Clients]
+      summary: List clients (scoped, searchable, paginated)
+      description: |
+        The Admin sees every client; a Social Media / Marketing / Project Manager
+        only the clients whose team they're on. Archived
+        clients are hidden unless `status=archived`. Newest first.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: search
+          in: query
+          description: Business name, industry or a contact person's name contains (case-insensitive). Max 80 characters.
+          schema: { type: string, maxLength: 80 }
+        - name: status
+          in: query
+          description: Only this status. Omitted = active and paused (archived hidden). An unknown status is a 400.
+          schema: { $ref: "#/components/schemas/ClientStatus" }
+        - name: industry
+          in: query
+          description: Industry, case-insensitive exact match.
+          schema: { type: string, maxLength: 80 }
+        - name: ownerId
+          in: query
+          description: Admin only -- clients owned by this manager. Ignored for a manager. A non-UUID is a 400.
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          description: Page size, default 20. Clamped to 1..100. Non-numeric is a 400.
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clients, total, limit, offset]
+                properties:
+                  clients:
+                    type: array
+                    items: { $ref: "#/components/schemas/ClientSummary" }
+                  total: { type: integer, description: All clients matching the filters within the caller's scope. }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Clients]
+      summary: Create a client (the creator owns it)
+      description: |
+        `clients:write`. The creator becomes the owner (FR-CLI-01). Only the
+        Admin may pass `ownerId` to create for another active client manager
+        (`403 CLIENT_OWNER_FORBIDDEN` for a manager naming someone else;
+        `400 CLIENT_OWNER_INVALID` for task-only staff, a deactivated or an
+        unknown user). A new client is `active`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateClientRequest" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/clients/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ClientId"
+    get:
+      tags: [Clients]
+      summary: One client (the workspace Overview)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The client.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+    patch:
+      tags: [Clients]
+      summary: Edit a client's profile or pause / resume it
+      description: |
+        `clients:write`. Send only the fields to change plus the `version` you
+        loaded (**required**). `null` or `""` clears an optional field;
+        Each list sent (`websites`, `phones`, `contacts`, `socialAccounts`, `services`) replaces that whole list. `status` may move
+        only between `active` and `paused`. Refused with
+        `409 CLIENT_MODIFIED` (stale version), `409 CLIENT_ARCHIVED` (unarchive
+        first) and `400 CLIENT_CONTRACT_DATES_INVALID` (end before start,
+        checked against the stored dates). The team changes only through
+        PUT /clients/{id}/team.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateClientRequest" }
+      responses:
+        "200":
+          description: The client as saved (new `version`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+        "409": { $ref: "#/components/responses/ClientConflict" }
+  /api/v1/clients/{id}/archive:
+    post:
+      tags: [Clients]
+      summary: Archive a client (hidden from active lists, data kept)
+      description: "Admin only (a team member gets `403 CLIENT_ADMIN_ONLY`). Sets `status: archived` and `archivedAt`, and turns off the portal link. `409 CLIENT_ARCHIVED` if it already is; `409 CLIENT_MODIFIED` for a stale `version`."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientVersionRequest" }
+      responses:
+        "200":
+          description: The archived client.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+        "409": { $ref: "#/components/responses/ClientConflict" }
+  /api/v1/clients/{id}/unarchive:
+    post:
+      tags: [Clients]
+      summary: Unarchive a client (back to active)
+      description: "`clients:write`. `409 CLIENT_NOT_ARCHIVED` if it isn't archived; `409 CLIENT_MODIFIED` for a stale `version`."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientVersionRequest" }
+      responses:
+        "200":
+          description: The client, active again.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+        "409": { $ref: "#/components/responses/ClientConflict" }
+  /api/v1/clients/{id}/team:
+    put:
+      tags: [Clients]
+      summary: Set a client's team and its lead (Admin)
+      description: |
+        Admin only (`clients:reassign`; a team member gets `403 CLIENT_ADMIN_ONLY`).
+        `memberIds` becomes the whole team; the lead is added if missing,
+        duplicates are dropped, at most 20 people. Everyone must be an active
+        admin, social_media_manager, marketing_manager or project_manager
+        (`400 CLIENT_OWNER_INVALID`). Works on archived clients too. People
+        added are notified (`client_reassigned`), except the Admin adding
+        themselves. An unchanged team changes nothing (same `version`, no
+        audit row). Audited as `client.reassigned` with
+        `{ added, removed, leadFrom, leadTo }`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [leadId, memberIds]
+              properties:
+                leadId: { type: string, format: uuid }
+                memberIds: { type: array, maxItems: 20, items: { type: string, format: uuid } }
+                version: { type: integer, minimum: 1, description: Optional; a stale one is `409 CLIENT_MODIFIED`. }
+      responses:
+        "200":
+          description: The client with its new team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+        "409": { $ref: "#/components/responses/ClientConflict" }
+
+  # ----------------------------------------------------- Stage templates --
+  /api/v1/stage-templates:
+    get:
+      tags: [Stage templates]
+      summary: List stage templates with their stages
+      description: |
+        The Admin sees every template (`active` filters); a Social Media /
+        Marketing Manager sees only ACTIVE ones (to pick one for a new event).
+        Task-only staff 403. Sorted by name.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: search, in: query, description: Name contains (case-insensitive)., schema: { type: string, maxLength: 80 } }
+        - { name: active, in: query, description: Admin only (ignored for managers)., schema: { type: string, enum: ["true", "false"] } }
+        - { name: limit, in: query, description: Default 50; clamped to 1..100., schema: { type: integer, default: 50, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [templates, total, limit, offset]
+                properties:
+                  templates: { type: array, items: { $ref: "#/components/schemas/StageTemplate" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Stage templates]
+      summary: Create a stage template (Admin)
+      description: "`stage_templates:manage`. 1-20 stages, each 1-60 characters, no repeats (`400 STAGE_TEMPLATE_STAGES_INVALID`). Names are unique ignoring case (`409 STAGE_TEMPLATE_NAME_TAKEN`)."
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, stages]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                stages: { type: array, minItems: 1, maxItems: 20, items: { type: string, maxLength: 60 }, example: [Planned, Pre-production, Shoot, Editing, Client Review, Completed] }
+      responses:
+        "201": { description: Created., content: { application/json: { schema: { $ref: "#/components/schemas/StageTemplateEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/StageTemplateConflict" }
+  /api/v1/stage-templates/{id}:
+    parameters:
+      - $ref: "#/components/parameters/StageTemplateId"
+    get:
+      tags: [Stage templates]
+      summary: One stage template (an inactive one is 404 for a manager)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The template., content: { application/json: { schema: { $ref: "#/components/schemas/StageTemplateEnvelope" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StageTemplateNotFound" }
+    patch:
+      tags: [Stage templates]
+      summary: Edit, reorder or deactivate a stage template (Admin)
+      description: |
+        `stage_templates:manage`. `stages` replaces the whole ordered list
+        (rename / reorder / add / remove); `active: false` deactivates (no new
+        events from it). `version` required. **Events already created keep
+        their own copy of the stages** (FR-EVT-03).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                stages: { type: array, minItems: 1, maxItems: 20, items: { type: string, maxLength: 60 } }
+                active: { type: boolean }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Saved., content: { application/json: { schema: { $ref: "#/components/schemas/StageTemplateEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StageTemplateNotFound" }
+        "409": { $ref: "#/components/responses/StageTemplateConflict" }
+
+  # -------------------------------------------------------------- Events --
+  /api/v1/events:
+    get:
+      tags: [Events]
+      summary: List events (a client's Events tab, or a calendar range)
+      description: |
+        Scoped like clients: the Admin sees all (filters `ownerId`, `clientId`);
+        a manager only events of clients they own (`ownerId` ignored).
+        With `from` + `to` (instants, both or neither, at most 92 days):
+        events **overlapping** the range, earliest first -- the calendar feed.
+        Without: newest first. Each row carries the client's name and the
+        current stage (name, position, stage count) for the tracker.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: clientId, in: query, schema: { type: string, format: uuid } }
+        - { name: ownerId, in: query, description: Admin only., schema: { type: string, format: uuid } }
+        - { name: from, in: query, description: "ISO instant with offset. `400 EVENT_RANGE_INVALID` without `to`, reversed, or > 92 days.", schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/EventState" } }
+        - { name: type, in: query, schema: { $ref: "#/components/schemas/EventType" } }
+        - { name: search, in: query, description: Title contains., schema: { type: string, maxLength: 80 } }
+        - { name: limit, in: query, description: Default 50; clamped to 1..200 (a month of calendar at once)., schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, total, limit, offset]
+                properties:
+                  events: { type: array, items: { $ref: "#/components/schemas/EventSummary" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Events]
+      summary: Create an event for a client, from a stage template
+      description: |
+        `events:write`. The client must be the caller's (else `404 CLIENT_NOT_FOUND`)
+        and not archived (`409 CLIENT_ARCHIVED`); the template must be active
+        (`400 EVENT_TEMPLATE_INVALID`). Its stages are **copied** onto the event
+        and the first one becomes current (a first history entry is written).
+        `timeZone` defaults to the client's. Ends on/after start, at most 31
+        days (`400 EVENT_TIMES_INVALID`). Team members must be active staff
+        (`400 EVENT_TEAM_INVALID`).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId, templateId, title, type, startsAt, endsAt]
+              properties:
+                clientId: { type: string, format: uuid }
+                templateId: { type: string, format: uuid }
+                title: { type: string, minLength: 1, maxLength: 160 }
+                type: { $ref: "#/components/schemas/EventType" }
+                startsAt: { type: string, format: date-time, description: "With an offset or Z, e.g. 2026-10-20T10:00:00+05:30." }
+                endsAt: { type: string, format: date-time }
+                timeZone: { $ref: "#/components/schemas/TimeZone" }
+                location: { type: string, maxLength: 500, nullable: true, description: A place or an online link. }
+                description: { type: string, maxLength: 5000, nullable: true }
+                assignedTeam: { type: array, maxItems: 20, items: { type: string, format: uuid }, description: Informational. }
+      responses:
+        "201": { description: Created., content: { application/json: { schema: { $ref: "#/components/schemas/EventEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+        "409": { $ref: "#/components/responses/ClientConflict" }
+  /api/v1/events/{id}:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      tags: [Events]
+      summary: One event with its stages, recent history (100, newest first) and team
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The event., content: { application/json: { schema: { $ref: "#/components/schemas/EventEnvelope" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/EventNotFound" }
+    patch:
+      tags: [Events]
+      summary: Edit, reschedule, cancel / postpone / reactivate an event
+      description: |
+        `events:write`. Send only the fields to change + `version` (required).
+        `state` may be set to any of active / cancelled / postponed. Times are
+        checked against the stored ones. The client, template and stages never
+        change; the stage moves through POST /events/{id}/stage. Read-only
+        while the client is archived (`409 CLIENT_ARCHIVED`).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 160 }
+                type: { $ref: "#/components/schemas/EventType" }
+                startsAt: { type: string, format: date-time }
+                endsAt: { type: string, format: date-time }
+                timeZone: { $ref: "#/components/schemas/TimeZone" }
+                location: { type: string, maxLength: 500, nullable: true }
+                description: { type: string, maxLength: 5000, nullable: true }
+                assignedTeam: { type: array, maxItems: 20, items: { type: string, format: uuid } }
+                state: { $ref: "#/components/schemas/EventState" }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Saved., content: { application/json: { schema: { $ref: "#/components/schemas/EventEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/EventNotFound" }
+        "409": { $ref: "#/components/responses/EventConflict" }
+  /api/v1/events/{id}/stage:
+    post:
+      tags: [Events]
+      summary: Move the event to another of its stages (forward or back)
+      description: |
+        `events:write`. Any stage of this event, forward or back; the move and
+        its history entry (who, when, note, `visibleToClient`) are written in
+        one transaction. Refused: the current stage (`409 EVENT_STAGE_UNCHANGED`),
+        another event's stage (`400 EVENT_STAGE_INVALID`), a cancelled or
+        postponed event (`409 EVENT_NOT_ACTIVE`), a stale version
+        (`409 EVENT_MODIFIED`), an archived client (`409 CLIENT_ARCHIVED`).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stageId, version]
+              properties:
+                stageId: { type: string, format: uuid }
+                note: { type: string, maxLength: 1000, nullable: true }
+                visibleToClient: { type: boolean, default: false, description: Show the note on the client portal (M8). }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: The event at its new stage., content: { application/json: { schema: { $ref: "#/components/schemas/EventEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/EventNotFound" }
+        "409": { $ref: "#/components/responses/EventConflict" }
+
+
+  # ---------------------------------------------- Personal events (M5) --
+  /api/v1/personal-events:
+    get:
+      tags: [Calendar]
+      summary: List personal calendar entries
+      description: |
+        `personal_events:manage`. A manager sees only their own (`ownerId` ignored);
+        the Admin any owner's. Optional `from` + `to` (both or neither, ≤ 92 days,
+        overlap, earliest first); otherwise newest first.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: clientId, in: query, schema: { type: string, format: uuid } }
+        - { name: ownerId, in: query, description: Admin only., schema: { type: string, format: uuid } }
+        - { name: limit, in: query, description: Default 50; clamped to 1..200., schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [personalEvents, total, limit, offset]
+                properties:
+                  personalEvents: { type: array, items: { $ref: "#/components/schemas/PersonalEvent" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Calendar]
+      summary: Create a personal entry (owned by the caller)
+      description: "`timeZone` defaults to the caller's profile zone. `clientId` must be one of the caller's own clients (else `404 CLIENT_NOT_FOUND`). Ends on/after start, ≤ 31 days (`400 PERSONAL_EVENT_TIMES_INVALID`)."
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, startsAt, endsAt]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 160 }
+                startsAt: { type: string, format: date-time, description: With an offset or Z. }
+                endsAt: { type: string, format: date-time }
+                timeZone: { $ref: "#/components/schemas/TimeZone" }
+                description: { type: string, maxLength: 5000, nullable: true }
+                clientId: { type: string, format: uuid, nullable: true }
+      responses:
+        "201": { description: Created., content: { application/json: { schema: { $ref: "#/components/schemas/PersonalEventEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+  /api/v1/personal-events/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PersonalEventId"
+    get:
+      tags: [Calendar]
+      summary: One personal entry (another manager's is 404)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The entry., content: { application/json: { schema: { $ref: "#/components/schemas/PersonalEventEnvelope" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/PersonalEventNotFound" }
+    patch:
+      tags: [Calendar]
+      summary: Edit a personal entry
+      description: "Send only what changes + `version` (required; stale → `409 PERSONAL_EVENT_MODIFIED`). `clientId: null` unlinks; a new link must be one of the ENTRY OWNER's clients."
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 160 }
+                startsAt: { type: string, format: date-time }
+                endsAt: { type: string, format: date-time }
+                timeZone: { $ref: "#/components/schemas/TimeZone" }
+                description: { type: string, maxLength: 5000, nullable: true }
+                clientId: { type: string, format: uuid, nullable: true }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Saved., content: { application/json: { schema: { $ref: "#/components/schemas/PersonalEventEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/PersonalEventNotFound" }
+        "409": { $ref: "#/components/responses/PersonalEventConflict" }
+    delete:
+      tags: [Calendar]
+      summary: Delete a personal entry
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/PersonalEventNotFound" }
+
+  # ----------------------------------------------------- Calendar (M5) --
+  /api/v1/calendar:
+    get:
+      tags: [Calendar]
+      summary: The merged calendar feed for a range (client events + personal entries)
+      description: |
+        `events:read`. Items overlapping `[from, to)` (required, ≤ 92 days),
+        earliest first, two queries at most. A manager: their clients' events +
+        their own entries (`ownerId` ignored). The Admin: every client event, or
+        one owner's (`ownerId`); personal entries of `ownerId`, else the
+        Admin's own. `eventType` / `state` filter events and drop personal
+        entries. Each kind is capped at 500 (`truncated: true` if hit).
+        Instants are UTC; show them in the viewer's zone and each item's own
+        `timeZone` when it differs.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: include, in: query, schema: { type: string, enum: [all, events, personal], default: all } }
+        - { name: clientId, in: query, schema: { type: string, format: uuid } }
+        - { name: ownerId, in: query, description: Admin only., schema: { type: string, format: uuid } }
+        - { name: eventType, in: query, schema: { $ref: "#/components/schemas/EventType" } }
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/EventState" } }
+      responses:
+        "200":
+          description: The feed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, items, truncated]
+                properties:
+                  from: { type: string, format: date-time }
+                  to: { type: string, format: date-time }
+                  truncated: { type: boolean }
+                  items: { type: array, items: { $ref: "#/components/schemas/CalendarItem" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/calendar/feed-link:
+    get:
+      tags: [Calendar]
+      summary: The caller's own calendar subscribe link, if one is on (FR-CAL-08)
+      description: "`events:read`. Never returns the token (only its hash is stored)."
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The link, or null.
+          content:
+            application/json:
+              schema: { type: object, required: [link], properties: { link: { $ref: "#/components/schemas/CalendarFeedLink" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Calendar]
+      summary: Make a calendar subscribe link (a new one replaces the old one at once)
+      description: |
+        `events:read`. The token and the full subscribe `url`
+        (`PUBLIC_API_URL` + `/api/v1/calendar-feed/<token>.ics`) are returned
+        in this response ONLY. Audited as `calendar_feed.created` (never with
+        the token). 404 `USER_NOT_FOUND` if the caller's profile is gone (no
+        token is handed out then).
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: The new link and its token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [link, token, url]
+                properties:
+                  link: { $ref: "#/components/schemas/CalendarFeedLink" }
+                  token: { type: string, description: "43 characters, base64url. Shown once." }
+                  url: { type: string, format: uri, description: "The address to give calendar apps. Shown once." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      tags: [Calendar]
+      summary: Turn the calendar subscribe link off (idempotent)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Off. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/calendar-feed/{file}:
+    get:
+      tags: [Calendar]
+      summary: Public iCalendar feed for Google Calendar / Apple / Outlook (FR-CAL-08)
+      description: |
+        No login: `<token>.ics` is the credential (rate-limited per IP,
+        redacted from logs). The owner's calendar as in HOK (a manager: their
+        clients' events + own entries; the Admin: every client event + own
+        entries): the next 180 days (up to 500 of each kind) and the last 30
+        (up to 100 of each kind), read separately so the past never pushes
+        upcoming items out. Times are UTC; a zero-length item has no DTEND. A malformed, unknown, replaced or turned-off link, a
+        deactivated person or a role without a calendar: the same 404
+        `CALENDAR_FEED_INVALID`.
+      parameters:
+        - { name: file, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}\.ics$' } }
+      responses:
+        "200":
+          description: The calendar.
+          content:
+            text/calendar:
+              schema: { type: string }
+        "404":
+          description: Not a valid link (`CALENDAR_FEED_INVALID`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  # ------------------------------------------------------ Dashboard (M10) --
+  /api/v1/dashboard:
+    get:
+      tags: [Dashboard]
+      summary: The caller's role dashboard
+      description: |
+        Every staff role (FR-DSH-01..03). `tasks` (the caller's own staff
+        tasks) is present except on the Admin's overview; `clients` (the caller's OWN clients) for
+        Admin, Social Media and Marketing Managers, else null; `firm` for the
+        Admin only, else null. Figures are SQL aggregates and every list is
+        capped (5; events 20 before the today/upcoming split; team 5, the full list is /dashboard/team), so
+        the query count is fixed per role. "Today" and "this week" (today + 6
+        days) are the caller's own time zone; instants are UTC.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: view
+          in: query
+          description: "overview (default): for the Admin the firm alone. mine: the caller's own clients and tasks (the Admin's My clients page; same as overview for other roles)."
+          schema: { type: string, enum: [overview, mine], default: overview }
+      responses:
+        "200":
+          description: The dashboard.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dashboard" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/dashboard/team:
+    get:
+      tags: [Dashboard]
+      summary: The whole team's workload (Admin)
+      description: |
+        `dashboard:global` (Admin). Every active non-admin staff member with
+        their open, overdue and done-this-week task counts, busiest first
+        (overdue, then open). Name search, role filter, paged (≤ 50); two
+        queries whatever the page size.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: search, in: query, description: Name, case-insensitive (max 80)., schema: { type: string, maxLength: 80 } }
+        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor] } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: One page of the team.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members, total, limit, offset]
+                properties:
+                  members: { type: array, items: { $ref: "#/components/schemas/WorkloadRow" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # -------------------------------------------------------- Activity (Phase 2) --
+  /api/v1/activity:
+    get:
+      tags: [Activity]
+      summary: The activity log, newest first (Admin)
+      description: |
+        `dashboard:global` (Admin only; every other role gets 403). Who did what
+        across the firm: audit entries (clients, events, tasks, comments, assets,
+        accounts) plus event stage moves, task updates and client comments, each as
+        a plain-English sentence. Names and titles only; never comment bodies,
+        tokens or contact details. One page query over a UNION ALL of the bounded,
+        filtered sources plus one count: two queries whatever the page size.
+        `from`/`to` default to the last 7 days; `from` after `to` or a span over
+        31 days is a 400 `ACTIVITY_RANGE_INVALID`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, description: "Start instant (ISO 8601 with offset). Default: 7 days before to.", schema: { type: string, format: date-time } }
+        - { name: to, in: query, description: "End instant (ISO 8601 with offset). Default: now.", schema: { type: string, format: date-time } }
+        - { name: kind, in: query, schema: { type: string, enum: [all, clients, events, tasks, comments, assets, accounts], default: all } }
+        - { name: actorId, in: query, description: Only what this person did., schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: One page of activity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, limit, offset]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ActivityItem" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # --------------------------------------------------------- Search (Phase 2) --
+  /api/v1/search:
+    get:
+      tags: [Search]
+      summary: Global search across clients, events, tasks, to-dos and asset links
+      description: |
+        Every staff role (FR-SYS-01). Up to 5 hits per group, best first
+        (titles that start with the term, then the most recent). Each group is
+        scoped exactly like its page: the Admin sees everything; managers only
+        their own clients (and everything under them) and their own tasks;
+        task-only staff only their own tasks. A group the caller's role can't
+        see is `null`. The term is matched literally (case-insensitive; `%`
+        and `_` are not wildcards). One indexed query per group, in parallel.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 80 } }
+      responses:
+        "200":
+          description: Grouped hits.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [query, groups]
+                properties:
+                  query: { type: string }
+                  groups:
+                    type: object
+                    required: [clients, events, tasks, todos, assets]
+                    properties:
+                      clients: { type: array, nullable: true, items: { $ref: "#/components/schemas/SearchHit" } }
+                      events: { type: array, nullable: true, items: { $ref: "#/components/schemas/SearchHit" } }
+                      tasks: { type: array, nullable: true, items: { $ref: "#/components/schemas/SearchHit" } }
+                      todos: { type: array, nullable: true, items: { $ref: "#/components/schemas/SearchHit" } }
+                      assets: { type: array, nullable: true, items: { $ref: "#/components/schemas/SearchHit" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ----------------------------------------------------- Reports (Phase 2) --
+  /api/v1/reports/team-status:
+    get:
+      tags: [Reports]
+      summary: Who is working or idle right now (Admin)
+      description: |
+        `dashboard:global` (Admin). Active non-admin staff, paged (default 20, max 50), busiest first
+        (overdue, then open). `working` = has open tasks AND (was seen OR acted in the last
+        `rule.windowHours` hours); everyone else is `idle`. `activityLast24h` counts the person's task
+        updates, stage moves and audit actions in that window. Server-side search, role and status filters.
+        Two queries whatever the page size.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: search, in: query, description: Name, case-insensitive (max 80)., schema: { type: string, maxLength: 80 } }
+        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor] } }
+        - { name: status, in: query, schema: { type: string, enum: [working, idle] } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: One page of the team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamStatusPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/reports/staff:
+    get:
+      tags: [Reports]
+      summary: One person's month (Admin)
+      description: |
+        `dashboard:global` (Admin). Tasks assigned and completed in the month, of the completed how many
+        were on time (no due date counts as on time) vs late, the average days from creation to completion,
+        open and overdue now, and a weekly series (Monday-start weeks clipped to the month). The month is
+        a calendar month in the CALLER's time zone. Only the current month and the 5 before it are allowed
+        (anything else is 400 `REPORT_MONTH_OUT_OF_RANGE`). Two queries.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: month, in: query, required: true, description: "YYYY-MM.", schema: { type: string, pattern: "^\\d{4}-(0[1-9]|1[0-2])$" } }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffReport" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+
+  /api/v1/reports/client:
+    get:
+      tags: [Reports]
+      summary: One client's month (Admin)
+      description: |
+        `dashboard:global` (Admin, so every client is visible). Events that started in the month (total, by
+        state, by type), stage moves made, client comments received / solved / replied with the average
+        first-reply hours, to-dos done in the month vs open now, and assets added. The month is a calendar
+        month in the CALLER's time zone, limited to the last 6 (else 400 `REPORT_MONTH_OUT_OF_RANGE`).
+        Six queries.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: clientId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: month, in: query, required: true, description: "YYYY-MM.", schema: { type: string, pattern: "^\\d{4}-(0[1-9]|1[0-2])$" } }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientReport" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+
+  # ------------------------------------------------- Team members (M4+) --
+  /api/v1/team-members:
+    get:
+      tags: [Team members]
+      summary: Active staff, for pickers (an event's team)
+      description: "`events:write` (Admin, SMM, MM); task-only staff 403. Active accounts only, sorted by name, exactly `{ id, fullName, role }` each. Full accounts stay Admin-only on /users."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: search, in: query, description: Name contains., schema: { type: string, maxLength: 80 } }
+        - { name: role, in: query, schema: { $ref: "#/components/schemas/Role" } }
+        - { name: limit, in: query, description: Default 20; clamped to 1..100., schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members, total, limit, offset]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, fullName, role]
+                      properties:
+                        id: { type: string, format: uuid }
+                        fullName: { type: string }
+                        role: { $ref: "#/components/schemas/Role" }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/assets:
+    get:
+      tags: [Assets]
+      summary: List asset links (scoped, searchable, filterable, paginated)
+      description: |
+        `assets:read`. The Admin sees every asset; a Social Media / Marketing
+        Manager only assets of clients they own (their `ownerId` filter is
+        ignored). Soft-deleted assets never appear. Newest first. `search`
+        matches the title, the comment or a tag.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: clientId, in: query, description: "One client's assets (the client workspace tab). A non-UUID is a 400.", schema: { type: string, format: uuid } }
+        - { name: eventId, in: query, description: Only assets linked to this event., schema: { type: string, format: uuid } }
+        - { name: ownerId, in: query, description: Admin only -- assets of clients owned by this manager. Ignored for a manager., schema: { type: string, format: uuid } }
+        - { name: search, in: query, description: Title, comment or tag contains (case-insensitive). Max 80 characters., schema: { type: string, maxLength: 80 } }
+        - { name: type, in: query, description: Only this type. An unknown type is a 400., schema: { $ref: "#/components/schemas/AssetType" } }
+        - { name: tag, in: query, description: Exactly this tag, ignoring case., schema: { type: string, maxLength: 30 } }
+        - { name: from, in: query, description: "Added at or after this instant (ISO-8601 with offset; the web sends the viewer's day start).", schema: { type: string, format: date-time } }
+        - { name: to, in: query, description: Added before this instant. `from` after `to` is `400 ASSET_RANGE_INVALID`., schema: { type: string, format: date-time } }
+        - { name: limit, in: query, description: Page size, default 20. Clamped to 1..100. Non-numeric is a 400., schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [assets, total, limit, offset]
+                properties:
+                  assets:
+                    type: array
+                    items: { $ref: "#/components/schemas/Asset" }
+                  total: { type: integer, description: All assets matching the filters within the caller's scope. }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Assets]
+      summary: Add an asset link under one of the caller's clients
+      description: |
+        `assets:write`. The URL must be http(s) (`400 VALIDATION_ERROR` otherwise).
+        A client that isn't yours is `404 CLIENT_NOT_FOUND`; an archived one is
+        `409 CLIENT_ARCHIVED`. `eventId` must be one of that client's events
+        (`400 ASSET_EVENT_INVALID`). Tags are created per client if new and matched ignoring case.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAssetRequest" }
+      responses:
+        "201": { description: Created., content: { application/json: { schema: { $ref: "#/components/schemas/AssetEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+        "409": { $ref: "#/components/responses/AssetConflict" }
+  /api/v1/assets/tags:
+    get:
+      tags: [Assets]
+      summary: Tag auto-suggest (tags in use by live assets, with counts)
+      description: |
+        `assets:read`. One client's tags (`clientId`) or all tags in the caller's
+        scope. `q` matches anywhere in the name; without it, the most used first.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: clientId, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, description: Name contains (case-insensitive). Max 30 characters., schema: { type: string, maxLength: 30 } }
+        - { name: limit, in: query, description: Default 10, clamped to 1..50., schema: { type: integer, default: 10, minimum: 1, maximum: 50 } }
+      responses:
+        "200":
+          description: Suggestions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tags]
+                properties:
+                  tags:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, uses]
+                      properties:
+                        name: { type: string }
+                        uses: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/assets/{id}:
+    parameters:
+      - $ref: "#/components/parameters/AssetId"
+    get:
+      tags: [Assets]
+      summary: One asset
+      description: "`assets:read`. Another manager's asset (or a soft-deleted one) is `404 ASSET_NOT_FOUND`."
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The asset., content: { application/json: { schema: { $ref: "#/components/schemas/AssetEnvelope" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/AssetNotFound" }
+    patch:
+      tags: [Assets]
+      summary: Edit an asset (optimistic lock)
+      description: |
+        `assets:write`. Send only the fields to change plus the `version` you
+        loaded. `tags` replaces the whole set; `eventId: null` unlinks.
+        `409 ASSET_MODIFIED` for a stale version; `409 CLIENT_ARCHIVED` if the client is archived.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateAssetRequest" }
+      responses:
+        "200": { description: Updated., content: { application/json: { schema: { $ref: "#/components/schemas/AssetEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/AssetNotFound" }
+        "409": { $ref: "#/components/responses/AssetConflict" }
+    delete:
+      tags: [Assets]
+      summary: Delete an asset (soft delete)
+      description: "`assets:write`. Hides the asset everywhere; the row is kept. Optional `version` query for the optimistic lock."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: version, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/AssetNotFound" }
+        "409": { $ref: "#/components/responses/AssetConflict" }
+  /api/v1/clients/{clientId}/todos:
+    parameters:
+      - { name: clientId, in: path, required: true, description: "A non-UUID is `404 CLIENT_NOT_FOUND`.", schema: { type: string, format: uuid } }
+    get:
+      tags: [Client to-dos]
+      summary: A client's to-dos (paginated)
+      description: |
+        `clients:read`. Admin: any client; SMM / MM: their own clients (another's is
+        `404 CLIENT_NOT_FOUND`). Without `status` the list is the **open** to-dos (not
+        done). Order: open before done, soonest due first (no due date last), newest;
+        with `status=done`, most recently completed first. `overdue=true`: past due and
+        not done. One page query + one count.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, description: "One status, or `all` for every status. Omitted = open (not done).", schema: { type: string, enum: [todo, in_progress, done, all] } }
+        - { name: priority, in: query, schema: { $ref: "#/components/schemas/ClientTodoPriority" } }
+        - { name: overdue, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: dueFrom, in: query, description: "Due on/after this instant (with offset).", schema: { type: string, format: date-time } }
+        - { name: dueTo, in: query, description: "Due before this instant; must be after dueFrom (`400 CLIENT_TODO_RANGE_INVALID`).", schema: { type: string, format: date-time } }
+        - { name: search, in: query, description: Title contains., schema: { type: string, maxLength: 80 } }
+        - { name: limit, in: query, description: Default 20; clamped to 1..100., schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [todos, total, limit, offset]
+                properties:
+                  todos: { type: array, items: { $ref: "#/components/schemas/ClientTodo" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+    post:
+      tags: [Client to-dos]
+      summary: Add a to-do
+      description: |
+        `clients:write`. Starts as `todo`, priority `medium` unless sent. An `eventId`
+        must be one of the client's events (`400 CLIENT_TODO_EVENT_INVALID`). An archived
+        client is `409 CLIENT_ARCHIVED`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ClientTodoFields"
+                - type: object
+                  required: [title]
+      responses:
+        "201": { description: Created., content: { application/json: { schema: { $ref: "#/components/schemas/ClientTodoEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientNotFound" }
+        "409": { $ref: "#/components/responses/ClientTodoConflict" }
+  /api/v1/client-todos/{id}:
+    parameters:
+      - { name: id, in: path, required: true, description: "A non-UUID is `404 CLIENT_TODO_NOT_FOUND`.", schema: { type: string, format: uuid } }
+    patch:
+      tags: [Client to-dos]
+      summary: Edit a to-do or change its status
+      description: |
+        `clients:write`. Send only the fields to change + `version` (required). `status: done`
+        stamps `completedAt`; reopening clears it. `eventId: null` unlinks. A stale version is
+        `409 CLIENT_TODO_MODIFIED`; an archived client `409 CLIENT_ARCHIVED`. Another manager's
+        to-do is `404`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ClientTodoFields"
+                - type: object
+                  required: [version]
+                  properties:
+                    status: { $ref: "#/components/schemas/ClientTodoStatus" }
+                    version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Saved., content: { application/json: { schema: { $ref: "#/components/schemas/ClientTodoEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientTodoNotFound" }
+        "409": { $ref: "#/components/responses/ClientTodoConflict" }
+    delete:
+      tags: [Client to-dos]
+      summary: Delete a to-do
+      description: "`clients:write`. Hard delete; the audit log keeps a `client_todo.deleted` entry. Optional `?version=` (stale: `409 CLIENT_TODO_MODIFIED`)."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: version, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ClientTodoNotFound" }
+        "409": { $ref: "#/components/responses/ClientTodoConflict" }
+  /api/v1/staff-tasks:
+    get:
+      tags: [Staff tasks]
+      summary: List tasks ("My tasks", or the Admin's list / one Kanban column)
+      description: |
+        The Admin sees every task (filters `assigneeId`, `role`, `clientId`);
+        anyone else only the tasks assigned to them (those filters ignored).
+        Order: open before done, soonest due first (no due date last), newest;
+        with `status=done`, most recently completed first. `overdue=true`:
+        past due and not done. `open=true`: everything but done.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/StaffTaskStatus" } }
+        - { name: open, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: priority, in: query, schema: { $ref: "#/components/schemas/StaffTaskPriority" } }
+        - { name: assigneeId, in: query, description: Admin only., schema: { type: string, format: uuid } }
+        - { name: role, in: query, description: "Admin only: the assignee's role.", schema: { $ref: "#/components/schemas/Role" } }
+        - { name: clientId, in: query, description: Admin only., schema: { type: string, format: uuid } }
+        - { name: overdue, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: dueFrom, in: query, description: "Due on/after this instant (with offset).", schema: { type: string, format: date-time } }
+        - { name: dueTo, in: query, description: "Due before this instant; must be after dueFrom.", schema: { type: string, format: date-time } }
+        - { name: search, in: query, description: Title contains., schema: { type: string, maxLength: 80 } }
+        - { name: limit, in: query, description: Default 20; clamped to 1..100., schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tasks, total, limit, offset]
+                properties:
+                  tasks: { type: array, items: { $ref: "#/components/schemas/StaffTaskSummary" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Staff tasks]
+      summary: Create and assign a task (Admin)
+      description: |
+        `staff_tasks:assign`. Exactly one assignee, any active staff member
+        (`400 STAFF_TASK_ASSIGNEE_INVALID`). **Editor tasks** (assignee role
+        `editor`) need `rawFilesUrl` (`400 STAFF_TASK_EDITOR_FIELDS_REQUIRED`);
+        `referenceUrl` and `script` are optional. For any other role the three
+        editor fields must be empty (`400 STAFF_TASK_EDITOR_FIELDS_INVALID`).
+        An `eventId` must belong to `clientId` when both are sent; an event
+        alone links its client (`400 STAFF_TASK_CLIENT_INVALID` /
+        `STAFF_TASK_EVENT_INVALID`). Starts as `todo`, with a "created"
+        timeline entry.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/StaffTaskFields"
+                - type: object
+                  required: [title, assigneeId]
+                  properties:
+                    assigneeId: { type: string, format: uuid }
+      responses:
+        "201": { description: Created., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/staff-tasks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/StaffTaskId"
+    get:
+      tags: [Staff tasks]
+      summary: One task with its timeline (100 newest entries)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The task., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+    patch:
+      tags: [Staff tasks]
+      summary: Edit and/or reassign a task (Admin)
+      description: |
+        `staff_tasks:assign`. Send only the fields to change + `version`
+        (required). `assigneeId` reassigns (a "reassigned" timeline entry).
+        Reassigning to a non-editor **clears** the editor brief; to an editor
+        needs a raw files link (stored or sent). Changing `clientId` without
+        an `eventId` unlinks the old client's event. Status moves through
+        `/status` and `/reopen`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/StaffTaskFields"
+                - type: object
+                  required: [version]
+                  properties:
+                    assigneeId: { type: string, format: uuid }
+                    version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Saved., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+        "409": { $ref: "#/components/responses/StaffTaskConflict" }
+    delete:
+      tags: [Staff tasks]
+      summary: Delete a task (Admin)
+      description: "`staff_tasks:assign`. Hard delete; the timeline goes with it, the audit log keeps a `staff_task.deleted` entry."
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+  /api/v1/staff-tasks/{id}/status:
+    post:
+      tags: [Staff tasks]
+      summary: Change the status (assignee or Admin), with an optional comment
+      description: |
+        `staff_tasks:update` (own for the assignee; another person's task is
+        `404`). Any open status to any other, including `done`. The change and
+        its timeline entry are one transaction. Refused: the same status
+        (`409 STAFF_TASK_STATUS_UNCHANGED`), a done task (`409 STAFF_TASK_DONE`;
+        only the Admin reopens), a stale version (`409 STAFF_TASK_MODIFIED`).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/StaffTaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, version]
+              properties:
+                status: { $ref: "#/components/schemas/StaffTaskStatus" }
+                comment: { type: string, maxLength: 2000, nullable: true }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: The task with its new status., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+        "409": { $ref: "#/components/responses/StaffTaskConflict" }
+  /api/v1/staff-tasks/{id}/reopen:
+    post:
+      tags: [Staff tasks]
+      summary: Reopen a done task (Admin)
+      description: |
+        `staff_tasks:assign`. Back to `todo` (default), `in_progress` or
+        `blocked`, with a "reopened" timeline entry. `409 STAFF_TASK_NOT_DONE`
+        if it isn't done.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/StaffTaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                status: { type: string, enum: [todo, in_progress, blocked], default: todo }
+                comment: { type: string, maxLength: 2000, nullable: true }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Reopened., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+        "409": { $ref: "#/components/responses/StaffTaskConflict" }
+  /api/v1/staff-tasks/{id}/comments:
+    post:
+      tags: [Staff tasks]
+      summary: Comment on a task (assignee or Admin)
+      description: "`staff_tasks:update` (own for the assignee). Allowed at any time, done or not. Doesn't change the task's `version`."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/StaffTaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        "201": { description: The task with the new comment in its timeline., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: The caller's notifications (the bell), newest first
+      description: Every role has a bell; only the caller's own rows. `unread=true` lists unread only.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: unread, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: limit, in: query, description: "1..50 (clamped), default 20.", schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200": { description: One page., content: { application/json: { schema: { $ref: "#/components/schemas/NotificationList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: The bell's badge (cheap; the web polls it)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Unread count., content: { application/json: { schema: { $ref: "#/components/schemas/UnreadCount" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Mark all the caller's notifications read
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: How many changed.
+          content: { application/json: { schema: { type: object, required: [updated], properties: { updated: { type: integer } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/notifications/{id}/read:
+    parameters:
+      - $ref: "#/components/parameters/NotificationId"
+    post:
+      tags: [Notifications]
+      summary: Mark one notification read (idempotent)
+      description: Someone else's notification is `404 NOTIFICATION_NOT_FOUND`.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Read. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotificationNotFound" }
+  /api/v1/notifications/preferences:
+    get:
+      tags: [Notifications]
+      summary: The caller's per-trigger preferences (FR-NTF-04)
+      description: Lists only triggers that are live (raised by some module today). No stored row = everything on.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Preferences., content: { application/json: { schema: { $ref: "#/components/schemas/NotificationPreferences" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      tags: [Notifications]
+      summary: Change preferences for the triggers sent
+      description: |
+        `inApp: false` mutes the trigger entirely (no bell entry, no push);
+        `push: false` keeps the bell entry but sends no push. Triggers not sent
+        keep their setting; not-yet-live triggers are ignored.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateNotificationPreferencesRequest" }
+      responses:
+        "200": { description: The preferences now., content: { application/json: { schema: { $ref: "#/components/schemas/NotificationPreferences" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/notifications/push/config:
+    get:
+      tags: [Notifications]
+      summary: Web push settings for the browser
+      description: The VAPID public key to subscribe with, or `enabled false` when the server has no keys (the web then hides push controls).
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Config., content: { application/json: { schema: { $ref: "#/components/schemas/PushConfig" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/notifications/push/subscriptions:
+    get:
+      tags: [Notifications]
+      summary: The caller's devices that receive push
+      description: Endpoints and keys never leave the server.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Devices., content: { application/json: { schema: { $ref: "#/components/schemas/PushDevices" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Notifications]
+      summary: Register this browser for push (upsert by endpoint)
+      description: The body is the browser's `PushSubscription.toJSON()` plus an optional user agent. The same browser signed in as someone else moves to them. At most 2 devices per user are kept; subscribing a third drops the least recently used. Rate-limited per user.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PushSubscriptionRequest" }
+      responses:
+        "201":
+          description: Subscribed.
+          content: { application/json: { schema: { type: object, required: [subscribed], properties: { subscribed: { type: boolean } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/notifications/push/subscriptions/unsubscribe:
+    post:
+      tags: [Notifications]
+      summary: This browser turns push off (by endpoint; idempotent)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [endpoint], properties: { endpoint: { type: string, format: uri } } }
+      responses:
+        "204": { description: Unsubscribed (or was not subscribed). }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/notifications/push/subscriptions/{deviceId}:
+    parameters:
+      - $ref: "#/components/parameters/PushDeviceId"
+    delete:
+      tags: [Notifications]
+      summary: Remove one of the caller's devices
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/PushSubscriptionNotFound" }
+  /api/v1/notifications/push/test:
+    post:
+      tags: [Notifications]
+      summary: Send a test push to the caller's devices
+      description: No bell entry. `503 PUSH_NOT_CONFIGURED` when the server has no VAPID keys. Rate-limited per user.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Delivery report., content: { application/json: { schema: { $ref: "#/components/schemas/PushTestResult" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/PushNotConfigured" }
+  # ------------------------------------------------------- Portal (staff) --
+  /api/v1/portal-links/{clientId}:
+    parameters:
+      - { name: clientId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Portal]
+      summary: The client's current portal link (never the token)
+      description: "`portal:manage`: Admin any client, SMM/MM own clients (another manager's client is 404 CLIENT_NOT_FOUND); task-only staff 403."
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The active link, else the latest revoked one, else null., content: { application/json: { schema: { type: object, properties: { link: { allOf: [{ $ref: "#/components/schemas/PortalLink" }], nullable: true } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: CLIENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    post:
+      tags: [Portal]
+      summary: Generate or regenerate the link (the old one stops working)
+      description: The token and full URL are returned ONCE and stored only as a SHA-256 hash. Refused (409 CLIENT_ARCHIVED) for an archived client.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: The new link plus its one-time token and URL., content: { application/json: { schema: { type: object, required: [link, token, url], properties: { link: { $ref: "#/components/schemas/PortalLink" }, token: { type: string }, url: { type: string } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: CLIENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: CLIENT_ARCHIVED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/portal-links/{clientId}/disable:
+    parameters:
+      - { name: clientId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Portal]
+      summary: Disable the client's link (idempotent)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The revoked link (or null if there was none)., content: { application/json: { schema: { type: object, properties: { link: { allOf: [{ $ref: "#/components/schemas/PortalLink" }], nullable: true } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: CLIENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  # ------------------------------------------------------ Portal (public) --
+  /api/v1/portal/{token}:
+    parameters:
+      - { name: token, in: path, required: true, description: The link token (the credential). Redacted from logs., schema: { type: string } }
+    get:
+      tags: [Portal]
+      summary: "Public: the client's dashboard"
+      description: No login. Unknown, regenerated, disabled and archived-client links all return the same 404 PORTAL_LINK_INVALID. Rate-limited per IP. Client-safe fields only (no assets, internal notes, tasks or staff data beyond the manager's first name).
+      responses:
+        "200": { description: Dashboard., content: { application/json: { schema: { $ref: "#/components/schemas/PortalDashboard" } } } }
+        "404": { description: PORTAL_LINK_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/portal/{token}/events:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Portal]
+      summary: "Public: the client's calendar range (from + to required, at most 92 days)"
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+      responses:
+        "200": { description: Events overlapping the range., content: { application/json: { schema: { type: object, properties: { from: { type: string }, to: { type: string }, timeZone: { type: string }, events: { type: array, items: { $ref: "#/components/schemas/PortalEvent" } } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: PORTAL_LINK_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/portal/{token}/events/{eventId}:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: string } }
+      - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Portal]
+      summary: "Public: one of the client's events with its client-visible updates"
+      responses:
+        "200": { description: The event., content: { application/json: { schema: { type: object, properties: { event: { $ref: "#/components/schemas/PortalEvent" } } } } } }
+        "404": { description: PORTAL_LINK_INVALID or PORTAL_EVENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/portal/{token}/comments:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Portal]
+      summary: "Public: the client's own comments with status and reply (FR-CMT-05)"
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200": { description: Newest first., content: { application/json: { schema: { type: object, properties: { comments: { type: array, items: { $ref: "#/components/schemas/PortalComment" } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } } } } } }
+        "404": { description: PORTAL_LINK_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    post:
+      tags: [Portal]
+      summary: "Public: post a comment (general or about one of the client's events)"
+      description: "Body limit 4 KB (413). Rate-limited per IP, overall and per link (429). Notifies the client's manager only (bell + push, never email). Unknown keys are refused."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [body], properties: { body: { type: string, minLength: 1, maxLength: 2000 }, eventId: { type: string, format: uuid, nullable: true } } }
+      responses:
+        "201": { description: The saved comment (status received)., content: { application/json: { schema: { type: object, properties: { comment: { $ref: "#/components/schemas/PortalComment" } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: PORTAL_LINK_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  # ----------------------------------------------------- Client comments --
+  /api/v1/client-comments:
+    get:
+      tags: [Client comments]
+      summary: The comment inbox (default the open ones), newest first
+      description: "`comments:read`: Admin all, SMM/MM own clients; task-only 403."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: clientId, in: query, schema: { type: string, format: uuid } }
+        - { name: search, in: query, description: "Comment text or client name, case-insensitive (max 100).", schema: { type: string, maxLength: 100 } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/CommentStatus" } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200": { description: A page of comments., content: { application/json: { schema: { type: object, properties: { comments: { type: array, items: { $ref: "#/components/schemas/ClientComment" } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/client-comments/counts:
+    get:
+      tags: [Client comments]
+      summary: Open comments by status (the inbox badge)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Counts., content: { application/json: { schema: { type: object, properties: { received: { type: integer }, inProgress: { type: integer } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/client-comments/{commentId}:
+    parameters:
+      - { name: commentId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Client comments]
+      summary: One comment (another manager's is 404 COMMENT_NOT_FOUND)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The comment., content: { application/json: { schema: { type: object, properties: { comment: { $ref: "#/components/schemas/ClientComment" } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: COMMENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    patch:
+      tags: [Client comments]
+      summary: Change the status and/or reply (version required)
+      description: "Moves: received to in_progress or solved, in_progress to solved, solved to in_progress (reopen); never back to received (409 COMMENT_STATUS_TRANSITION_INVALID). A stale version is 409 COMMENT_MODIFIED. An empty or null reply clears it."
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [version], properties: { status: { $ref: "#/components/schemas/CommentStatus" }, reply: { type: string, maxLength: 2000, nullable: true }, version: { type: integer, minimum: 1 } } }
+      responses:
+        "200": { description: The updated comment., content: { application/json: { schema: { type: object, properties: { comment: { $ref: "#/components/schemas/ClientComment" } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: COMMENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: COMMENT_MODIFIED or COMMENT_STATUS_TRANSITION_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Access token from POST /api/v1/auth/login (or refresh / exchange-code).
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      description: A profile id. A non-UUID is `404 USER_NOT_FOUND` before any query runs.
+      schema: { type: string, format: uuid }
+    StageTemplateId:
+      name: id
+      in: path
+      required: true
+      description: A non-UUID is `404 STAGE_TEMPLATE_NOT_FOUND`.
+      schema: { type: string, format: uuid }
+    PersonalEventId:
+      name: id
+      in: path
+      required: true
+      description: A non-UUID is `404 PERSONAL_EVENT_NOT_FOUND`.
+      schema: { type: string, format: uuid }
+    EventId:
+      name: id
+      in: path
+      required: true
+      description: A non-UUID is `404 EVENT_NOT_FOUND`.
+      schema: { type: string, format: uuid }
+    ClientId:
+      name: id
+      in: path
+      required: true
+      description: A client id. A non-UUID is `404 CLIENT_NOT_FOUND` before any query runs.
+      schema: { type: string, format: uuid }
+    AssetId:
+      name: id
+      in: path
+      required: true
+      description: A non-UUID is `404 ASSET_NOT_FOUND`.
+      schema: { type: string, format: uuid }
+    StaffTaskId:
+      name: id
+      in: path
+      required: true
+      description: A non-UUID is `404 STAFF_TASK_NOT_FOUND`.
+      schema: { type: string, format: uuid }
+    NotificationId:
+      name: id
+      in: path
+      required: true
+      description: A non-UUID is `404 NOTIFICATION_NOT_FOUND`.
+      schema: { type: string, format: uuid }
+    PushDeviceId:
+      name: deviceId
+      in: path
+      required: true
+      description: A device id from GET /notifications/push/subscriptions. A non-UUID is `404 PUSH_SUBSCRIPTION_NOT_FOUND`.
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: "`VALIDATION_ERROR` (with `details`), `VALIDATION_NO_FIELDS`, or a rule-specific code."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: "`AUTH_TOKEN_MISSING` or `AUTH_SESSION_INVALID`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: "`FORBIDDEN` (the role lacks the capability), `AUTH_ACCOUNT_DEACTIVATED`, or a rule-specific code."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    AccountDeactivated:
+      description: "`AUTH_ACCOUNT_DEACTIVATED` or `AUTH_PROFILE_MISSING`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UserNotFound:
+      description: "`USER_NOT_FOUND`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    EmailTaken:
+      description: "`USER_EMAIL_TAKEN` -- an account with this email already exists."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ClientNotFound:
+      description: "`CLIENT_NOT_FOUND` -- no such client, or another manager's (the same answer, so existence never leaks)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ClientConflict:
+      description: "`CLIENT_MODIFIED` (stale `version`: reload), `CLIENT_ARCHIVED` or `CLIENT_NOT_ARCHIVED` (wrong state for this action)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    StageTemplateNotFound:
+      description: "`STAGE_TEMPLATE_NOT_FOUND`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    StageTemplateConflict:
+      description: "`STAGE_TEMPLATE_NAME_TAKEN` or `STAGE_TEMPLATE_MODIFIED` (stale version)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PersonalEventNotFound:
+      description: "`PERSONAL_EVENT_NOT_FOUND` -- missing, or another manager's."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PersonalEventConflict:
+      description: "`PERSONAL_EVENT_MODIFIED` (stale version)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    EventNotFound:
+      description: "`EVENT_NOT_FOUND` -- no such event, or one of another manager's clients (same answer)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    EventConflict:
+      description: "`EVENT_MODIFIED` (stale version), `EVENT_STAGE_UNCHANGED`, `EVENT_NOT_ACTIVE` or `CLIENT_ARCHIVED` (the client is archived: its events are read-only)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    AssetNotFound:
+      description: "`ASSET_NOT_FOUND` -- no such (or deleted) asset, or one of another manager's clients (same answer)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    AssetConflict:
+      description: "`ASSET_MODIFIED` (stale version) or `CLIENT_ARCHIVED` (the client is archived: its assets are read-only)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ClientTodoNotFound:
+      description: "`CLIENT_TODO_NOT_FOUND` -- no such to-do, or one under another manager's client (the same answer)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ClientTodoConflict:
+      description: "`CLIENT_TODO_MODIFIED` (stale `version`: reload) or `CLIENT_ARCHIVED` (the client is archived, so its to-dos are read-only)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    StaffTaskNotFound:
+      description: "`STAFF_TASK_NOT_FOUND` -- no such task, or one assigned to someone else (the same answer)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    StaffTaskConflict:
+      description: "`STAFF_TASK_MODIFIED` (stale version), `STAFF_TASK_STATUS_UNCHANGED`, `STAFF_TASK_DONE` (reopen first) or `STAFF_TASK_NOT_DONE`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: "`RATE_LIMITED` -- too many /auth attempts from this IP; wait and retry."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotificationNotFound:
+      description: "`NOTIFICATION_NOT_FOUND` -- no such notification, or someone else's (the same answer)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PushSubscriptionNotFound:
+      description: "`PUSH_SUBSCRIPTION_NOT_FOUND` -- no such device, or someone else's."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PushNotConfigured:
+      description: "`PUSH_NOT_CONFIGURED` -- the server has no VAPID keys, so it can't send web push."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    TaskStatusCounts:
+      type: object
+      required: [todo, in_progress, blocked, done]
+      properties:
+        todo: { type: integer }
+        in_progress: { type: integer }
+        blocked: { type: integer }
+        done: { type: integer }
+    DashboardTask:
+      type: object
+      required: [id, title, status, priority, dueAt, clientName, assigneeName]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { $ref: "#/components/schemas/StaffTaskStatus" }
+        priority: { $ref: "#/components/schemas/StaffTaskPriority" }
+        dueAt: { type: string, format: date-time, nullable: true }
+        clientName: { type: string, nullable: true }
+        assigneeName: { type: string, nullable: true, description: Firm lists only; null on the caller's own tasks. }
+    DashboardTaskComment:
+      type: object
+      required: [id, taskId, taskTitle, authorName, comment, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        taskId: { type: string, format: uuid }
+        taskTitle: { type: string }
+        authorName: { type: string, nullable: true }
+        comment: { type: string }
+        createdAt: { type: string, format: date-time }
+    DashboardEvent:
+      type: object
+      required: [id, title, type, state, startsAt, endsAt, timeZone, clientId, clientName, currentStageName, currentStagePosition, stageCount]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        type: { $ref: "#/components/schemas/EventType" }
+        state: { $ref: "#/components/schemas/EventState" }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        timeZone: { type: string }
+        clientId: { type: string, format: uuid }
+        clientName: { type: string }
+        currentStageName: { type: string }
+        currentStagePosition: { type: integer, minimum: 1 }
+        stageCount: { type: integer }
+    DashboardComment:
+      type: object
+      required: [id, clientId, clientName, eventTitle, excerpt, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        clientName: { type: string }
+        eventTitle: { type: string, nullable: true }
+        excerpt: { type: string, description: First 160 characters. }
+        status: { $ref: "#/components/schemas/CommentStatus" }
+        createdAt: { type: string, format: date-time }
+    ActivityItem:
+      type: object
+      required: [id, at, kind, actor, summary, url]
+      properties:
+        id: { type: string, description: "Source-prefixed id (a:, s:, t:, c:, h:)." }
+        at: { type: string, format: date-time }
+        kind: { type: string, enum: [clients, events, tasks, comments, assets, accounts] }
+        actor:
+          type: object
+          nullable: true
+          description: Null for a client posting a comment, or a removed person.
+          required: [id, name]
+          properties: { id: { type: string, format: uuid }, name: { type: string } }
+        summary: { type: string, description: A plain-English sentence (names and titles only). }
+        url: { type: string, nullable: true, description: The staff-app page to open. }
+    SearchHit:
+      type: object
+      required: [id, title, subtitle, url]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        subtitle: { type: string, nullable: true, description: One line of context (client, date, status). }
+        url: { type: string, description: The staff-app page to open. }
+    TeamStatusRow:
+      type: object
+      required: [userId, name, role, lastSeenAt, openTasks, overdue, activityLast24h, status]
+      properties:
+        userId: { type: string, format: uuid }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        lastSeenAt: { type: string, format: date-time, nullable: true }
+        openTasks: { type: integer }
+        overdue: { type: integer }
+        activityLast24h: { type: integer, description: Their task updates + stage moves + audit actions in the last 24 hours. }
+        status: { type: string, enum: [working, idle] }
+    TeamStatusPage:
+      type: object
+      required: [members, total, limit, offset, rule]
+      properties:
+        members: { type: array, items: { $ref: "#/components/schemas/TeamStatusRow" } }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+        rule:
+          type: object
+          required: [windowHours, asOf]
+          properties:
+            windowHours: { type: integer, description: "Working = open tasks AND seen or acted within this many hours." }
+            asOf: { type: string, format: date-time }
+    ReportMonth:
+      type: object
+      required: [month, timeZone, from, to]
+      properties:
+        month: { type: string, description: YYYY-MM. }
+        timeZone: { type: string, description: The viewer's zone the month is measured in. }
+        from: { type: string, format: date-time, description: Inclusive. }
+        to: { type: string, format: date-time, description: Exclusive. }
+    StaffReport:
+      type: object
+      required: [month, person, assigned, completed, onTime, late, avgDaysToComplete, openNow, overdueNow, weeks]
+      properties:
+        month: { $ref: "#/components/schemas/ReportMonth" }
+        person:
+          type: object
+          required: [userId, name, role, lastSeenAt]
+          properties:
+            userId: { type: string, format: uuid }
+            name: { type: string }
+            role: { $ref: "#/components/schemas/Role" }
+            lastSeenAt: { type: string, format: date-time, nullable: true }
+        assigned: { type: integer, description: Tasks created for them in the month. }
+        completed: { type: integer, description: Tasks they completed in the month. }
+        onTime: { type: integer, description: Of the completed, done by the due date (or with no due date). }
+        late: { type: integer }
+        avgDaysToComplete: { type: number, nullable: true, description: Mean days from creation to completion (completed in the month); null when none. }
+        openNow: { type: integer }
+        overdueNow: { type: integer }
+        weeks:
+          type: array
+          items:
+            type: object
+            required: [startDay, endDay, assigned, completed]
+            properties:
+              startDay: { type: string, format: date }
+              endDay: { type: string, format: date }
+              assigned: { type: integer }
+              completed: { type: integer }
+    ClientReport:
+      type: object
+      required: [month, client, events, stageMoves, comments, todos, assetsAdded]
+      properties:
+        month: { $ref: "#/components/schemas/ReportMonth" }
+        client:
+          type: object
+          required: [clientId, name, ownerId, ownerName]
+          properties:
+            clientId: { type: string, format: uuid }
+            name: { type: string }
+            ownerId: { type: string, format: uuid }
+            ownerName: { type: string }
+        events:
+          type: object
+          required: [total, byState, byType]
+          properties:
+            total: { type: integer, description: Events that started in the month. }
+            byState: { type: object, additionalProperties: { type: integer }, description: "active, cancelled, postponed." }
+            byType: { type: object, additionalProperties: { type: integer }, description: "shoot, campaign, meeting, content_posting, other." }
+        stageMoves: { type: integer, description: Stage moves made in the month on the client's events. }
+        comments:
+          type: object
+          required: [received, solved, replied, avgFirstReplyHours, byStatus]
+          properties:
+            received: { type: integer }
+            solved: { type: integer }
+            replied: { type: integer }
+            avgFirstReplyHours: { type: number, nullable: true }
+            byStatus: { type: object, additionalProperties: { type: integer } }
+        todos:
+          type: object
+          required: [done, open]
+          properties:
+            done: { type: integer, description: Finished in the month. }
+            open: { type: integer, description: Open now. }
+        assetsAdded: { type: integer }
+    WorkloadRow:
+      type: object
+      required: [userId, name, role, open, overdue, doneThisWeek, lastSeenAt]
+      properties:
+        userId: { type: string, format: uuid }
+        lastSeenAt: { type: string, format: date-time, nullable: true, description: Last time they used HOK; null = never. }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        open: { type: integer }
+        overdue: { type: integer }
+        doneThisWeek: { type: integer, description: Closed in the last 7 days. }
+    Dashboard:
+      type: object
+      required: [role, view, window, tasks, clients, firm]
+      properties:
+        role: { $ref: "#/components/schemas/Role" }
+        view: { type: string, enum: [overview, mine] }
+        window:
+          type: object
+          required: [timeZone, today, todayStart, tomorrowStart, weekEnd]
+          properties:
+            timeZone: { type: string }
+            today: { type: string, format: date }
+            todayStart: { type: string, format: date-time }
+            tomorrowStart: { type: string, format: date-time }
+            weekEnd: { type: string, format: date-time }
+        tasks:
+          type: object
+          nullable: true
+          description: Null only on the Admin's overview.
+          required: [counts, dueToday, overdue, open, recentComments]
+          properties:
+            counts: { $ref: "#/components/schemas/TaskStatusCounts" }
+            dueToday: { type: integer }
+            overdue: { type: integer }
+            open: { type: array, items: { $ref: "#/components/schemas/DashboardTask" } }
+            recentComments: { type: array, items: { $ref: "#/components/schemas/DashboardTaskComment" } }
+        clients:
+          type: object
+          nullable: true
+          required: [clientCount, weekEventCount, today, upcoming, byStage, unresolvedComments, latestComments]
+          properties:
+            clientCount: { type: integer }
+            weekEventCount: { type: integer, description: Events overlapping today .. the week's end (the lists are capped at 5). }
+            today: { type: array, items: { $ref: "#/components/schemas/DashboardEvent" } }
+            upcoming: { type: array, items: { $ref: "#/components/schemas/DashboardEvent" } }
+            byStage:
+              type: array
+              items: { type: object, required: [stageName, count], properties: { stageName: { type: string }, count: { type: integer } } }
+            unresolvedComments:
+              type: object
+              required: [received, inProgress]
+              properties: { received: { type: integer }, inProgress: { type: integer } }
+            latestComments: { type: array, items: { $ref: "#/components/schemas/DashboardComment" } }
+        firm:
+          type: object
+          nullable: true
+          required: [totals, tasksByStatus, week, overdueTasks, latestComments, team]
+          properties:
+            totals:
+              type: object
+              required: [clients, activeEvents, openTasks, overdueTasks, unresolvedComments, weekEvents, teamSize]
+              properties:
+                clients: { type: integer }
+                activeEvents: { type: integer }
+                openTasks: { type: integer }
+                overdueTasks: { type: integer }
+                unresolvedComments: { type: integer }
+                weekEvents: { type: integer }
+                teamSize: { type: integer, description: Active non-admin staff. }
+            tasksByStatus: { $ref: "#/components/schemas/TaskStatusCounts" }
+            week: { type: array, items: { $ref: "#/components/schemas/DashboardEvent" } }
+            overdueTasks: { type: array, items: { $ref: "#/components/schemas/DashboardTask" } }
+            latestComments: { type: array, items: { $ref: "#/components/schemas/DashboardComment" } }
+            team: { type: array, description: The busiest 5; the full list is /api/v1/dashboard/team., items: { $ref: "#/components/schemas/WorkloadRow" } }
+    CommentStatus:
+      type: string
+      enum: [received, in_progress, solved]
+    CalendarFeedLink:
+      type: object
+      nullable: true
+      required: [createdAt]
+      properties:
+        createdAt: { type: string, format: date-time }
+    PortalLink:
+      type: object
+      description: Staff view of a client's portal link. Never the token or its hash.
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        createdByName: { type: string, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+    PortalEvent:
+      type: object
+      description: Client-safe event. No description, team, template, staff names or version.
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        type: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        timeZone: { type: string }
+        location: { type: string, nullable: true }
+        state: { type: string }
+        stages: { type: array, items: { type: object, properties: { position: { type: integer }, name: { type: string } } } }
+        currentStagePosition: { type: integer }
+        stageCount: { type: integer }
+        updates: { type: array, description: Only on the single-event read. Client-visible stage notes., items: { type: object, properties: { stageName: { type: string }, note: { type: string, nullable: true }, createdAt: { type: string, format: date-time } } } }
+    PortalDashboard:
+      type: object
+      properties:
+        client: { type: object, properties: { businessName: { type: string }, logoUrl: { type: string, nullable: true }, timeZone: { type: string } } }
+        manager: { type: object, properties: { firstName: { type: string } } }
+        current: { allOf: [{ $ref: "#/components/schemas/PortalEvent" }], nullable: true }
+        upcoming: { type: array, items: { $ref: "#/components/schemas/PortalEvent" } }
+        recent: { type: array, items: { $ref: "#/components/schemas/PortalEvent" } }
+    PortalComment:
+      type: object
+      description: The client's view of their comment. No staff names.
+      properties:
+        id: { type: string, format: uuid }
+        eventId: { type: string, format: uuid, nullable: true }
+        eventTitle: { type: string, nullable: true }
+        body: { type: string }
+        status: { $ref: "#/components/schemas/CommentStatus" }
+        reply: { type: string, nullable: true }
+        repliedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    ClientComment:
+      type: object
+      description: Staff inbox view.
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        clientName: { type: string }
+        ownerId: { type: string, format: uuid }
+        eventId: { type: string, format: uuid, nullable: true }
+        eventTitle: { type: string, nullable: true }
+        body: { type: string }
+        status: { $ref: "#/components/schemas/CommentStatus" }
+        reply: { type: string, nullable: true }
+        repliedAt: { type: string, format: date-time, nullable: true }
+        repliedByName: { type: string, nullable: true }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Role:
+      type: string
+      description: |
+        admin -- everything, all data, the only role that assigns staff tasks.
+        social_media_manager / marketing_manager / project_manager -- the clients whose team they're on: their events, assets, calendars, portal and comments.
+        marketing_agent / developer / editor -- staff tasks only.
+      enum: [admin, social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor]
+    TimeZone:
+      type: string
+      maxLength: 64
+      description: A named IANA time zone ("Area/City" or "UTC"), e.g. `Asia/Kolkata`. Raw offsets like `+05:30` are refused. Defaults to the server's `DEFAULT_TIMEZONE` where optional.
+      example: Asia/Kolkata
+    Phone:
+      type: string
+      maxLength: 24
+      description: Digits, spaces, dashes, brackets and an optional leading `+`; 6-15 digits.
+      example: "+91 98765 43210"
+    Profile:
+      type: object
+      description: The signed-in user (GET /auth/me, and every session response).
+      required: [id, fullName, email, role, timeZone, phone, avatarUrl, active, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/Role" }
+        timeZone: { $ref: "#/components/schemas/TimeZone" }
+        phone: { type: string, nullable: true }
+        avatarUrl: { type: string, format: uri, nullable: true }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    UpdateOwnProfileRequest:
+      type: object
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 120 }
+        timeZone: { $ref: "#/components/schemas/TimeZone" }
+        phone: { allOf: [{ $ref: "#/components/schemas/Phone" }], nullable: true }
+        avatarUrl: { type: string, format: uri, maxLength: 2048, nullable: true, description: An absolute http(s) link. }
+    AuthSession:
+      type: object
+      required: [accessToken, refreshToken, expiresAt, profile]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresAt: { type: integer, description: Access-token expiry, Unix seconds. }
+        profile: { $ref: "#/components/schemas/Profile" }
+    UserAccount:
+      type: object
+      description: A staff account as the Admin sees it.
+      required: [id, fullName, email, role, timeZone, phone, avatarUrl, active, isOwner, createdAt, lastLoginAt, lastSeenAt]
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/Role" }
+        timeZone: { $ref: "#/components/schemas/TimeZone" }
+        phone: { type: string, nullable: true }
+        avatarUrl: { type: string, format: uri, nullable: true }
+        active: { type: boolean }
+        isOwner: { type: boolean, description: "True for the one Owner (the first Admin)." }
+        createdAt: { type: string, format: date-time }
+        lastLoginAt: { type: string, format: date-time, nullable: true, description: Last password sign-in; null until the first one. }
+        lastSeenAt: { type: string, format: date-time, nullable: true, description: "Last time they used HOK (any authenticated call; recorded at most every 5 minutes). Null = never. The web shows anything older than 45 days as not seen." }
+    ClientStatus:
+      type: string
+      description: "active <-> paused by a normal edit; archived only through POST /clients/{id}/archive (and back to active through /unarchive)."
+      enum: [active, paused, archived]
+    SocialAccount:
+      type: object
+      required: [platform, handle]
+      properties:
+        platform: { type: string, enum: [instagram, facebook, tiktok, youtube, linkedin, x, threads, pinterest, snapchat] }
+        handle: { type: string, maxLength: 200, description: "A handle (`@acme`, `acme.studio`, `company/acme`) or a full http(s) link." }
+      example: { platform: instagram, handle: "@acmebakery" }
+    ClientContact:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        phone: { allOf: [{ $ref: "#/components/schemas/Phone" }], nullable: true, description: Optional. }
+        email: { type: string, format: email, maxLength: 254, nullable: true, description: Optional; stored lower-case. }
+    ClientFields:
+      type: object
+      description: The editable profile fields (FR-CLI-02), shared by create and update. Optional text accepts `null` or `""` to clear.
+      properties:
+        businessName: { type: string, minLength: 1, maxLength: 160 }
+        logoUrl: { type: string, format: uri, maxLength: 2048, nullable: true, description: A full http(s) link to the logo image. }
+        industry: { type: string, maxLength: 80, nullable: true }
+        email: { type: string, format: email, maxLength: 254, nullable: true, description: The business's own email; stored lower-case. }
+        address: { type: string, maxLength: 500, nullable: true }
+        websites:
+          type: array
+          maxItems: 10
+          description: "Each `acme.com` is stored as `https://acme.com`; only http(s). Duplicates dropped. Replaces the whole list."
+          items: { type: string, maxLength: 2048 }
+        phones:
+          type: array
+          maxItems: 10
+          description: The business's numbers. The same number with different spacing is kept once. Replaces the whole list.
+          items: { $ref: "#/components/schemas/Phone" }
+        contacts:
+          type: array
+          maxItems: 20
+          description: People to talk to at the client, each with an optional phone and email. Replaces the whole list.
+          items: { $ref: "#/components/schemas/ClientContact" }
+        socialAccounts:
+          type: array
+          maxItems: 20
+          description: Accounts on known platforms; a platform may repeat (an unknown one is a 400). Exact duplicates dropped. Replaces the whole list.
+          items: { $ref: "#/components/schemas/SocialAccount" }
+        services:
+          type: array
+          maxItems: 20
+          description: Service labels, each up to 60 characters; trimmed, blanks and case-insensitive duplicates dropped. Replaces the whole list.
+          items: { type: string, maxLength: 60 }
+        contractStart: { type: string, format: date, nullable: true, description: "`YYYY-MM-DD`." }
+        contractEnd: { type: string, format: date, nullable: true, description: "`YYYY-MM-DD`, not before contractStart (`400 CLIENT_CONTRACT_DATES_INVALID`)." }
+        timeZone: { $ref: "#/components/schemas/TimeZone" }
+        notes: { type: string, maxLength: 5000, nullable: true, description: Internal only -- never shown on the client portal. }
+    CreateClientRequest:
+      allOf:
+        - $ref: "#/components/schemas/ClientFields"
+        - type: object
+          required: [businessName]
+          properties:
+            ownerId: { type: string, format: uuid, description: Admin only. Defaults to the caller. }
+    UpdateClientRequest:
+      allOf:
+        - $ref: "#/components/schemas/ClientFields"
+        - type: object
+          required: [version]
+          properties:
+            status: { type: string, enum: [active, paused] }
+            version: { type: integer, minimum: 1, description: The version you loaded. A stale one is `409 CLIENT_MODIFIED`. }
+    ClientVersionRequest:
+      type: object
+      properties:
+        version: { type: integer, minimum: 1, description: Optional; a stale one is `409 CLIENT_MODIFIED`. }
+    Client:
+      type: object
+      required:
+        [id, ownerId, ownerName, businessName, logoUrl, industry, email, address, websites, phones, contacts,
+         socialAccounts, services, contractStart, contractEnd, timeZone, notes, team, status, archivedAt, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        ownerName: { type: string }
+        businessName: { type: string }
+        logoUrl: { type: string, nullable: true }
+        industry: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        websites: { type: array, items: { type: string } }
+        phones: { type: array, items: { type: string } }
+        contacts: { type: array, items: { $ref: "#/components/schemas/ClientContact" } }
+        socialAccounts: { type: array, items: { $ref: "#/components/schemas/SocialAccount" } }
+        team:
+          type: array
+          description: Everyone assigned, lead first. `ownerId` / `ownerName` are the lead.
+          items:
+            type: object
+            required: [id, fullName, role, active, isLead]
+            properties:
+              id: { type: string, format: uuid }
+              fullName: { type: string }
+              role: { $ref: "#/components/schemas/Role" }
+              active: { type: boolean, description: "False for a deactivated account. Such a member can stay on a team, but can't be added or made the lead." }
+              isLead: { type: boolean }
+        services: { type: array, items: { type: string } }
+        contractStart: { type: string, format: date, nullable: true }
+        contractEnd: { type: string, format: date, nullable: true }
+        timeZone: { $ref: "#/components/schemas/TimeZone" }
+        notes: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/ClientStatus" }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer, description: Optimistic-lock token; send it back with the next write. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ClientSummary:
+      type: object
+      description: A list row -- the full client minus email, address, the lists, services, contract start and notes. `contactPerson` is the first contact's name.
+      required: [id, ownerId, ownerName, businessName, logoUrl, industry, contactPerson, status, timeZone, contractEnd, archivedAt, version, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        ownerName: { type: string }
+        businessName: { type: string }
+        logoUrl: { type: string, nullable: true }
+        industry: { type: string, nullable: true }
+        contactPerson: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/ClientStatus" }
+        timeZone: { $ref: "#/components/schemas/TimeZone" }
+        contractEnd: { type: string, format: date, nullable: true }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+    ClientEnvelope:
+      type: object
+      required: [client]
+      properties:
+        client: { $ref: "#/components/schemas/Client" }
+    StageTemplate:
+      type: object
+      required: [id, name, active, stages, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        active: { type: boolean }
+        stages:
+          type: array
+          items:
+            type: object
+            required: [id, position, name]
+            properties:
+              id: { type: string, format: uuid }
+              position: { type: integer, minimum: 1 }
+              name: { type: string }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    StageTemplateEnvelope:
+      type: object
+      required: [template]
+      properties:
+        template: { $ref: "#/components/schemas/StageTemplate" }
+    EventType:
+      type: string
+      enum: [shoot, campaign, meeting, content_posting, other]
+    EventState:
+      type: string
+      description: On top of its stage, any event can be cancelled or postponed (FR-EVT-04), and set back to active.
+      enum: [active, cancelled, postponed]
+    EventStage:
+      type: object
+      required: [id, position, name]
+      properties:
+        id: { type: string, format: uuid }
+        position: { type: integer, minimum: 1 }
+        name: { type: string }
+    EventSummary:
+      type: object
+      required: [id, clientId, clientName, ownerId, title, type, startsAt, endsAt, timeZone, location, state, templateName, currentStageId, currentStageName, currentStagePosition, stageCount, version]
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        clientName: { type: string }
+        ownerId: { type: string, format: uuid }
+        title: { type: string }
+        type: { $ref: "#/components/schemas/EventType" }
+        startsAt: { type: string, format: date-time, description: UTC instant. }
+        endsAt: { type: string, format: date-time }
+        timeZone: { $ref: "#/components/schemas/TimeZone" }
+        location: { type: string, nullable: true }
+        state: { $ref: "#/components/schemas/EventState" }
+        templateName: { type: string }
+        currentStageId: { type: string, format: uuid }
+        currentStageName: { type: string }
+        currentStagePosition: { type: integer }
+        stageCount: { type: integer }
+        version: { type: integer }
+    EventDetail:
+      allOf:
+        - $ref: "#/components/schemas/EventSummary"
+        - type: object
+          required: [clientStatus, description, assignedTeam, templateId, createdAt, updatedAt, stages, history, team]
+          properties:
+            clientStatus: { $ref: "#/components/schemas/ClientStatus" }
+            description: { type: string, nullable: true }
+            assignedTeam: { type: array, items: { type: string, format: uuid } }
+            templateId: { type: string, format: uuid, nullable: true }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+            stages: { type: array, items: { $ref: "#/components/schemas/EventStage" } }
+            history:
+              type: array
+              description: Newest first, at most 100. The first entry (fromStageId null) is the event's creation.
+              items:
+                type: object
+                required: [id, fromStageId, toStageId, note, visibleToClient, changedBy, changedByName, createdAt]
+                properties:
+                  id: { type: string, format: uuid }
+                  fromStageId: { type: string, format: uuid, nullable: true }
+                  toStageId: { type: string, format: uuid }
+                  note: { type: string, nullable: true }
+                  visibleToClient: { type: boolean }
+                  changedBy: { type: string, format: uuid, nullable: true }
+                  changedByName: { type: string, nullable: true }
+                  createdAt: { type: string, format: date-time }
+            team:
+              type: array
+              items:
+                type: object
+                required: [id, fullName]
+                properties:
+                  id: { type: string, format: uuid }
+                  fullName: { type: string }
+    PersonalEvent:
+      type: object
+      required: [id, ownerId, ownerName, clientId, clientName, title, startsAt, endsAt, timeZone, description, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        ownerName: { type: string }
+        clientId: { type: string, format: uuid, nullable: true }
+        clientName: { type: string, nullable: true }
+        title: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        timeZone: { $ref: "#/components/schemas/TimeZone" }
+        description: { type: string, nullable: true }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PersonalEventEnvelope:
+      type: object
+      required: [personalEvent]
+      properties:
+        personalEvent: { $ref: "#/components/schemas/PersonalEvent" }
+    CalendarItem:
+      type: object
+      description: "`kind: event` items also carry eventType, state, currentStageName, currentStagePosition, stageCount; `kind: personal` items carry only the common fields (fetch /personal-events/{id} for the description)."
+      required: [kind, id, title, startsAt, endsAt, timeZone, clientId, clientName, ownerId]
+      properties:
+        kind: { type: string, enum: [event, personal] }
+        id: { type: string, format: uuid }
+        title: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        timeZone: { $ref: "#/components/schemas/TimeZone" }
+        clientId: { type: string, format: uuid, nullable: true }
+        clientName: { type: string, nullable: true }
+        ownerId: { type: string, format: uuid }
+        eventType: { $ref: "#/components/schemas/EventType" }
+        state: { $ref: "#/components/schemas/EventState" }
+        currentStageName: { type: string }
+        currentStagePosition: { type: integer }
+        stageCount: { type: integer }
+    EventEnvelope:
+      type: object
+      required: [event]
+      properties:
+        event: { $ref: "#/components/schemas/EventDetail" }
+    AssetType:
+      type: string
+      enum: [photo, video, document, design, audio, other]
+    Asset:
+      type: object
+      required: [id, clientId, clientName, clientStatus, eventId, eventTitle, title, url, type, comment, preview, tags, createdBy, createdByName, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        clientName: { type: string }
+        clientStatus: { $ref: "#/components/schemas/ClientStatus" }
+        eventId: { type: string, format: uuid, nullable: true }
+        eventTitle: { type: string, nullable: true }
+        title: { type: string }
+        url: { type: string, description: An http(s) link. The platform stores links only, never files. }
+        type: { $ref: "#/components/schemas/AssetType" }
+        comment: { type: string, nullable: true }
+        preview:
+          type: object
+          nullable: true
+          description: "What the link points to (FR-AST-08), fetched by the API in the background after a save: public http(s) pages only, 4 s / 512 KB limits; YouTube via oEmbed. Null until fetched, or when the page has none."
+          properties: { title: { type: string, nullable: true }, description: { type: string, nullable: true }, imageUrl: { type: string, nullable: true }, siteName: { type: string, nullable: true } }
+        tags: { type: array, items: { type: string }, description: Sorted ignoring case. }
+        createdBy: { type: string, format: uuid, nullable: true }
+        createdByName: { type: string, nullable: true }
+        version: { type: integer, description: Optimistic-lock token; send it back on PATCH. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AssetEnvelope:
+      type: object
+      required: [asset]
+      properties:
+        asset: { $ref: "#/components/schemas/Asset" }
+    CreateAssetRequest:
+      type: object
+      required: [clientId, title, url, type]
+      properties:
+        clientId: { type: string, format: uuid }
+        title: { type: string, maxLength: 160 }
+        url: { type: string, maxLength: 2048, description: Must start with http:// or https://. }
+        type: { $ref: "#/components/schemas/AssetType" }
+        comment: { type: string, maxLength: 2000, nullable: true }
+        eventId: { type: string, format: uuid, nullable: true, description: One of the same client's events. }
+        tags: { type: array, maxItems: 10, items: { type: string, maxLength: 30 } }
+    UpdateAssetRequest:
+      type: object
+      required: [version]
+      properties:
+        title: { type: string, maxLength: 160 }
+        url: { type: string, maxLength: 2048 }
+        type: { $ref: "#/components/schemas/AssetType" }
+        comment: { type: string, maxLength: 2000, nullable: true }
+        eventId: { type: string, format: uuid, nullable: true }
+        tags: { type: array, maxItems: 10, items: { type: string, maxLength: 30 }, description: Replaces the whole set. }
+        version: { type: integer, minimum: 1 }
+    ClientTodoStatus:
+      type: string
+      enum: [todo, in_progress, done]
+    ClientTodoPriority:
+      type: string
+      enum: [low, medium, high, urgent]
+    ClientTodoFields:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000, nullable: true }
+        dueAt: { type: string, format: date-time, nullable: true, description: "With an offset or Z." }
+        priority: { $ref: "#/components/schemas/ClientTodoPriority" }
+        eventId: { type: string, format: uuid, nullable: true, description: "One of the client's events." }
+    ClientTodo:
+      type: object
+      required: [id, clientId, eventId, eventTitle, title, description, dueAt, priority, status, completedAt, createdBy, createdByName, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        eventId: { type: string, format: uuid, nullable: true }
+        eventTitle: { type: string, nullable: true }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        dueAt: { type: string, format: date-time, nullable: true, description: UTC instant. }
+        priority: { $ref: "#/components/schemas/ClientTodoPriority" }
+        status: { $ref: "#/components/schemas/ClientTodoStatus" }
+        completedAt: { type: string, format: date-time, nullable: true }
+        createdBy: { type: string, format: uuid, nullable: true }
+        createdByName: { type: string, nullable: true }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ClientTodoEnvelope:
+      type: object
+      required: [todo]
+      properties:
+        todo: { $ref: "#/components/schemas/ClientTodo" }
+    StaffTaskStatus:
+      type: string
+      description: "FR-TSK-03: To Do -> In Progress -> Done, plus Blocked."
+      enum: [todo, in_progress, blocked, done]
+    StaffTaskPriority:
+      type: string
+      enum: [low, medium, high, urgent]
+    StaffTaskUpdateKind:
+      type: string
+      enum: [created, status, comment, reassigned, reopened]
+    ReferenceLink:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, maxLength: 2048, description: A full http(s) link. }
+        label: { type: string, maxLength: 120, nullable: true }
+    StaffTaskFields:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 160 }
+        description: { type: string, maxLength: 5000, nullable: true }
+        clientId: { type: string, format: uuid, nullable: true }
+        eventId: { type: string, format: uuid, nullable: true }
+        dueAt: { type: string, format: date-time, nullable: true, description: "With an offset or Z." }
+        priority: { $ref: "#/components/schemas/StaffTaskPriority" }
+        rawFilesUrl: { type: string, maxLength: 2048, nullable: true, description: "Editor tasks: the raw files (Google Drive) link. Required for an editor." }
+        referenceUrl: { type: string, maxLength: 2048, nullable: true, description: "Editor tasks: an example of the desired style." }
+        script: { type: string, maxLength: 20000, nullable: true, description: "Editor tasks: the script." }
+        referenceLinks: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/ReferenceLink" } }
+    StaffTaskSummary:
+      type: object
+      required: [id, title, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, clientId, clientName, eventId, hasEditorBrief, completedAt, version, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { $ref: "#/components/schemas/StaffTaskStatus" }
+        priority: { $ref: "#/components/schemas/StaffTaskPriority" }
+        dueAt: { type: string, format: date-time, nullable: true, description: UTC instant. }
+        assigneeId: { type: string, format: uuid }
+        assigneeName: { type: string }
+        assigneeRole: { $ref: "#/components/schemas/Role" }
+        clientId: { type: string, format: uuid, nullable: true }
+        clientName: { type: string, nullable: true }
+        eventId: { type: string, format: uuid, nullable: true }
+        hasEditorBrief: { type: boolean }
+        completedAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+    StaffTaskDetail:
+      type: object
+      required: [id, title, description, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedBy, assignedByName, clientId, clientName, eventId, eventTitle, rawFilesUrl, referenceUrl, script, referenceLinks, completedAt, version, createdAt, updatedAt, updates]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/StaffTaskStatus" }
+        priority: { $ref: "#/components/schemas/StaffTaskPriority" }
+        dueAt: { type: string, format: date-time, nullable: true }
+        assigneeId: { type: string, format: uuid }
+        assigneeName: { type: string }
+        assigneeRole: { $ref: "#/components/schemas/Role" }
+        assignedBy: { type: string, format: uuid, nullable: true }
+        assignedByName: { type: string, nullable: true }
+        clientId: { type: string, format: uuid, nullable: true }
+        clientName: { type: string, nullable: true }
+        eventId: { type: string, format: uuid, nullable: true }
+        eventTitle: { type: string, nullable: true }
+        rawFilesUrl: { type: string, nullable: true }
+        referenceUrl: { type: string, nullable: true }
+        script: { type: string, nullable: true }
+        referenceLinks: { type: array, items: { $ref: "#/components/schemas/ReferenceLink" } }
+        completedAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        updates:
+          type: array
+          description: The timeline, newest first, at most 100.
+          items:
+            type: object
+            required: [id, kind, authorId, authorName, fromStatus, toStatus, fromAssigneeName, toAssigneeName, comment, createdAt]
+            properties:
+              id: { type: string, format: uuid }
+              kind: { $ref: "#/components/schemas/StaffTaskUpdateKind" }
+              authorId: { type: string, format: uuid, nullable: true }
+              authorName: { type: string, nullable: true }
+              fromStatus: { type: string, enum: [todo, in_progress, blocked, done], nullable: true }
+              toStatus: { type: string, enum: [todo, in_progress, blocked, done], nullable: true }
+              fromAssigneeName: { type: string, nullable: true }
+              toAssigneeName: { type: string, nullable: true }
+              comment: { type: string, nullable: true }
+              createdAt: { type: string, format: date-time }
+    StaffTaskEnvelope:
+      type: object
+      required: [task]
+      properties:
+        task: { $ref: "#/components/schemas/StaffTaskDetail" }
+    NotificationType:
+      type: string
+      description: "The trigger (FR-NTF-03). Live today: client_reassigned. The task triggers go live with the M7 wiring, client_comment with M8."
+      enum: [client_reassigned, task_assigned, task_status_changed, task_commented, client_comment, event_reminder, task_due_reminder]
+    Notification:
+      type: object
+      required: [id, type, title, body, url, data, actorName, readAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, description: "A NotificationType." }
+        title: { type: string, maxLength: 120 }
+        body: { type: string, nullable: true, maxLength: 300 }
+        url: { type: string, nullable: true, description: "A hok-web path (always starts with /) to open on click." }
+        data: { type: object, additionalProperties: { type: string }, description: Entity ids (e.g. clientId). }
+        actorName: { type: string, nullable: true, description: Who caused it. }
+        readAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    NotificationList:
+      type: object
+      required: [notifications, total, limit, offset]
+      properties:
+        notifications: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+    UnreadCount:
+      type: object
+      required: [count, reminders]
+      properties:
+        count: { type: integer }
+        reminders: { type: integer, description: Unread reminders among them (event_reminder, task_due_reminder); the bell plays its alert animation while > 0. }
+    NotificationPreference:
+      type: object
+      required: [type, label, description, push, inApp]
+      properties:
+        type: { $ref: "#/components/schemas/NotificationType" }
+        label: { type: string }
+        description: { type: string }
+        push: { type: boolean, description: Web push on this trigger (false whenever inApp is false). }
+        inApp: { type: boolean, description: Bell entry on this trigger. }
+    NotificationPreferences:
+      type: object
+      required: [preferences]
+      properties:
+        preferences: { type: array, items: { $ref: "#/components/schemas/NotificationPreference" } }
+    UpdateNotificationPreferencesRequest:
+      type: object
+      required: [preferences]
+      properties:
+        preferences:
+          type: array
+          items:
+            type: object
+            required: [type, push, inApp]
+            properties:
+              type: { $ref: "#/components/schemas/NotificationType" }
+              push: { type: boolean }
+              inApp: { type: boolean }
+    PushConfig:
+      type: object
+      required: [enabled, publicKey]
+      properties:
+        enabled: { type: boolean }
+        publicKey: { type: string, nullable: true, description: VAPID public key (base64url) for PushManager.subscribe. }
+    PushSubscriptionRequest:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint: { type: string, format: uri, description: "https only." }
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string }
+            auth: { type: string }
+        userAgent: { type: string, nullable: true, maxLength: 400 }
+    PushDevice:
+      type: object
+      required: [id, userAgent, createdAt, lastUsedAt]
+      properties:
+        id: { type: string, format: uuid }
+        userAgent: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+    PushDevices:
+      type: object
+      required: [devices]
+      properties:
+        devices: { type: array, items: { $ref: "#/components/schemas/PushDevice" } }
+    PushTestResult:
+      type: object
+      required: [sent, failed, removed]
+      properties:
+        sent: { type: integer }
+        failed: { type: integer }
+        removed: { type: integer, description: Dead devices deleted on the way. }
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error: { type: string, description: Human-readable message (free to change). }
+        code: { type: string, description: Stable error code -- the contract. }
+        details: { description: Optional structured details (e.g. validation issues). }
+        requestId: { type: string, description: Correlates with the server logs. }
