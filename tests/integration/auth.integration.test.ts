@@ -230,6 +230,25 @@ describe("/auth endpoints (integration)", () => {
     expect(p?.role).toBe("editor");
   });
 
+  it("own password change needs the current password and ends every session (security audit run 1)", async () => {
+    const u = await createFixtureUser("editor", "IT Password Change");
+    createdUserIds.push(u.id);
+    const login = async () => (await request(app).post("/api/v1/auth/login").send({ email: u.email, password: u.password })).body as { accessToken: string; refreshToken: string };
+    const a = await login();
+    const b = await login();
+
+    const wrong = await request(app).post("/api/v1/auth/password-update").set("Authorization", `Bearer ${a.accessToken}`).send({ currentPassword: "nope", newPassword: "New-Pass-123" });
+    expect(wrong.status).toBe(400);
+    expect((wrong.body as { code: string }).code).toBe("AUTH_CURRENT_PASSWORD_INVALID");
+
+    const ok = await request(app).post("/api/v1/auth/password-update").set("Authorization", `Bearer ${a.accessToken}`).send({ currentPassword: u.password, newPassword: "New-Pass-123" });
+    expect(ok.status).toBe(204);
+    // Every old session is gone (the web app signs the current device back in with the new password).
+    expect((await request(app).post("/api/v1/auth/refresh").send({ refreshToken: b.refreshToken })).status).toBe(401);
+    expect((await request(app).post("/api/v1/auth/refresh").send({ refreshToken: a.refreshToken })).status).toBe(401);
+    expect((await request(app).post("/api/v1/auth/login").send({ email: u.email, password: "New-Pass-123" })).status).toBe(200);
+  });
+
   it("password-reset-request answers 204 whether or not the email exists", async () => {
     const res = await request(app).post("/api/v1/auth/password-reset-request").send({ email: `nobody-${Date.now()}@hok.test` });
     expect(res.status).toBe(204);

@@ -1,3 +1,5 @@
+import { sql } from "drizzle-orm";
+import { db } from "../database/drizzle-client";
 import { supabaseClient, supabaseAuthClient } from "../database/supabase-client";
 import { BadRequestError, ConflictError, InternalError, UnauthorizedError } from "../errors/app-error";
 import { ERROR_CODES } from "../errors/error-codes";
@@ -61,6 +63,23 @@ export class SupabaseAuthProvider implements AuthProvider {
   async setPassword(userId: string, newPassword: string): Promise<void> {
     const { error } = await supabaseClient.auth.admin.updateUserById(userId, { password: newPassword });
     if (error) throw new BadRequestError(error.message);
+  }
+
+  async verifyPassword(email: string, password: string): Promise<boolean> {
+    const { data, error } = await supabaseAuthClient.auth.signInWithPassword({ email, password });
+    if (error || !data.session) return false;
+    await this.signOut(data.session.access_token); // the check must not leave an extra session behind
+    return true;
+  }
+
+  async revokeAllSessions(userId: string): Promise<void> {
+    // GoTrue has no admin "sign out user by id" call; deleting the sessions ends them (their
+    // refresh tokens cascade, and getUser rejects access tokens whose session is gone).
+    try {
+      await db.execute(sql`delete from auth.sessions where user_id = ${userId}`);
+    } catch (error) {
+      throw new InternalError("Failed to sign out the user's sessions", error);
+    }
   }
 
   async exchangeCodeForSession(code: string): Promise<AuthSession> {

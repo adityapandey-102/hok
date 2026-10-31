@@ -39,6 +39,10 @@ export interface AuthProvider {
   requestPasswordReset(email: string, redirectTo: string): Promise<void>;
   /** Admin-level: sets a user's password directly, no old-password check (used for both self-update and Admin-issued resets). */
   setPassword(userId: string, newPassword: string): Promise<void>;
+  /** True when the password is right for the email. Signs out the throwaway session the check creates. */
+  verifyPassword(email: string, password: string): Promise<boolean>;
+  /** Ends every session of this user (all devices), e.g. after an Admin resets their password. */
+  revokeAllSessions(userId: string): Promise<void>;
   exchangeCodeForSession(code: string): Promise<AuthSession>;
   createUser(user: NewAuthUser): Promise<string>;
   banUser(userId: string): Promise<void>;

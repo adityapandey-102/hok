@@ -1,4 +1,6 @@
 import { env } from "../../../config/env";
+import { BadRequestError } from "../../../common/errors/app-error";
+import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { assertBootstrapKey, assertNoAdminExists } from "../domain/bootstrap.rules";
 import { pickOwnProfileChanges } from "../domain/own-profile.rules";
 import { toAuthSessionResponseDto } from "../api/auth-session.presenter";
@@ -84,8 +86,19 @@ export class AuthService {
     await this.authRepository.requestPasswordReset(dto.email, redirectTo);
   }
 
+  /**
+   * Own password change (security audit run 1): a token alone is not enough, the current
+   * password must match. Afterwards every session ends (GoTrue already does this on a password
+   * change; revoking here keeps it true on any version), and the web app signs this device
+   * straight back in with the new password.
+   */
   async updatePassword(userId: string, dto: PasswordUpdateDto): Promise<void> {
+    const profile = await this.authRepository.getProfile(userId);
+    if (!(await this.authRepository.verifyPassword(profile.email, dto.currentPassword))) {
+      throw new BadRequestError("Your current password is not correct.", ERROR_CODES.AUTH_CURRENT_PASSWORD_INVALID);
+    }
     await this.authRepository.updatePassword(userId, dto.newPassword);
+    await this.authRepository.revokeAllSessions(userId);
     await this.audit.record({ action: AUDIT_ACTIONS.AUTH_PASSWORD_CHANGED, entityType: AUDIT_ENTITIES.USER, entityId: userId });
   }
 

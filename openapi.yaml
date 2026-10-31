@@ -289,18 +289,22 @@ paths:
       tags: [Auth]
       summary: Set the caller's own new password
       security: [{ bearerAuth: [] }]
-      description: Rate-limited.
+      description: |
+        Rate-limited. Needs the current password (`400 AUTH_CURRENT_PASSWORD_INVALID`
+        when wrong). A change ends every session of the account, this one included;
+        sign in again with the new password.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [newPassword]
+              required: [currentPassword, newPassword]
               properties:
-                newPassword: { type: string, minLength: 8 }
+                currentPassword: { type: string, minLength: 1, maxLength: 200 }
+                newPassword: { type: string, minLength: 8, maxLength: 200 }
       responses:
-        "204": { description: Password changed. }
+        "204": { description: Password changed; all sessions ended. }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/RateLimited" }

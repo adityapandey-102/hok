@@ -26,6 +26,8 @@ export interface AuthRepositoryPort {
   signOut(accessToken: string): Promise<void>;
   requestPasswordReset(email: string, redirectTo: string): Promise<void>;
   updatePassword(userId: string, newPassword: string): Promise<void>;
+  verifyPassword(email: string, password: string): Promise<boolean>;
+  revokeAllSessions(userId: string): Promise<void>;
   exchangeCodeForSession(code: string): Promise<AuthSession>;
   getProfile(userId: string): Promise<Profile>;
   recordLogin(userId: string): Promise<void>;

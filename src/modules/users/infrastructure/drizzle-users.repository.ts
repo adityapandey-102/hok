@@ -121,6 +121,10 @@ export class DrizzleUsersRepository implements UsersRepositoryPort {
     await this.authProvider.setPassword(id, password);
   }
 
+  revokeSessions(id: string): Promise<void> {
+    return this.authProvider.revokeAllSessions(id);
+  }
+
   async banAuthUser(id: string): Promise<void> {
     await this.authProvider.banUser(id);
   }

@@ -67,7 +67,18 @@ class FakeAuthRepository implements AuthRepositoryPort {
   requestPasswordReset(): Promise<void> {
     return Promise.resolve();
   }
-  updatePassword(): Promise<void> {
+  passwordUpdates: string[] = [];
+  revokedAll: string[] = [];
+  currentPassword = "Current-123";
+  updatePassword(userId: string): Promise<void> {
+    this.passwordUpdates.push(userId);
+    return Promise.resolve();
+  }
+  verifyPassword(_email: string, password: string): Promise<boolean> {
+    return Promise.resolve(password === this.currentPassword);
+  }
+  revokeAllSessions(userId: string): Promise<void> {
+    this.revokedAll.push(userId);
     return Promise.resolve();
   }
   exchangeCodeForSession(): Promise<AuthTokens> {
@@ -132,6 +143,20 @@ describe("AuthService", () => {
         code: "AUTH_BOOTSTRAP_ALREADY_DONE",
       });
       expect(repo.createdAdmins).toHaveLength(0);
+    });
+  });
+
+  describe("updatePassword (security audit run 1)", () => {
+    it("refuses a wrong current password and changes nothing", async () => {
+      await expect(service.updatePassword("u1", { currentPassword: "wrong", newPassword: "New-12345" })).rejects.toMatchObject({ code: "AUTH_CURRENT_PASSWORD_INVALID" });
+      expect(repo.passwordUpdates).toEqual([]);
+      expect(repo.revokedAll).toEqual([]);
+    });
+
+    it("with the right current password, changes it and ends every session", async () => {
+      await service.updatePassword("u1", { currentPassword: repo.currentPassword, newPassword: "New-12345" });
+      expect(repo.passwordUpdates).toEqual(["u1"]);
+      expect(repo.revokedAll).toEqual(["u1"]);
     });
   });
 

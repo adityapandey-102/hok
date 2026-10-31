@@ -75,6 +75,14 @@ export class DrizzleAuthRepository implements AuthRepositoryPort {
     await this.authProvider.setPassword(userId, newPassword);
   }
 
+  verifyPassword(email: string, password: string): Promise<boolean> {
+    return this.authProvider.verifyPassword(email, password);
+  }
+
+  revokeAllSessions(userId: string): Promise<void> {
+    return this.authProvider.revokeAllSessions(userId);
+  }
+
   async exchangeCodeForSession(code: string): Promise<AuthSession> {
     return this.authProvider.exchangeCodeForSession(code);
   }

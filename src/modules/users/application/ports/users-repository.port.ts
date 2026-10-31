@@ -38,6 +38,8 @@ export interface UsersRepositoryPort {
   createUser(record: NewUserRecord): Promise<string>;
   updateProfile(id: string, updates: ProfileUpdate): Promise<void>;
   setPassword(id: string, password: string): Promise<void>;
+  /** Ends every session of the user (all devices). */
+  revokeSessions(id: string): Promise<void>;
   banAuthUser(id: string): Promise<void>;
   unbanAuthUser(id: string): Promise<void>;
   /** Removes every web-push device of the account (on deactivation). */

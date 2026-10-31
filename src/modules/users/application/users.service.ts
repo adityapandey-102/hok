@@ -15,6 +15,7 @@ import { toUserResponseDto } from "../api/user.presenter";
 import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "../../../common/audit/audit-actions";
 import { auditLogger as defaultAuditLogger } from "../../../common/audit/drizzle-audit-logger";
 import type { AuditLogger } from "../../../common/audit/audit-logger";
+import { logger } from "../../../common/logger/logger";
 import type { UserAccountEntity } from "../domain/user-account.entity";
 import type {
   UsersRepositoryPort,
@@ -92,7 +93,15 @@ export class UsersService {
 
     const password = generatePassword(target.fullName);
     await this.usersRepository.setPassword(targetId, password);
-    await this.audit.record({ action: AUDIT_ACTIONS.USER_PASSWORD_REGENERATED, entityType: AUDIT_ENTITIES.USER, entityId: targetId });
+    // A reset means the old password may be known to someone else: end every session the
+    // user had (security audit run 1). The new password is already set, so a failure here is
+    // logged and audited, not a reason to hide the new password from the Admin.
+    let sessionsRevoked = true;
+    await this.usersRepository.revokeSessions(targetId).catch((error: unknown) => {
+      sessionsRevoked = false;
+      logger.error({ err: error, userId: targetId }, "Password reset: could not sign the user out of other sessions");
+    });
+    await this.audit.record({ action: AUDIT_ACTIONS.USER_PASSWORD_REGENERATED, entityType: AUDIT_ENTITIES.USER, entityId: targetId, metadata: { sessionsRevoked } });
     return { password };
   }
 

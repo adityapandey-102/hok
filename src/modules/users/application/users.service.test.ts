@@ -66,6 +66,11 @@ class FakeUsersRepository implements UsersRepositoryPort {
     this.passwords.push({ id, password });
     return Promise.resolve();
   }
+  revoked: string[] = [];
+  revokeSessions(id: string): Promise<void> {
+    this.revoked.push(id);
+    return Promise.resolve();
+  }
   banAuthUser(id: string): Promise<void> {
     this.banned.push(id);
     return Promise.resolve();
@@ -149,6 +154,8 @@ describe("UsersService", () => {
       expect(password).toMatch(/^Meera-/);
       expect(repo.passwords).toEqual([{ id: "t", password }]);
       expect(audit.events.map((e) => e.action)).toContain(AUDIT_ACTIONS.USER_PASSWORD_REGENERATED);
+      // The reset ends every session the person had (security audit run 1).
+      expect(repo.revoked).toEqual(["t"]);
     });
 
     it("refuses your own account and a signed-in Admin's (USER_PASSWORD_SELF_MANAGED)", async () => {
