@@ -5,6 +5,7 @@ import { supabaseClient, supabaseAuthClient } from "../database/supabase-client"
 import { BadRequestError, ConflictError, InternalError, ServiceUnavailableError, UnauthorizedError } from "../errors/app-error";
 import { ERROR_CODES } from "../errors/error-codes";
 import type { AuthProvider, AuthSession, NewAuthUser } from "./auth-provider";
+import { tokenCache } from "./token-cache";
 
 function toAuthSession(session: {
   user: { id: string };
@@ -60,15 +61,19 @@ export class SupabaseAuthProvider implements AuthProvider {
 
   async signOut(accessToken: string): Promise<void> {
     // "local": only this device's session ends; the person stays signed in elsewhere (review 2026-10-22).
+    tokenCache.dropToken(accessToken);
     await supabaseClient.auth.admin.signOut(accessToken, "local").catch(() => {
       // Best-effort: a token that's already invalid/expired is not an error.
     });
   }
 
   async verifyAccessToken(token: string): Promise<{ userId: string } | null> {
+    const cached = tokenCache.get(token);
+    if (cached) return { userId: cached };
     const { data, error } = await supabaseClient.auth.getUser(token);
     throwIfUpstream(error);
     if (error || !data.user) return null;
+    tokenCache.set(token, data.user.id);
     return { userId: data.user.id };
   }
 
@@ -90,6 +95,7 @@ export class SupabaseAuthProvider implements AuthProvider {
     // refresh tokens cascade, and getUser rejects access tokens whose session is gone).
     try {
       await db.execute(sql`delete from auth.sessions where user_id = ${userId}`);
+      tokenCache.dropUser(userId); // after the delete, so a request in between cannot re-cache a dying token
     } catch (error) {
       throw new InternalError("Failed to sign out the user's sessions", error);
     }

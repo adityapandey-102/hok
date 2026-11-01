@@ -1257,7 +1257,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: search, in: query, description: Name, case-insensitive (max 80)., schema: { type: string, maxLength: 80 } }
-        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor] } }
+        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor, content_writer] } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
@@ -1368,7 +1368,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: search, in: query, description: Name, case-insensitive (max 80)., schema: { type: string, maxLength: 80 } }
-        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor] } }
+        - { name: role, in: query, schema: { type: string, enum: [social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor, content_writer] } }
         - { name: status, in: query, schema: { type: string, enum: [working, idle] } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
@@ -2733,8 +2733,8 @@ components:
       description: |
         admin -- everything, all data, the only role that assigns staff tasks.
         social_media_manager / marketing_manager / project_manager -- the clients whose team they're on: their events, assets, calendars, portal and comments.
-        marketing_agent / developer / editor -- staff tasks only.
-      enum: [admin, social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor]
+        marketing_agent / developer / editor / content_writer -- staff tasks only.
+      enum: [admin, social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor, content_writer]
     TimeZone:
       type: string
       maxLength: 64

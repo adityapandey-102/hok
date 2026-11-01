@@ -75,7 +75,7 @@ function check(label, actual, expected) {
   console.log(`${pass ? "PASS" : "FAIL"}  ${label}  (expected ${expected}, got ${actual})`);
 }
 
-const NON_ADMIN_ROLES = ["social_media_manager", "marketing_manager", "project_manager", "marketing_agent", "developer", "editor"];
+const NON_ADMIN_ROLES = ["social_media_manager", "marketing_manager", "project_manager", "marketing_agent", "developer", "editor", "content_writer"];
 
 async function main() {
   const stamp = Date.now();
@@ -132,7 +132,7 @@ async function main() {
   // revokes the editor's live sessions, and these checks need that token.
   const smm = staff.social_media_manager;
   const mm = staff.marketing_manager;
-  const TASK_ONLY = ["marketing_agent", "developer", "editor"];
+  const TASK_ONLY = ["marketing_agent", "developer", "editor", "content_writer"];
   const newClient = (name, extra = {}) => JSON.stringify({ businessName: `RBAC ${name} ${stamp}`, ...extra });
 
   for (const [role, token] of everyone) {
@@ -167,7 +167,7 @@ async function main() {
 
   // One client (the SMM's), every role, every action. Admin acts last so versions stay predictable.
   const cid = smmClient.id;
-  const readExpect = { admin: 200, social_media_manager: 200, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  const readExpect = { admin: 200, social_media_manager: 200, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403, content_writer: 403 };
   for (const [role, token] of everyone) {
     check(`GET /clients/:id (SMM's) as ${role} -> ${readExpect[role]}`, (await req(`/clients/${cid}`, {}, token)).status, readExpect[role]);
   }
@@ -239,7 +239,7 @@ async function main() {
   console.log("\n--- events (admin: all; SMM / MM: their clients' events, others' are 404; task-only: 403) ---");
   const evClient = (await req("/clients", { method: "POST", body: newClient("events-client") }, smm.token)).body?.client;
   const evBody = JSON.stringify({ clientId: evClient?.id, templateId: tplId, title: `RBAC event ${stamp}`, type: "shoot", startsAt: "2026-12-01T10:00:00+05:30", endsAt: "2026-12-01T12:00:00+05:30" });
-  const evCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  const evCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403, content_writer: 403 };
   let ev = null;
   for (const [role, token] of everyone) {
     const r = await req("/events", { method: "POST", body: evBody }, token);
@@ -337,7 +337,7 @@ async function main() {
 
   console.log("\n--- portal links + client comments (admin: all; SMM / MM: own clients, others' 404; task-only: 403; public: token only) ---");
   const porClient = (await req("/clients", { method: "POST", body: newClient("portal-client") }, smm.token)).body?.client;
-  const linkExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  const linkExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403, content_writer: 403 };
   let porToken = null;
   for (const [role, token] of everyone) {
     const r = await req(`/portal-links/${porClient?.id}`, { method: "POST" }, token);
@@ -353,7 +353,7 @@ async function main() {
     const listExpect = TASK_ONLY.includes(role) ? 403 : 200;
     check(`GET /client-comments as ${role} -> ${listExpect}`, (await req("/client-comments", {}, token)).status, listExpect);
     check(`GET /client-comments/counts as ${role} -> ${listExpect}`, (await req("/client-comments/counts", {}, token)).status, listExpect);
-    const oneExpect = { admin: 200, social_media_manager: 200, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 }[role];
+    const oneExpect = { admin: 200, social_media_manager: 200, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403, content_writer: 403 }[role];
     check(`GET /client-comments/:id (SMM's) as ${role} -> ${oneExpect}`, (await req(`/client-comments/${commentId}`, {}, token)).status, oneExpect);
   }
   for (const [role, token] of everyone) {
@@ -373,7 +373,7 @@ async function main() {
   console.log("\n--- assets (admin: all; SMM / MM: their clients' assets, others' are 404; task-only: 403) ---");
   const astClient = (await req("/clients", { method: "POST", body: newClient("assets-client") }, smm.token)).body?.client;
   const astBody = JSON.stringify({ clientId: astClient?.id, title: `RBAC asset ${stamp}`, url: "https://drive.google.com/drive/folders/rbac", type: "photo", tags: ["rbac"] });
-  const astCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  const astCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403, content_writer: 403 };
   let asset = null;
   for (const [role, token] of everyone) {
     const r = await req("/assets", { method: "POST", body: astBody }, token);
@@ -412,7 +412,7 @@ async function main() {
   console.log("\n--- client to-dos (admin: all; SMM / MM: their clients' to-dos, others' are 404; task-only: 403) ---");
   const tdClient = (await req("/clients", { method: "POST", body: newClient("todos-client") }, smm.token)).body?.client;
   const tdBody = JSON.stringify({ title: `RBAC todo ${stamp}`, priority: "high", dueAt: "2031-01-01T10:00:00Z" });
-  const tdCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403 };
+  const tdCreateExpect = { admin: 201, social_media_manager: 201, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403, content_writer: 403 };
   let todo = null;
   for (const [role, token] of everyone) {
     const r = await req(`/clients/${tdClient?.id}/todos`, { method: "POST", body: tdBody }, token);
@@ -457,7 +457,7 @@ async function main() {
   const taskRes = await req("/staff-tasks", { method: "POST", body: taskBody() }, admin.token);
   check("POST /staff-tasks (to the editor) as admin -> 201", taskRes.status, 201);
   const tid = taskRes.body?.task?.id;
-  const taskReadExpect = { admin: 200, social_media_manager: 404, marketing_manager: 404, project_manager: 404, marketing_agent: 404, developer: 404, editor: 200 };
+  const taskReadExpect = { admin: 200, social_media_manager: 404, marketing_manager: 404, project_manager: 404, marketing_agent: 404, developer: 404, editor: 200, content_writer: 404 };
   for (const [role, token] of everyone) {
     check(`GET /staff-tasks/:id (editor's) as ${role} -> ${taskReadExpect[role]}`, (await req(`/staff-tasks/${tid}`, {}, token)).status, taskReadExpect[role]);
   }
@@ -520,7 +520,7 @@ async function main() {
   for (const [role, token] of everyone) {
     const s = await req("/search?q=ab", {}, token);
     check(`GET /search as ${role} -> 200`, s.status, 200);
-    const taskOnly = ["marketing_agent", "developer", "editor"].includes(role);
+    const taskOnly = ["marketing_agent", "developer", "editor", "content_writer"].includes(role);
     check(`  ${role}: clients group ${taskOnly ? "hidden" : "present"}`, s.body?.groups?.clients === null, taskOnly);
   }
 

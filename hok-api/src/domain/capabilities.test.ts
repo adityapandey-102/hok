@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CAPABILITIES, getCapabilityScope, hasCapability, isScopedToOwnRecords, type Capability } from "./capabilities";
 import { ROLES, isClientManager, type Role } from "./roles";
 
-const TASK_ONLY: Role[] = ["marketing_agent", "developer", "editor"];
+const TASK_ONLY: Role[] = ["marketing_agent", "developer", "editor", "content_writer"];
 const MANAGERS: Role[] = ["social_media_manager", "marketing_manager"];
 
 const CLIENT_SIDE: Capability[] = [

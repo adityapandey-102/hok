@@ -55,6 +55,7 @@ Docs:
 | Marketing Agent | **Staff tasks only** |
 | Developer | Staff tasks only |
 | Editor | Staff tasks only (editor tasks carry raw files link, reference link, script) |
+| Content Writer | Staff tasks only (writing tasks: description and reference links; added 2026-11-01) |
 | Client (external) | Portal via generated link, no account |
 
 ## 4. Current status

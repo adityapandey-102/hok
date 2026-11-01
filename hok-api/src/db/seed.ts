@@ -48,6 +48,7 @@ const STAFF: { fullName: string; email: string; role: Role; timeZone: string }[]
   { fullName: "Neha Joshi", email: "neha.agent@hok.test", role: "marketing_agent", timeZone: "Asia/Kolkata" },
   { fullName: "Arjun Das", email: "arjun.dev@hok.test", role: "developer", timeZone: "Asia/Kolkata" },
   { fullName: "Meera Nair", email: "meera.editor@hok.test", role: "editor", timeZone: "Asia/Kolkata" },
+  { fullName: "Isha Verma", email: "isha.writer@hok.test", role: "content_writer", timeZone: "Asia/Kolkata" },
 ];
 
 async function seedStaff(): Promise<void> {
@@ -344,6 +345,7 @@ interface SeedTask {
 const TASKS: SeedTask[] = [
   { assigneeEmail: "meera.editor@hok.test", title: "Edit the Chai Point monthly reel", priority: "high", dueInDays: 2, path: ["in_progress"], client: "Chai Point Cafe", event: "Monthly reels", comments: [{ byAdmin: false, text: "First cut by tomorrow evening." }], editor: { rawFilesUrl: "https://drive.google.com/drive/folders/chai-point-raw", referenceUrl: "https://www.instagram.com/reel/example-style", script: "0-3s: steam rising from a fresh cup.\n3-8s: barista pouring, slow motion.\n8-15s: customers laughing, logo end card." } },
   { assigneeEmail: "meera.editor@hok.test", title: "Colour-grade the Desert Rose spa shoot", priority: "medium", dueInDays: -1, path: ["in_progress", "blocked"], client: "Desert Rose Spa", comments: [{ byAdmin: false, text: "Blocked: half the RAW files are missing from the folder." }, { byAdmin: true, text: "Asked Sara to re-upload them today." }], editor: { rawFilesUrl: "https://drive.google.com/drive/folders/desert-rose-raw" } },
+  { assigneeEmail: "isha.writer@hok.test", title: "Write 5 captions for the Chai Point monthly reels", priority: "medium", dueInDays: 3, path: ["in_progress"], client: "Chai Point Cafe", comments: [{ byAdmin: true, text: "Tone: warm and playful. Use the brand hashtags from the folder." }] },
   { assigneeEmail: "meera.editor@hok.test", title: "Cut a 15s teaser for Urban Threads", priority: "low", dueInDays: -5, path: ["in_progress", "done"], client: "Urban Threads", editor: { rawFilesUrl: "https://drive.google.com/drive/folders/urban-threads-raw", referenceUrl: "https://youtu.be/example-teaser", script: "Fast cuts on the beat; end on the new collection logo." } },
   { assigneeEmail: "meera.editor@hok.test", title: "Subtitle the Thames Coffee interview", priority: "medium", dueInDays: 6, path: [], client: "Thames Coffee Roasters", editor: { rawFilesUrl: "https://drive.google.com/drive/folders/thames-interview" } },
   { assigneeEmail: "arjun.dev@hok.test", title: "Fix the contact form on lotusinteriors.example", description: "Submissions bounce with a 500 since the hosting move.", priority: "urgent", dueInDays: -2, path: ["in_progress"], client: "Lotus Interiors" },

@@ -54,6 +54,7 @@ const ADMIN_ONLY: Record<Role, CapabilityScope> = {
   marketing_agent: false,
   developer: false,
   editor: false,
+  content_writer: false,
 };
 
 /** Admin sees everything; Social Media / Marketing Managers only their own; task-only staff nothing. */
@@ -65,6 +66,7 @@ const CLIENT_MANAGERS_OWN: Record<Role, CapabilityScope> = {
   marketing_agent: false,
   developer: false,
   editor: false,
+  content_writer: false,
 };
 
 /** Admin sees every task; every other role sees and works on the tasks assigned to them. */
@@ -76,6 +78,7 @@ const EVERYONE_OWN_TASKS: Record<Role, CapabilityScope> = {
   marketing_agent: "own",
   developer: "own",
   editor: "own",
+  content_writer: "own",
 };
 
 export const CAPABILITY_MATRIX: Record<Capability, Record<Role, CapabilityScope>> = {

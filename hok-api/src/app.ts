@@ -121,7 +121,8 @@ export function createApp() {
 
   // Source of truth: openapi.yaml (repo root). Keep it updated alongside any
   // route change -- see README's "Keeping this documentation in sync".
-  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
+  // Not served in production: the endpoint list is a map for attackers (security audit run 2).
+  if (env.NODE_ENV !== "production") app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
   // Every module's router mounts under /api/v1.
   const apiV1 = express.Router();
