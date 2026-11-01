@@ -18,16 +18,25 @@ export interface HeroCell {
  * both); tablets: three; desktop: one row.
  */
 export function HeroBand({ cells, label }: { cells: HeroCell[]; label: string }) {
-  const desktop = cells.length === 4 ? "lg:grid-cols-4" : "lg:grid-cols-5";
+  const n = cells.length;
+  // Full-width rows at every size: 5 cells on a tablet are 3 + 2 sharing six columns (no empty hole), 4 are 2 + 2.
+  const columns =
+    n === 5 ? "grid-cols-2 sm:grid-cols-6 lg:grid-cols-5" : n === 4 ? "grid-cols-2 lg:grid-cols-4" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5";
+  const span = (i: number) =>
+    n === 5
+      ? `${i === 4 ? "col-span-2" : ""} ${i < 3 ? "sm:col-span-2" : "sm:col-span-3"} lg:col-span-1`
+      : n % 2 === 1 && i === n - 1
+        ? "col-span-2 sm:col-span-1"
+        : "";
   return (
     <section aria-label={label} className="hero-band">
-      <div className={`stagger-in grid grid-cols-2 sm:grid-cols-3 ${desktop}`}>
+      <div className={`stagger-in grid ${columns}`}>
         {cells.map((c, i) => (
           <Link
             key={c.label}
             href={c.href}
             className={`hero-cell group flex flex-col gap-3 px-5 py-5 outline-none focus-visible:bg-white/10 lg:px-6 lg:py-6 ${
-              cells.length % 2 === 1 && i === cells.length - 1 ? "col-span-2 sm:col-span-1" : ""
+              span(i)
             }`}
           >
             <span className="flex items-center gap-2 text-[12.5px] font-medium text-white/65">

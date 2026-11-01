@@ -344,13 +344,16 @@ export function TeamRows({ rows }: { rows: WorkloadRow[] }) {
     <ul className="divide-y divide-border-light">
       {rows.map((r) => (
         <li key={r.userId}>
-          <Link href={`/app/tasks?assigneeId=${r.userId}&assignee=${encodeURIComponent(r.name)}`} className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-accent-bg">
+          <Link href={`/app/tasks?assigneeId=${r.userId}&assignee=${encodeURIComponent(r.name)}`} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 transition-colors hover:bg-accent-bg sm:flex-nowrap">
             <Initials name={r.name} />
-            <span className="w-36 min-w-0 shrink-0 sm:w-44">
+            <span className="min-w-0 flex-1 sm:w-44 sm:flex-none">
               <span className="block truncate text-[13.5px] font-medium text-text-primary">{r.name}</span>
               <span className="block truncate text-xs text-text-muted">{ROLE_LABELS[r.role]}</span>
             </span>
-            <WorkloadBar row={r} max={max} />
+            {/* Phones: the bar gets its own full-width line under the name; from sm up it sits between name and count. */}
+            <span className="order-last block w-full sm:order-none sm:flex sm:w-auto sm:flex-1">
+              <WorkloadBar row={r} max={max} />
+            </span>
             <span className="w-20 shrink-0 text-right text-xs text-text-secondary">
               <span className="figure text-[14px] text-text-primary">{r.open}</span> open
               {r.overdue > 0 && <span className="block text-error">{r.overdue} overdue</span>}
