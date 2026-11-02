@@ -32,3 +32,14 @@ export const CLIENT_MANAGER_ROLES = ["admin", "social_media_manager", "marketing
 export function isClientManager(role: Role): boolean {
   return (CLIENT_MANAGER_ROLES as readonly Role[]).includes(role);
 }
+
+/** Task-assignment ladder (decision 2026-11-02): 1 = Admin (incl. the Owner), 2 = client managers, 3 = everyone else. */
+export function roleLevel(role: Role): 1 | 2 | 3 {
+  if (role === "admin") return 1;
+  return isClientManager(role) ? 2 : 3;
+}
+
+/** Only downwards: level 1 -> 2 and 3, level 2 -> 3. Level 3 assigns nobody. */
+export function canAssignTo(assigner: Role, assignee: Role): boolean {
+  return roleLevel(assigner) <= 2 && roleLevel(assigner) < roleLevel(assignee);
+}

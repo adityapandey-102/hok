@@ -15,12 +15,14 @@ import type {
 import type { StaffTaskNotifier } from "./ports/staff-task-notifier.port";
 import type { StaffTaskQueryDto } from "../api/dto/staff-task.dto";
 
-/** StaffTasksService against an in-memory fake: Admin-only management, assignee row scope, editor brief, status flow, timeline. */
+/** StaffTasksService against an in-memory fake: management by the Admin and creators, the visibility scope, the assignment ladder, editor brief, status flow, timeline. */
 
 const ADMIN: StaffTasksCaller = { userId: "admin", role: "admin" };
 const MEERA: StaffTasksCaller = { userId: "meera", role: "editor" };
 const ARJUN: StaffTasksCaller = { userId: "arjun", role: "developer" };
 const ROHAN: StaffTasksCaller = { userId: "rohan", role: "social_media_manager" };
+/** A second manager, on client c2's team only. */
+const PIA: StaffTasksCaller = { userId: "pia", role: "marketing_manager" };
 const DRIVE = "https://drive.google.com/drive/folders/raw";
 
 function task(o: Partial<StaffTaskEntity> = {}): StaffTaskEntity {
@@ -35,6 +37,7 @@ function task(o: Partial<StaffTaskEntity> = {}): StaffTaskEntity {
     assignedByName: "Aisha",
     clientId: null,
     clientName: null,
+    teamIds: [],
     eventId: null,
     dueAt: null,
     priority: "medium",
@@ -63,12 +66,17 @@ class FakeRepo implements StaffTasksRepositoryPort {
         ["meera", "editor", true],
         ["arjun", "developer", true],
         ["rohan", "social_media_manager", true],
+        ["pia", "marketing_manager", true],
         ["gone", "editor", false],
       ] as [string, Role, boolean][]
     ).map(([id, role, active]) => [id, { id, role, active }]),
   );
-  clients = new Set(["c1", "c2"]);
-  events = new Map<string, TaskEventRef>([["e1", { id: "e1", clientId: "c1", title: "Shoot" }]]);
+  /** client id -> team (profile ids). */
+  clients = new Map<string, string[]>([
+    ["c1", ["rohan"]],
+    ["c2", ["pia"]],
+  ]);
+  events = new Map<string, TaskEventRef>([["e1", { id: "e1", clientId: "c1", title: "Shoot", teamIds: ["rohan"] }]]);
   entries: (StaffTaskUpdateEntry & { taskId: string; from?: string; to?: string })[] = [];
   comments: { taskId: string; authorId: string; comment: string }[] = [];
   created: NewStaffTaskRecord[] = [];
@@ -92,7 +100,8 @@ class FakeRepo implements StaffTasksRepositoryPort {
     return Promise.resolve(this.people.get(id) ?? null);
   }
   findClient(id: string) {
-    return Promise.resolve(this.clients.has(id) ? { id } : null);
+    const teamIds = this.clients.get(id);
+    return Promise.resolve(teamIds ? { id, teamIds } : null);
   }
   findEvent(id: string) {
     return Promise.resolve(this.events.get(id) ?? null);
@@ -162,6 +171,7 @@ async function codeOf(p: Promise<unknown>): Promise<string | null> {
 const query = (q: Partial<StaffTaskQueryDto> = {}): StaffTaskQueryDto => ({
   status: undefined,
   open: false,
+  relation: undefined,
   priority: undefined,
   assigneeId: undefined,
   role: undefined,
@@ -189,27 +199,67 @@ beforeEach(() => {
 });
 
 describe("list (row scope)", () => {
-  it("an assignee's list is pinned to their own tasks; Admin-only filters are ignored", async () => {
+  it("a task-only person's list is scoped to them (assignee or creator, no team); filters are theirs to use, ANDed with the scope", async () => {
     await service.list(MEERA, query({ assigneeId: "arjun", role: "developer", clientId: "c1", status: "todo" }));
-    expect(repo.lastFilters).toMatchObject({ assigneeId: "meera", role: undefined, clientId: undefined, status: "todo", now: NOW.toISOString() });
+    expect(repo.lastFilters).toMatchObject({
+      scope: { kind: "own", userId: "meera", viaTeam: false },
+      callerId: "meera",
+      assigneeId: "arjun",
+      role: "developer",
+      clientId: "c1",
+      status: "todo",
+      now: NOW.toISOString(),
+    });
   });
 
-  it("the Admin filters freely", async () => {
-    await service.list(ADMIN, query({ assigneeId: "arjun", role: "developer", overdue: true }));
-    expect(repo.lastFilters).toMatchObject({ assigneeId: "arjun", role: "developer", overdue: true });
+  it("a client manager's scope includes their teams", async () => {
+    await service.list(ROHAN, query({ relation: "team" }));
+    expect(repo.lastFilters).toMatchObject({ scope: { kind: "own", userId: "rohan", viaTeam: true }, relation: "team" });
+  });
+
+  it("the Admin's scope is everything, and the filters are free", async () => {
+    await service.list(ADMIN, query({ assigneeId: "arjun", role: "developer", overdue: true, relation: "created" }));
+    expect(repo.lastFilters).toMatchObject({ scope: { kind: "all" }, assigneeId: "arjun", role: "developer", overdue: true, relation: "created" });
+  });
+
+  it("the team filter is for client managers: a task-only role gets a 400", async () => {
+    expect(await codeOf(service.list(MEERA, query({ relation: "team" })))).toBe("VALIDATION_ERROR");
+    expect(await codeOf(service.list(MEERA, query({ relation: "assigned" })))).toBeNull();
   });
 });
 
-describe("get", () => {
+describe("get (visibility)", () => {
   it("the assignee and the Admin see a task; anyone else gets 404", async () => {
     expect((await service.get(MEERA, "t1")).id).toBe("t1");
     expect((await service.get(ADMIN, "t1")).id).toBe("t1");
     expect(await codeOf(service.get(ARJUN, "t1"))).toBe("STAFF_TASK_NOT_FOUND");
     expect(await codeOf(service.get(ROHAN, "t1"))).toBe("STAFF_TASK_NOT_FOUND");
   });
+
+  it("the creator sees what they created; a client manager sees their clients' tasks, another team's are 404", async () => {
+    repo.tasks.set("t3", task({ id: "t3", assignedBy: "rohan", assigneeId: "arjun", assigneeRole: "developer" }));
+    repo.tasks.set("t4", task({ id: "t4", assignedBy: "admin", assigneeId: "arjun", assigneeRole: "developer", clientId: "c1", teamIds: ["rohan"] }));
+    expect((await service.get(ROHAN, "t3")).id).toBe("t3");
+    expect((await service.get(ROHAN, "t4")).id).toBe("t4");
+    expect(await codeOf(service.get(PIA, "t3"))).toBe("STAFF_TASK_NOT_FOUND");
+    expect(await codeOf(service.get(PIA, "t4"))).toBe("STAFF_TASK_NOT_FOUND");
+  });
+
+  it("a person moved to a task-only role keeps no team visibility", async () => {
+    repo.tasks.set("t4", task({ id: "t4", assigneeId: "arjun", assigneeRole: "developer", clientId: "c1", teamIds: ["rohan"] }));
+    expect(await codeOf(service.get({ userId: "rohan", role: "editor" }, "t4"))).toBe("STAFF_TASK_NOT_FOUND");
+  });
+
+  it("canManage: the Admin and the creator", async () => {
+    repo.tasks.set("t3", task({ id: "t3", assignedBy: "rohan", assigneeId: "arjun", assigneeRole: "developer" }));
+    expect((await service.get(ADMIN, "t3")).canManage).toBe(true);
+    expect((await service.get(ROHAN, "t3")).canManage).toBe(true);
+    expect((await service.get(ARJUN, "t3")).canManage).toBe(false);
+    expect((await service.get(MEERA, "t1")).canManage).toBe(false);
+  });
 });
 
-describe("create (Admin only)", () => {
+describe("create (Admin and client managers)", () => {
   it("creates an editor task with its brief, audits it, and fires the 'assigned' hook", async () => {
     await service.create(ADMIN, { title: "Cut the reel", assigneeId: "meera", rawFilesUrl: DRIVE, script: "Open on the product." });
     expect(repo.created[0]).toMatchObject({ assigneeId: "meera", assignedBy: "admin", rawFilesUrl: DRIVE, script: "Open on the product.", priority: "medium" });
@@ -217,8 +267,9 @@ describe("create (Admin only)", () => {
     expect(notifier.calls).toEqual(["assigned:meera"]);
   });
 
-  it("an editor task needs the raw files link; others can't carry the brief", async () => {
-    expect(await codeOf(service.create(ADMIN, { title: "x", assigneeId: "meera" }))).toBe("STAFF_TASK_EDITOR_FIELDS_REQUIRED");
+  it("an editor task needs no raw files link any more; others still can't carry the brief", async () => {
+    await service.create(ADMIN, { title: "x", assigneeId: "meera" });
+    expect(repo.created[0]).toMatchObject({ assigneeId: "meera", rawFilesUrl: null });
     expect(await codeOf(service.create(ADMIN, { title: "x", assigneeId: "arjun", script: "nope" }))).toBe("STAFF_TASK_EDITOR_FIELDS_INVALID");
   });
 
@@ -234,17 +285,43 @@ describe("create (Admin only)", () => {
     expect(repo.created[0]).toMatchObject({ clientId: "c1", eventId: "e1" });
   });
 
-  it("nobody else may create, edit, reassign, reopen or delete (403)", async () => {
-    for (const caller of [MEERA, ARJUN, ROHAN]) {
+  it("task-only roles may not create, edit, reassign, reopen or delete (403 FORBIDDEN)", async () => {
+    for (const caller of [MEERA, ARJUN]) {
       expect(await codeOf(service.create(caller, { title: "x", assigneeId: "arjun" }))).toBe("FORBIDDEN");
       expect(await codeOf(service.update(caller, "t1", { title: "x", version: 1 }))).toBe("FORBIDDEN");
       expect(await codeOf(service.reopen(caller, "t1", { status: "todo", version: 1 }))).toBe("FORBIDDEN");
       expect(await codeOf(service.delete(caller, "t1"))).toBe("FORBIDDEN");
     }
   });
+
+  it("the ladder: Admin -> a manager is fine; Admin -> Admin and manager -> manager are 400 STAFF_TASK_ASSIGNEE_NOT_ALLOWED", async () => {
+    await service.create(ADMIN, { title: "x", assigneeId: "rohan" });
+    expect(repo.created[0]).toMatchObject({ assigneeId: "rohan" });
+    expect(await codeOf(service.create(ADMIN, { title: "x", assigneeId: "admin" }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
+    expect(await codeOf(service.create(ROHAN, { title: "x", assigneeId: "pia" }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
+    expect(await codeOf(service.create(ROHAN, { title: "x", assigneeId: "rohan" }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
+    expect(await codeOf(service.create(ROHAN, { title: "x", assigneeId: "admin" }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
+  });
+
+  it("a manager creates a task for a task-only person; they are the creator", async () => {
+    await service.create(ROHAN, { title: "Cut the reel", assigneeId: "meera" });
+    expect(repo.created[0]).toMatchObject({ assigneeId: "meera", assignedBy: "rohan" });
+    expect(notifier.calls).toEqual(["assigned:meera"]);
+  });
+
+  it("a manager may link only their own clients and those clients' events; anything else is 400 STAFF_TASK_CLIENT_INVALID", async () => {
+    await service.create(ROHAN, { title: "x", assigneeId: "arjun", clientId: "c1", eventId: "e1" });
+    expect(repo.created[0]).toMatchObject({ clientId: "c1", eventId: "e1" });
+    expect(await codeOf(service.create(ROHAN, { title: "x", assigneeId: "arjun", clientId: "c2" }))).toBe("STAFF_TASK_CLIENT_INVALID");
+    expect(await codeOf(service.create(PIA, { title: "x", assigneeId: "arjun", eventId: "e1" }))).toBe("STAFF_TASK_CLIENT_INVALID");
+    expect(await codeOf(service.create(ROHAN, { title: "x", assigneeId: "arjun", clientId: "c9" }))).toBe("STAFF_TASK_CLIENT_INVALID");
+    // The Admin links any client.
+    await service.create(ADMIN, { title: "x", assigneeId: "arjun", clientId: "c2" });
+    expect(repo.created.at(-1)).toMatchObject({ clientId: "c2" });
+  });
 });
 
-describe("update / reassign (Admin)", () => {
+describe("update / reassign (Admin or the creator)", () => {
   it("needs at least one field, and the current version", async () => {
     expect(await codeOf(service.update(ADMIN, "t1", { version: 1 }))).toBe("VALIDATION_NO_FIELDS");
     expect(await codeOf(service.update(ADMIN, "t1", { title: "y", version: 9 }))).toBe("STAFF_TASK_MODIFIED");
@@ -261,10 +338,46 @@ describe("update / reassign (Admin)", () => {
     expect(notifier.calls).toEqual(["assigned:arjun"]);
   });
 
-  it("reassigning to an editor needs the raw files link", async () => {
-    expect(await codeOf(service.update(ADMIN, "t2", { assigneeId: "meera", version: 1 }))).toBe("STAFF_TASK_EDITOR_FIELDS_REQUIRED");
-    await service.update(ADMIN, "t2", { assigneeId: "meera", rawFilesUrl: DRIVE, version: 1 });
-    expect(repo.tasks.get("t2")).toMatchObject({ assigneeId: "meera", rawFilesUrl: DRIVE });
+  it("reassigning to an editor needs no raw files link; one may still be sent", async () => {
+    await service.update(ADMIN, "t2", { assigneeId: "meera", version: 1 });
+    expect(repo.tasks.get("t2")).toMatchObject({ assigneeId: "meera", rawFilesUrl: null });
+    await service.update(ADMIN, "t2", { rawFilesUrl: DRIVE, version: 2 });
+    expect(repo.tasks.get("t2")).toMatchObject({ rawFilesUrl: DRIVE });
+  });
+
+  it("the ladder judges a reassignment against the caller: an Admin can pick a manager, a manager cannot", async () => {
+    repo.tasks.set("t3", task({ id: "t3", assignedBy: "rohan", assigneeId: "meera", assigneeRole: "editor" }));
+    expect(await codeOf(service.update(ROHAN, "t3", { assigneeId: "pia", version: 1 }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
+    await service.update(ROHAN, "t3", { assigneeId: "arjun", version: 1 });
+    expect(repo.tasks.get("t3")).toMatchObject({ assigneeId: "arjun" });
+    await service.update(ADMIN, "t3", { assigneeId: "pia", version: 2 });
+    expect(repo.tasks.get("t3")).toMatchObject({ assigneeId: "pia" });
+  });
+
+  it("keeping the same (higher-level) assignee while editing other fields is not blocked by the ladder", async () => {
+    repo.tasks.set("t5", task({ id: "t5", assignedBy: "admin", assigneeId: "pia", assigneeRole: "marketing_manager", rawFilesUrl: null }));
+    await service.update(ADMIN, "t5", { assigneeId: "pia", title: "Renamed", version: 1 });
+    expect(repo.tasks.get("t5")).toMatchObject({ title: "Renamed" });
+  });
+
+  it("the creator manages their own task; a team manager who only sees it gets 403; an outsider 404; task-only staff 403 on the capability", async () => {
+    repo.tasks.set("t3", task({ id: "t3", assignedBy: "rohan", assigneeId: "arjun", assigneeRole: "developer", clientId: "c1", teamIds: ["rohan", "pia"], rawFilesUrl: null }));
+    await service.update(ROHAN, "t3", { title: "Mine", version: 1 });
+    expect(repo.tasks.get("t3")).toMatchObject({ title: "Mine" });
+    expect(await codeOf(service.update(PIA, "t3", { title: "Hers", version: 2 }))).toBe("STAFF_TASK_FORBIDDEN");
+    expect(await codeOf(service.reopen(PIA, "t3", { status: "todo", version: 2 }))).toBe("STAFF_TASK_FORBIDDEN");
+    expect(await codeOf(service.delete(PIA, "t3"))).toBe("STAFF_TASK_FORBIDDEN");
+    repo.tasks.set("t6", task({ id: "t6", assignedBy: "admin", assigneeId: "arjun", assigneeRole: "developer", rawFilesUrl: null }));
+    expect(await codeOf(service.update(ROHAN, "t6", { title: "x", version: 1 }))).toBe("STAFF_TASK_NOT_FOUND");
+    expect(await codeOf(service.delete(ROHAN, "t6"))).toBe("STAFF_TASK_NOT_FOUND");
+    expect(await codeOf(service.update(ARJUN, "t3", { title: "x", version: 1 }))).toBe("FORBIDDEN");
+  });
+
+  it("a manager editing a task keeps to their own clients: relinking to another team's client is 400", async () => {
+    repo.tasks.set("t3", task({ id: "t3", assignedBy: "rohan", assigneeId: "arjun", assigneeRole: "developer", rawFilesUrl: null }));
+    expect(await codeOf(service.update(ROHAN, "t3", { clientId: "c2", version: 1 }))).toBe("STAFF_TASK_CLIENT_INVALID");
+    await service.update(ROHAN, "t3", { clientId: "c1", version: 1 });
+    expect(repo.tasks.get("t3")).toMatchObject({ clientId: "c1" });
   });
 
   it("reassigning to the current assignee writes no timeline entry", async () => {
@@ -281,6 +394,14 @@ describe("update / reassign (Admin)", () => {
 });
 
 describe("status changes (assignee or Admin)", () => {
+  it("the creator and team managers see the task but cannot move it: 403 STAFF_TASK_FORBIDDEN", async () => {
+    repo.tasks.set("t3", task({ id: "t3", assignedBy: "rohan", assigneeId: "arjun", assigneeRole: "developer", clientId: "c1", teamIds: ["rohan", "pia"], rawFilesUrl: null }));
+    expect(await codeOf(service.changeStatus(ROHAN, "t3", { status: "done", version: 1 }))).toBe("STAFF_TASK_FORBIDDEN");
+    expect(await codeOf(service.changeStatus(PIA, "t3", { status: "done", version: 1 }))).toBe("STAFF_TASK_FORBIDDEN");
+    await service.changeStatus(ARJUN, "t3", { status: "done", version: 1 });
+    expect(repo.tasks.get("t3")).toMatchObject({ status: "done" });
+  });
+
   it("the assignee moves through the flow with comments; each move is a timeline entry", async () => {
     await service.changeStatus(MEERA, "t1", { status: "in_progress", comment: "Starting", version: 1 });
     await service.changeStatus(MEERA, "t1", { status: "blocked", comment: "Waiting for music", version: 2 });
@@ -311,6 +432,14 @@ describe("status changes (assignee or Admin)", () => {
 });
 
 describe("comments", () => {
+  it("the creator comments; a team manager who only sees the task gets 403", async () => {
+    repo.tasks.set("t3", task({ id: "t3", assignedBy: "rohan", assigneeId: "arjun", assigneeRole: "developer", clientId: "c1", teamIds: ["rohan", "pia"], rawFilesUrl: null }));
+    await service.comment(ROHAN, "t3", { body: "Please prioritise" });
+    expect(repo.comments.map((c) => c.authorId)).toEqual(["rohan"]);
+    expect(await codeOf(service.comment(PIA, "t3", { body: "hi" }))).toBe("STAFF_TASK_FORBIDDEN");
+    expect(await codeOf(service.comment({ userId: "x", role: "social_media_manager" }, "t3", { body: "hi" }))).toBe("STAFF_TASK_NOT_FOUND");
+  });
+
   it("the assignee and the Admin comment; anyone else gets 404", async () => {
     await service.comment(MEERA, "t1", { body: "First cut uploaded" });
     await service.comment(ADMIN, "t1", { body: "Looks good" });
@@ -320,7 +449,7 @@ describe("comments", () => {
   });
 });
 
-describe("delete (Admin)", () => {
+describe("delete (Admin or the creator)", () => {
   it("removes the task and audits it", async () => {
     await service.delete(ADMIN, "t2");
     expect(repo.tasks.has("t2")).toBe(false);

@@ -51,7 +51,8 @@ const service = new StaffTasksService(new DrizzleStaffTasksRepository(), auditLo
 export const staffTasksRouter = Router();
 
 // Every role reads tasks: the Admin all, everyone else the ones assigned to
-// them (others' are 404, applied by the service).
+// them or created by them, plus -- client managers -- their clients' tasks
+// (others' are 404, applied by the service).
 staffTasksRouter.use(requireAuth, requireCapability("staff_tasks:read"));
 staffTasksRouter.param("id", uuidParam(ERROR_CODES.STAFF_TASK_NOT_FOUND, "Task"));
 
@@ -73,7 +74,7 @@ staffTasksRouter.get(
   }),
 );
 
-/** Admin only (FR-TSK-01). */
+/** Admin or a client manager, assigning down the role ladder (FR-TSK-01). */
 staffTasksRouter.post(
   "/",
   requireCapability("staff_tasks:assign"),
@@ -83,7 +84,7 @@ staffTasksRouter.post(
   }),
 );
 
-/** Admin only: edit and/or reassign (FR-TSK-05). */
+/** Admin or the task's creator: edit and/or reassign (FR-TSK-05). A team manager who only sees it gets 403. */
 staffTasksRouter.patch(
   "/:id",
   requireCapability("staff_tasks:assign"),
@@ -93,7 +94,7 @@ staffTasksRouter.patch(
   }),
 );
 
-/** Admin only (FR-TSK-05). */
+/** Admin or the task's creator (FR-TSK-05). */
 staffTasksRouter.delete(
   "/:id",
   requireCapability("staff_tasks:assign"),
@@ -113,7 +114,7 @@ staffTasksRouter.post(
   }),
 );
 
-/** Admin only (FR-TSK-05). */
+/** Admin or the task's creator (FR-TSK-05). */
 staffTasksRouter.post(
   "/:id/reopen",
   requireCapability("staff_tasks:assign"),
@@ -123,7 +124,7 @@ staffTasksRouter.post(
   }),
 );
 
-/** The assignee (own) or the Admin (FR-TSK-06). */
+/** The assignee, the creator or the Admin (FR-TSK-06). */
 staffTasksRouter.post(
   "/:id/comments",
   requireCapability("staff_tasks:update"),

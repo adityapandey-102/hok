@@ -3,11 +3,13 @@ import {
   DASHBOARD_EVENTS_LIMIT,
   DASHBOARD_LIST_LIMIT,
   DASHBOARD_STAGE_GROUPS,
+  DASHBOARD_TODOS_LIMIT,
   DASHBOARD_TEAM_LIMIT,
   type ClientsSection,
   type Dashboard,
   type FirmSection,
   type TasksSection,
+  type TodosSection,
   type DashboardView,
   type TeamWorkloadPage,
 } from "../domain/dashboard.entity";
@@ -23,8 +25,8 @@ export interface DashboardViewer {
 /**
  * Builds a role's dashboard (FR-DSH-01..03). Sections the role doesn't get
  * are never queried. All queries run in parallel; the count is fixed per
- * role and view (task-only staff 3, managers 7, the Admin's overview 5 and
- * "My clients" 7) whatever the data size.
+ * role and view (task-only staff 5, managers 9, the Admin's overview 7 and
+ * "My clients" 9; two of each are the viewer's own to-dos) whatever the data size.
  */
 export class DashboardService {
   constructor(
@@ -43,12 +45,13 @@ export class DashboardService {
     };
     const sections = dashboardSections(viewer.role, view);
 
-    const [tasks, clients, firm] = await Promise.all([
+    const [tasks, clients, firm, todos] = await Promise.all([
       sections.tasks ? this.tasks(viewer.userId, w) : Promise.resolve(null),
       sections.clients ? this.clients(viewer.userId, w, window) : Promise.resolve(null),
       sections.firm ? this.firm(w) : Promise.resolve(null),
+      this.todos(viewer.userId, w),
     ]);
-    return { role: viewer.role, view, window, tasks, clients, firm };
+    return { role: viewer.role, view, window, tasks, clients, firm, todos };
   }
 
   private async tasks(userId: string, w: Window): Promise<TasksSection> {
@@ -58,6 +61,12 @@ export class DashboardService {
       this.repo.recentTaskComments(userId, DASHBOARD_LIST_LIMIT),
     ]);
     return { ...summary, open, recentComments };
+  }
+
+  /** Every role gets its own to-dos (never anyone else's): a count and the next few, two queries. */
+  private async todos(ownerId: string, w: Window): Promise<TodosSection> {
+    const [summary, next] = await Promise.all([this.repo.todoSummary(ownerId, w.now), this.repo.nextTodos(ownerId, DASHBOARD_TODOS_LIMIT)]);
+    return { ...summary, next };
   }
 
   private async clients(ownerId: string, w: Window, window: Dashboard["window"]): Promise<ClientsSection> {

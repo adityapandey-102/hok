@@ -25,10 +25,11 @@ Core capabilities of the agency-management side:
 - **Stage templates** (Admin-made) → **client events** (e.g. social media shoots) whose stages are shown to the client.
 - **Client-specific tasks** (internal to-dos per client, Phase 2).
 - **Asset link library**: paste links (Drive/Dropbox/etc.) with comment + tags. No file uploads; internal only.
-- **Calendars**: per-client, personal per manager (client events + own events), global for Admin. Supports multiple time zones.
+- **Calendars**: per-client, personal per manager (client events + own events), global for Admin; since 2026-11-03 every role has one (tasks by due date + own to-dos, day counts + day pop-up). Supports multiple time zones.
+- **My to-dos** (2026-11-03): private per person (Admin can't see them), urgency-based reminders.
 - **Client portal**: shareable generated link (link only, revocable). The client sees their dashboard, current event stage and upcoming events, and can post comments. Plain design.
 - **Client comments**: push notification to the client's team; status Received → In Progress → Solved.
-- **Staff tasks**: only Admin assigns, one assignee, and the assignee can mark Done. Editor tasks also have a raw-files Drive link, a reference edit link and a script.
+- **Staff tasks**: assigned **only downwards** (Admin → managers + task-only staff; managers → task-only staff, 2026-11-03), one assignee, who can mark Done. The creator or Admin edits/reassigns/reopens/deletes. Editor tasks also have optional raw-files, reference and script fields.
 - **Role dashboards**, **web push (PWA)** and **in-app notifications**.
 
 Docs:
@@ -48,8 +49,8 @@ Docs:
 
 | Role | Access |
 |---|---|
-| Admin | Everything, all data. Manages users, stage templates and client teams. Only role that assigns staff tasks, archives clients and sets teams. Can be on a client team like an SMM |
-| Social Media Manager | Clients whose team they're on: events, assets, calendars, portal, comments, to-dos. Receives staff tasks |
+| Admin | Everything, all data. Manages users, stage templates and client teams. Assigns tasks to managers and task-only staff. Only role that archives clients and sets teams. Can be on a client team like an SMM |
+| Social Media Manager | Clients whose team they're on: events, assets, calendars, portal, comments, to-dos. Receives staff tasks; assigns tasks to task-only staff (2026-11-03) |
 | Marketing Manager | Same as SMM |
 | Project Manager | Same as SMM (added 2026-10-23) |
 | Marketing Agent | **Staff tasks only** |

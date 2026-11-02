@@ -1,6 +1,6 @@
 /** A web push to send once the claim has committed (its bell row is already written). */
 export interface ReminderPush {
-  type: "event_reminder" | "task_due_reminder";
+  type: "event_reminder" | "task_due_reminder" | "todo_reminder";
   recipientIds: string[];
   actorId: null;
   /** The same shape as the notifications module's NotificationPayload. */
@@ -12,7 +12,9 @@ export interface RemindersRepositoryPort {
    * In ONE transaction: claim up to `limit` events and `limit` tasks whose
    * moment is in (after, until] and that have no reminder yet (locked with
    * FOR UPDATE SKIP LOCKED, so two API instances never take the same row),
-   * mark them reminded, and write their bell rows. Returns the pushes to send
+   * mark them reminded, and write their bell rows. Also up to `limit` personal
+   * to-do moments that have come due (`next_remind_at <= now`): each is sent
+   * (to its owner) unless it is stale, and the to-do moves on to its next moment. Returns the pushes to send
    * after the commit. A claim that fails rolls back whole: nothing is marked.
    */
   claimDue(now: Date, window: { after: Date; until: Date }, limit: number): Promise<ReminderPush[]>;

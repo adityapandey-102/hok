@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { Icon } from "../../../components/ui/Icon";
+import { MyTodosPanel } from "../../todos/components/MyTodosPanel";
 import { dashboardApi, type ClientsSection, type Dashboard, type DashboardView, type FirmSection, type TasksSection } from "../api/dashboardApi";
 import { greeting, longDate } from "../format";
 import { CommentRows, EventRows, HeroBand, Panel, StageBars, StatusBreakdown, TaskCommentRows, TaskRows, TeamRows, WeekStrip, type HeroCell } from "./widgets";
@@ -31,6 +32,16 @@ export function DashboardClient({ firstName, view = "overview" }: { firstName: s
       cancelled = true;
     };
   }, [reload, view]);
+
+  // After a to-do is ticked or added: fetch again but keep what's on screen (no skeleton).
+  const refresh = () => {
+    dashboardApi
+      .get(view)
+      .then((data) => setResult({ key: reload, data }))
+      .catch(() => {
+        // Keep the stale numbers; the next visit reloads them.
+      });
+  };
 
   const zone = current?.data?.window.timeZone;
   return (
@@ -61,7 +72,7 @@ export function DashboardClient({ firstName, view = "overview" }: { firstName: s
       ) : !current?.data ? (
         <DashboardSkeleton />
       ) : (
-        <DashboardView data={current.data} />
+        <DashboardView data={current.data} onTodosChanged={refresh} />
       )}
     </div>
   );
@@ -79,19 +90,21 @@ function DashboardSkeleton() {
   );
 }
 
-function DashboardView({ data }: { data: Dashboard }) {
+function DashboardView({ data, onTodosChanged }: { data: Dashboard; onTodosChanged: () => void }) {
   const zone = data.window.timeZone;
-  if (data.firm) return <AdminView firm={data.firm} zone={zone} today={data.window.today} />;
+  // "My to-dos" is on the landing page for every role; the Admin's "My clients" page is about clients and tasks.
+  const todos = data.view === "mine" || !data.todos ? null : <MyTodosPanel section={data.todos} zone={zone} onChanged={onTodosChanged} />;
+  if (data.firm) return <AdminView firm={data.firm} zone={zone} today={data.window.today} todos={todos} />;
   if (!data.tasks) return null;
-  if (data.clients) return <ManagerView clients={data.clients} tasks={data.tasks} zone={zone} today={data.window.today} ownPage={data.view === "mine"} />;
-  return <StaffView tasks={data.tasks} zone={zone} />;
+  if (data.clients) return <ManagerView clients={data.clients} tasks={data.tasks} zone={zone} today={data.window.today} ownPage={data.view === "mine"} todos={todos} />;
+  return <StaffView tasks={data.tasks} zone={zone} todos={todos} />;
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-IN")} ${n === 1 ? one : many}`;
 
 /* ------------------------------------------------------------------ Admin */
 
-function AdminView({ firm, zone, today }: { firm: FirmSection; zone: string; today: string }) {
+function AdminView({ firm, zone, today, todos }: { firm: FirmSection; zone: string; today: string; todos: React.ReactNode }) {
   const t = firm.totals;
   const cells: HeroCell[] = [
     { href: "/app/clients", icon: "briefcase", label: "Clients", value: t.clients, caption: "Active and paused" },
@@ -136,6 +149,8 @@ function AdminView({ firm, zone, today }: { firm: FirmSection; zone: string; tod
         </Panel>
       </div>
 
+      {todos}
+
       <Panel
         icon="users"
         title="Team workload"
@@ -151,7 +166,21 @@ function AdminView({ firm, zone, today }: { firm: FirmSection; zone: string; tod
 
 /* ---------------------------------------------------------------- Manager */
 
-function ManagerView({ clients, tasks, zone, today, ownPage = false }: { clients: ClientsSection; tasks: TasksSection; zone: string; today: string; ownPage?: boolean }) {
+function ManagerView({
+  clients,
+  tasks,
+  zone,
+  today,
+  ownPage = false,
+  todos,
+}: {
+  clients: ClientsSection;
+  tasks: TasksSection;
+  zone: string;
+  today: string;
+  ownPage?: boolean;
+  todos: React.ReactNode;
+}) {
   const unresolved = clients.unresolvedComments.received + clients.unresolvedComments.inProgress;
   const openMine = tasks.counts.todo + tasks.counts.in_progress + tasks.counts.blocked;
   const cells: HeroCell[] = [
@@ -165,6 +194,7 @@ function ManagerView({ clients, tasks, zone, today, ownPage = false }: { clients
       <HeroBand cells={cells} label="Your work at a glance" />
       <MyClients clients={clients} zone={zone} today={today} titled={!ownPage} />
       <MyTasks tasks={tasks} zone={zone} />
+      {todos}
     </>
   );
 }
@@ -192,7 +222,7 @@ function MyClients({ clients, zone, today, titled = true }: { clients: ClientsSe
 
 /* ------------------------------------------------------------------ Staff */
 
-function StaffView({ tasks, zone }: { tasks: TasksSection; zone: string }) {
+function StaffView({ tasks, zone, todos }: { tasks: TasksSection; zone: string; todos: React.ReactNode }) {
   const cells: HeroCell[] = [
     { href: "/app/tasks", icon: "clipboard", label: "To do", value: tasks.counts.todo, caption: "Not started" },
     { href: "/app/tasks", icon: "refresh", label: "In progress", value: tasks.counts.in_progress, caption: tasks.counts.blocked > 0 ? `${tasks.counts.blocked} blocked` : "Moving" },
@@ -203,6 +233,7 @@ function StaffView({ tasks, zone }: { tasks: TasksSection; zone: string }) {
     <>
       <HeroBand cells={cells} label="Your tasks at a glance" />
       <MyTasks tasks={tasks} zone={zone} />
+      {todos}
     </>
   );
 }

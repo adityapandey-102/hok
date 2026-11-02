@@ -40,11 +40,16 @@ export interface StaffTaskSummary {
   assigneeId: string;
   assigneeName: string;
   assigneeRole: Role;
+  /** Who created (assigned) it; null if that account is gone. */
+  assignedById: string | null;
+  assignedByName: string | null;
   clientId: string | null;
   clientName: string | null;
   eventId: string | null;
   hasEditorBrief: boolean;
   completedAt: string | null;
+  /** The caller is the Admin, or the creator with assign rights: they may edit, reassign, reopen and delete it. Decided by the API. */
+  canManage: boolean;
   version: number;
   createdAt: string;
 }
@@ -64,8 +69,6 @@ export interface StaffTaskUpdate {
 
 export interface StaffTask extends Omit<StaffTaskSummary, "hasEditorBrief"> {
   description: string | null;
-  assignedBy: string | null;
-  assignedByName: string | null;
   eventTitle: string | null;
   rawFilesUrl: string | null;
   referenceUrl: string | null;
@@ -91,7 +94,7 @@ export function nextStatuses(current: StaffTaskStatus): StaffTaskStatus[] {
   return STAFF_TASK_STATUSES.filter((s) => s !== current);
 }
 
-/** Editor tasks (FR-TSK-10) carry a brief; the API requires the raw files link for an editor. */
+/** Editor tasks (FR-TSK-10) carry an optional brief: raw files link, reference link and script. */
 export function isEditorRole(role: Role | null | undefined): boolean {
   return role === "editor";
 }

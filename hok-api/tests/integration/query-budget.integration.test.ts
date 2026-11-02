@@ -145,6 +145,9 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     ["personal events range + owner", (l) => `/api/v1/personal-events?ownerId=${admin.id}&from=2031-01-01T00:00:00Z&to=2031-02-01T00:00:00Z&limit=${l}`],
     ["team members", (l) => `/api/v1/team-members?limit=${l}`],
     ["team members search + role", (l) => `/api/v1/team-members?search=a&role=admin&limit=${l}`],
+    ["team members assignable", (l) => `/api/v1/team-members?assignable=true&limit=${l}`],
+    ["todos", (l) => `/api/v1/todos?limit=${l}`],
+    ["todos all + due range", (l) => `/api/v1/todos?status=all&dueFrom=2000-01-01T00:00:00Z&dueTo=2100-01-01T00:00:00Z&limit=${l}`],
     ["assets", (l) => `/api/v1/assets?limit=${l}`],
     ["assets search + type", (l) => `/api/v1/assets?search=QB&type=photo&limit=${l}`],
     ["assets by tag + date range", (l) => `/api/v1/assets?tag=qbtag&from=2020-01-01T00:00:00Z&to=2099-01-01T00:00:00Z&limit=${l}`],
@@ -167,6 +170,7 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     ["staff tasks", (l) => `/api/v1/staff-tasks?limit=${l}`],
     ["staff tasks by assignee + search + priority", (l) => `/api/v1/staff-tasks?assigneeId=${admin.id}&search=QB&priority=high&limit=${l}`],
     ["staff tasks by role + overdue", (l) => `/api/v1/staff-tasks?role=admin&overdue=true&limit=${l}`],
+    ["staff tasks by relation", (l) => `/api/v1/staff-tasks?relation=created&limit=${l}`],
     ["staff tasks open + due range", (l) => `/api/v1/staff-tasks?open=true&dueFrom=2000-01-01T00:00:00Z&dueTo=2100-01-01T00:00:00Z&limit=${l}`],
   ];
 
@@ -182,22 +186,22 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
   }
 
   // M5: the calendar feed is range-capped, not paged: a month costs the same queries as a day
-  // (auth profile + one query per kind, in parallel), however many items fall in it.
+  // (auth profile + one query per kind -- events, personal, tasks, to-dos -- in parallel), however many items fall in it.
   it("calendar feed: a 31-day range costs no more queries than a 1-day range", async (ctx) => {
     if (!personalReady) ctx.skip();
     const day = await queriesFor("/api/v1/calendar?from=2031-01-01T00:00:00Z&to=2031-01-02T00:00:00Z");
     const month = await queriesFor("/api/v1/calendar?from=2031-01-01T00:00:00Z&to=2031-02-01T00:00:00Z");
     expect(month, `calendar: ${day} queries for a day, ${month} for a month`).toBe(day);
-    expect(day).toBeLessThanOrEqual(3);
+    expect(day).toBeLessThanOrEqual(5); // auth profile + at most 4 (one per kind)
   });
 
   // M10: the dashboard is aggregates + capped lists. The fixture Admin owns 12 clients, events and
-  // comments, yet the count is fixed: auth profile + 5 firm reads on the overview, auth profile +
-  // 7 reads (3 own tasks, 4 own clients) on "My clients".
+  // comments, yet the count is fixed: auth profile + 5 firm reads + 2 own to-do reads on the overview,
+  // auth profile + 9 reads (3 own tasks, 4 own clients, 2 own to-dos) on "My clients".
   it("dashboard: a fixed number of queries, whatever the data", async (ctx) => {
     if (!staffTasksReady) ctx.skip();
-    expect(await queriesFor("/api/v1/dashboard")).toBe(6);
-    expect(await queriesFor("/api/v1/dashboard?view=mine")).toBe(8);
+    expect(await queriesFor("/api/v1/dashboard")).toBe(8);
+    expect(await queriesFor("/api/v1/dashboard?view=mine")).toBe(10);
   });
 
   // Phase 2: global search is one capped query per group (5 groups for the Admin) + the auth lookup,

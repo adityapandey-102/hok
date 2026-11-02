@@ -1,6 +1,6 @@
 import type { Role } from "../../../lib/domain";
 import type { CommentStatus } from "../../client-comments/lib/commentStatus";
-import type { EventState, EventType, StaffTaskPriority, StaffTaskStatus } from "../../../lib/domain";
+import type { EventState, EventType, StaffTaskPriority, StaffTaskStatus, TodosSection } from "../../../lib/domain";
 import { apiFetch } from "../../../lib/api/client";
 
 /** Wire shape of GET /dashboard (mirrors hok-api's dashboard.entity.ts). */
@@ -125,6 +125,8 @@ export interface Dashboard {
   tasks: TasksSection | null;
   clients: ClientsSection | null;
   firm: FirmSection | null;
+  /** The caller's own to-dos (every role, the Admin too). */
+  todos: TodosSection;
 }
 
 export interface TeamWorkloadPage {

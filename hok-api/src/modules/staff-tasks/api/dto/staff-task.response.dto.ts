@@ -11,6 +11,8 @@ export interface StaffTaskSummaryResponseDto {
   assigneeId: string;
   assigneeName: string;
   assigneeRole: Role;
+  assignedById: string | null;
+  assignedByName: string | null;
   clientId: string | null;
   clientName: string | null;
   eventId: string | null;
@@ -18,6 +20,8 @@ export interface StaffTaskSummaryResponseDto {
   completedAt: string | null;
   version: number;
   createdAt: string;
+  /** The caller may edit, reassign, reopen and delete this task (Admin, or its creator with assign rights). */
+  canManage: boolean;
 }
 
 export interface StaffTaskUpdateResponseDto {
@@ -44,7 +48,9 @@ export interface StaffTaskDetailResponseDto {
   assigneeId: string;
   assigneeName: string;
   assigneeRole: Role;
+  /** Same as `assignedById`; kept for existing clients. */
   assignedBy: string | null;
+  assignedById: string | null;
   assignedByName: string | null;
   clientId: string | null;
   clientName: string | null;
@@ -58,6 +64,8 @@ export interface StaffTaskDetailResponseDto {
   version: number;
   createdAt: string;
   updatedAt: string;
+  /** The caller may edit, reassign, reopen and delete this task (Admin, or its creator with assign rights). */
+  canManage: boolean;
   /** Newest first, at most 100. */
   updates: StaffTaskUpdateResponseDto[];
 }

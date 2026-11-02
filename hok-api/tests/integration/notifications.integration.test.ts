@@ -168,6 +168,7 @@ describe("preferences", () => {
       { type: "client_comment", push: true, inApp: true },
       { type: "event_reminder", push: true, inApp: true },
       { type: "task_due_reminder", push: true, inApp: true },
+      { type: "todo_reminder", push: true, inApp: true },
     ]);
   });
 

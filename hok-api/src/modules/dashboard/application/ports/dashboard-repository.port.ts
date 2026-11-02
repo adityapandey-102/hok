@@ -2,6 +2,7 @@ import type {
   DashboardComment,
   DashboardEvent,
   DashboardTask,
+  DashboardTodo,
   DashboardTaskComment,
   FirmSection,
   StageGroup,
@@ -49,4 +50,8 @@ export interface DashboardRepositoryPort {
   team(now: Date, filter: TeamFilter, limit: number, offset: number): Promise<WorkloadRow[]>;
   /** How many active non-admin staff match the filter. */
   teamCount(filter: TeamFilter): Promise<number>;
+  /** The owner's open to-do count and how many of them are past due. */
+  todoSummary(ownerId: string, now: Date): Promise<{ open: number; overdue: number }>;
+  /** The owner's open to-dos, soonest due first (no due date last), capped. */
+  nextTodos(ownerId: string, limit: number): Promise<DashboardTodo[]>;
 }

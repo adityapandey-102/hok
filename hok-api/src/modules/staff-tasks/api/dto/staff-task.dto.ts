@@ -5,6 +5,7 @@ import {
   OPEN_STAFF_TASK_STATUSES,
   REFERENCE_LINKS_MAX,
   SCRIPT_MAX_LENGTH,
+  STAFF_TASK_RELATIONS,
   STAFF_TASK_PRIORITIES,
   STAFF_TASK_STATUSES,
 } from "../../domain/staff-task.entity";
@@ -49,7 +50,7 @@ const fieldSchemas = {
   eventId: z.string().uuid("eventId must be an event id").nullable().optional(),
   dueAt,
   priority: z.enum(STAFF_TASK_PRIORITIES).optional(),
-  // FR-TSK-10 editor brief: required/refused by the assignee's role in the service.
+  // FR-TSK-10 editor brief: refused for non-editor assignees by the service.
   rawFilesUrl: optionalUrl,
   referenceUrl: optionalUrl,
   script: optionalText(SCRIPT_MAX_LENGTH),
@@ -57,9 +58,10 @@ const fieldSchemas = {
 };
 
 /**
- * POST /staff-tasks (Admin). Exactly one assignee, any active staff member.
- * Editor tasks need `rawFilesUrl`; other roles may not carry the editor fields.
- * Priority defaults to medium; a new task starts as `todo`.
+ * POST /staff-tasks (Admin or a client manager). Exactly one active assignee
+ * whose role is below the caller's on the ladder. Only editor tasks may carry
+ * the editor fields (none required). Priority defaults to medium; a new task
+ * starts as `todo`.
  */
 export const createStaffTaskDtoSchema = z.object({
   ...fieldSchemas,
@@ -68,7 +70,7 @@ export const createStaffTaskDtoSchema = z.object({
 export type CreateStaffTaskDto = z.infer<typeof createStaffTaskDtoSchema>;
 
 /**
- * PATCH /staff-tasks/:id (Admin): edit and/or reassign (`assigneeId`).
+ * PATCH /staff-tasks/:id (Admin, or the creator): edit and/or reassign (`assigneeId`).
  * `version` required. Status moves through /status and /reopen.
  */
 export const updateStaffTaskDtoSchema = z.object({
@@ -87,7 +89,7 @@ export const changeStatusDtoSchema = z.object({
 });
 export type ChangeStatusDto = z.infer<typeof changeStatusDtoSchema>;
 
-/** POST /staff-tasks/:id/reopen (Admin): a done task back to an open status (default todo). */
+/** POST /staff-tasks/:id/reopen (Admin or the creator): a done task back to an open status (default todo). */
 export const reopenDtoSchema = z.object({
   status: z.enum(OPEN_STAFF_TASK_STATUSES).optional().default("todo"),
   comment: optionalComment,
@@ -95,7 +97,7 @@ export const reopenDtoSchema = z.object({
 });
 export type ReopenDto = z.infer<typeof reopenDtoSchema>;
 
-/** POST /staff-tasks/:id/comments (assignee or Admin). */
+/** POST /staff-tasks/:id/comments (assignee, creator or Admin). */
 export const commentDtoSchema = z.object({
   body: z.string().trim().min(1, "Write a comment").max(COMMENT_MAX_LENGTH),
 });
@@ -113,8 +115,9 @@ const flag = z
 /**
  * GET /staff-tasks. Parsed strictly: an unknown status/priority/role, a bad id
  * or instant, or a non-numeric limit is a 400; limit is clamped to 1..100.
- * `assigneeId`, `role` and `clientId` are the Admin's filters (ignored for an
- * assignee, whose list is always their own tasks).
+ * `assigneeId`, `role` and `clientId` are open to every caller and always ANDed
+ * with their row scope; `relation` narrows to assigned-to-me / created-by-me /
+ * my-client-teams.
  */
 export const staffTaskQueryDtoSchema = z.object({
   status: z.enum(STAFF_TASK_STATUSES).optional(),
@@ -124,6 +127,7 @@ export const staffTaskQueryDtoSchema = z.object({
   assigneeId: z.string().uuid("assigneeId must be a user id").optional(),
   role: z.enum(ROLES).optional(),
   clientId: z.string().uuid("clientId must be a client id").optional(),
+  relation: z.enum(STAFF_TASK_RELATIONS).optional(),
   /** `overdue=true`: past due and not done. */
   overdue: flag,
   dueFrom: z.string().datetime({ offset: true }).optional(),

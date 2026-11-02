@@ -28,13 +28,30 @@ interface Column {
 }
 
 /**
- * The Admin's Kanban (FR-TSK-09): one column per status, each loaded from the
+ * The Kanban for the Admin and the client managers (FR-TSK-09): one column per status, each loaded from the
  * server with the active filters. Dragging a card to another column changes
  * its status after a confirm, with the card's version (a stale one reloads the
- * board); dragging out of Done reopens it. Columns scroll sideways on phones;
- * touch drags start after a short press so the page still scrolls.
+ * board); dragging out of Done reopens it. A card is draggable only when the
+ * viewer may move it (the assignee or the Admin; out of Done: `canManage`);
+ * the API still decides. Columns scroll sideways on phones; touch drags start
+ * after a short press so the page still scrolls.
  */
-export function TaskBoard({ filters, filterKey, zone, reloadKey }: { filters: StaffTaskListFilters; filterKey: string; zone: string; reloadKey: number }) {
+export function TaskBoard({
+  filters,
+  filterKey,
+  zone,
+  reloadKey,
+  isAdmin,
+  viewerId,
+}: {
+  filters: StaffTaskListFilters;
+  filterKey: string;
+  zone: string;
+  reloadKey: number;
+  isAdmin: boolean;
+  viewerId: string;
+}) {
+  const canMove = (t: StaffTaskSummary) => (t.status === "done" ? t.canManage : isAdmin || t.assigneeId === viewerId);
   const confirm = useConfirm();
   const { showToast } = useToast();
   const [columns, setColumns] = useState<Record<StaffTaskStatus, Column> | null>(null);
@@ -69,7 +86,7 @@ export function TaskBoard({ filters, filterKey, zone, reloadKey }: { filters: St
   async function handleDragEnd(event: DragEndEvent) {
     const task = event.active.data.current?.task as StaffTaskSummary | undefined;
     const target = event.over?.id as StaffTaskStatus | undefined;
-    if (!task || !target || target === task.status || busy) return;
+    if (!task || !target || target === task.status || busy || !canMove(task)) return;
     const reopening = task.status === "done";
     const ok = await confirm({
       title: reopening ? `Reopen "${task.title}"?` : `Move "${task.title}" to ${STAFF_TASK_STATUS_LABELS[target]}?`,
@@ -115,7 +132,7 @@ export function TaskBoard({ filters, filterKey, zone, reloadKey }: { filters: St
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0">
         {STAFF_TASK_STATUSES.map((status) => (
-          <BoardColumn key={status} status={status} column={columns[status]} zone={zone} />
+          <BoardColumn key={status} status={status} column={columns[status]} zone={zone} canMove={canMove} />
         ))}
       </div>
     </DndContext>
@@ -129,7 +146,7 @@ const COLUMN_DOT: Record<StaffTaskStatus, string> = {
   done: "bg-success",
 };
 
-function BoardColumn({ status, column, zone }: { status: StaffTaskStatus; column: Column; zone: string }) {
+function BoardColumn({ status, column, zone, canMove }: { status: StaffTaskStatus; column: Column; zone: string; canMove: (t: StaffTaskSummary) => boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
     <section
@@ -146,7 +163,7 @@ function BoardColumn({ status, column, zone }: { status: StaffTaskStatus; column
       </header>
       <ul className="flex min-h-24 flex-col gap-2.5">
         {column.tasks.map((t) => (
-          <BoardCard key={t.id} task={t} zone={zone} />
+          <BoardCard key={t.id} task={t} zone={zone} movable={canMove(t)} />
         ))}
         {column.tasks.length === 0 && <li className="rounded-app border border-dashed border-accent-light p-4 text-center text-xs text-text-muted">Nothing here</li>}
       </ul>
@@ -159,8 +176,8 @@ function BoardColumn({ status, column, zone }: { status: StaffTaskStatus; column
   );
 }
 
-function BoardCard({ task, zone }: { task: StaffTaskSummary; zone: string }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id, data: { task } });
+function BoardCard({ task, zone, movable }: { task: StaffTaskSummary; zone: string; movable: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id, data: { task }, disabled: !movable });
   const overdue = isTaskOverdue(task);
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
   return (
@@ -170,7 +187,7 @@ function BoardCard({ task, zone }: { task: StaffTaskSummary; zone: string }) {
       {...attributes}
       {...listeners}
       className={`lift relative touch-manipulation overflow-hidden rounded-app border bg-card py-3 pr-3 pl-4 shadow-app ${overdue ? "border-error/40" : "border-border"} ${
-        isDragging ? "z-50 cursor-grabbing opacity-90 shadow-app-lg" : "cursor-grab"
+        isDragging ? "z-50 cursor-grabbing opacity-90 shadow-app-lg" : movable ? "cursor-grab" : ""
       }`}
     >
       <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${PRIORITY_ACCENT[task.priority]}`} />

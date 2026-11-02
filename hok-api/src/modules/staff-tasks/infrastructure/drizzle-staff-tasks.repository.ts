@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, lt, ne, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
@@ -8,6 +8,7 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 // author's names, the linked client's name and the linked event's title.
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { clients } from "../../clients/infrastructure/clients.schema";
+import { isOnTeam, teamIdsOf } from "../../clients/infrastructure/client-team.sql";
 import { events } from "../../events/infrastructure/events.schema";
 import { staffTaskUpdates, staffTasks } from "./staff-tasks.schema";
 import type { StaffTaskDetail, StaffTaskEntity, StaffTaskSummaryEntity, StaffTaskUpdate } from "../domain/staff-task.entity";
@@ -42,6 +43,7 @@ const TASK_SELECT = {
   assignedByName: assigner.fullName,
   clientId: staffTasks.clientId,
   clientName: clients.businessName,
+  teamIds: teamIdsOf(staffTasks.clientId),
   eventId: staffTasks.eventId,
   dueAt: staffTasks.dueAt,
   priority: staffTasks.priority,
@@ -66,6 +68,8 @@ const SUMMARY_SELECT = {
   assigneeId: staffTasks.assigneeId,
   assigneeName: assignee.fullName,
   assigneeRole: assignee.role,
+  assignedById: staffTasks.assignedBy,
+  assignedByName: assigner.fullName,
   clientId: staffTasks.clientId,
   clientName: clients.businessName,
   eventId: staffTasks.eventId,
@@ -116,7 +120,7 @@ async function selectTask(ex: Executor, id: string, forUpdate = false): Promise<
 async function selectEvent(eventId: string): Promise<TaskEventRef | null> {
   try {
     const [row] = await db
-      .select({ id: events.id, clientId: events.clientId, title: events.title })
+      .select({ id: events.id, clientId: events.clientId, title: events.title, teamIds: teamIdsOf(events.clientId) })
       .from(events)
       .where(eq(events.id, eventId))
       .limit(1);
@@ -138,6 +142,21 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
   /** Shared by findMany and countMany so the page and its total can never disagree. */
   private conditions(f: StaffTaskListFilters): SQL | undefined {
     const c: SQL[] = [];
+    // Row scope: ANDed with everything below, so no filter can widen it.
+    if (f.scope.kind === "own") {
+      const me = f.scope.userId;
+      c.push(
+        or(
+          eq(staffTasks.assigneeId, me),
+          eq(staffTasks.assignedBy, me),
+          // Only client-manager roles see their clients' tasks (a client-less task has no team: the EXISTS is false).
+          f.scope.viaTeam ? isOnTeam(staffTasks.clientId, me) : undefined,
+        )!,
+      );
+    }
+    if (f.relation === "assigned") c.push(eq(staffTasks.assigneeId, f.callerId));
+    else if (f.relation === "created") c.push(eq(staffTasks.assignedBy, f.callerId));
+    else if (f.relation === "team") c.push(isOnTeam(staffTasks.clientId, f.callerId));
     if (f.assigneeId) c.push(eq(staffTasks.assigneeId, f.assigneeId));
     if (f.role) c.push(eq(assignee.role, f.role));
     if (f.status) c.push(eq(staffTasks.status, f.status));
@@ -168,6 +187,7 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
         .select(SUMMARY_SELECT)
         .from(staffTasks)
         .innerJoin(assignee, eq(assignee.id, staffTasks.assigneeId))
+        .leftJoin(assigner, eq(assigner.id, staffTasks.assignedBy))
         .leftJoin(clients, eq(clients.id, staffTasks.clientId))
         .where(this.conditions(filters))
         .orderBy(...order)
@@ -247,7 +267,7 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
 
   findClient(clientId: string) {
     return guarded("load the client", async (): Promise<TaskClientRef | null> => {
-      const [row] = await db.select({ id: clients.id }).from(clients).where(eq(clients.id, clientId)).limit(1);
+      const [row] = await db.select({ id: clients.id, teamIds: teamIdsOf(clients.id) }).from(clients).where(eq(clients.id, clientId)).limit(1);
       return row ?? null;
     });
   }

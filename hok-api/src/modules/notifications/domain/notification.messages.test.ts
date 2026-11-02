@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventReminderPayload, taskDueReminderPayload, taskStatusChangedPayload, timeUntilWords } from "./notification.messages";
+import { eventReminderPayload, taskDueReminderPayload, taskStatusChangedPayload, timeUntilWords, todoReminderPayload } from "./notification.messages";
 
 describe("taskStatusChangedPayload", () => {
   it("names the status in words, not the stored code", () => {
@@ -38,5 +38,28 @@ describe("reminder messages", () => {
     const p = taskDueReminderPayload({ taskId: "t1", title: "Edit the reel", dueAt: new Date("2026-10-20T05:00:00Z"), timeZone: "Asia/Kolkata", now });
     expect(p.title).toBe("Due in 2 h: Edit the reel");
     expect(p.body).toBe("Due at 10:30 am.");
+  });
+
+  describe("todoReminderPayload", () => {
+    const base = { todoId: "d1", title: "Call the printer", timeZone: "Asia/Kolkata" };
+    const dueAt = new Date("2026-10-20T05:00:00Z");
+
+    it("a day ahead says so in days", () => {
+      const p = todoReminderPayload({ ...base, dueAt, now: new Date("2026-10-19T05:03:00Z") });
+      expect(p.title).toBe("Due in 1 day: Call the printer");
+      expect(p.body).toBe("Due at 10:30 am.");
+      expect(p.url).toBe("/app/todos");
+      expect(p.data).toEqual({ todoId: "d1" });
+    });
+
+    it("an hour ahead says the minutes left", () => {
+      expect(todoReminderPayload({ ...base, dueAt, now: new Date("2026-10-20T04:05:00Z") }).title).toBe("Due in 55 min: Call the printer");
+      expect(todoReminderPayload({ ...base, dueAt, now: new Date("2026-10-20T04:00:00Z") }).title).toBe("Due in 1 h: Call the printer");
+    });
+
+    it("at the due time (a few minutes either side) says now", () => {
+      expect(todoReminderPayload({ ...base, dueAt, now: new Date("2026-10-20T05:04:00Z") }).title).toBe("Due now: Call the printer");
+      expect(todoReminderPayload({ ...base, dueAt, now: new Date("2026-10-20T04:50:00Z") }).title).toBe("Due now: Call the printer");
+    });
   });
 });

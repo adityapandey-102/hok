@@ -15,10 +15,12 @@ const feeds = new CalendarFeedService(repo, repo);
 
 export const calendarRouter = Router();
 
-// Admin and SMM / MM; task-only staff 403 (no events:read).
-calendarRouter.use(requireAuth, requireCapability("events:read"));
+// Everyone has a calendar (tasks and to-dos at least); the service decides which kinds each role gets.
+calendarRouter.use(requireAuth, requireCapability("staff_tasks:read"));
+// The .ics subscription stays manager-only this round (Admin and SMM / MM / PM; task-only staff 403).
+const feedLinkAccess = requireCapability("events:read");
 
-/** The merged feed for a range: client events + personal entries, earliest first. Items are presented as-is (they're already the wire shape). */
+/** The merged feed for a range: events, personal entries, tasks and the caller's own to-dos, earliest first. Items are presented as-is (they're already the wire shape). */
 calendarRouter.get(
   "/",
   validateQuery(calendarQueryDtoSchema),
@@ -30,6 +32,7 @@ calendarRouter.get(
 /** The caller's own subscribe link (FR-CAL-08): whether one is on, never the token. */
 calendarRouter.get(
   "/feed-link",
+  feedLinkAccess,
   asyncHandler(async (req, res) => {
     res.json({ link: await feeds.get(req.authUserId!) });
   }),
@@ -38,6 +41,7 @@ calendarRouter.get(
 /** Make a subscribe link (or a new one: the old one stops working). The token is in this response only. */
 calendarRouter.post(
   "/feed-link",
+  feedLinkAccess,
   asyncHandler(async (req, res) => {
     res.status(201).json(await feeds.create(req.authUserId!));
   }),
@@ -45,6 +49,7 @@ calendarRouter.post(
 
 calendarRouter.delete(
   "/feed-link",
+  feedLinkAccess,
   asyncHandler(async (req, res) => {
     await feeds.revoke(req.authUserId!);
     res.status(204).end();

@@ -166,6 +166,32 @@ describe("GET /api/v1/dashboard", () => {
   it("refuses an unknown view", async () => {
     expect((await request(app).get("/api/v1/dashboard?view=everything").set("Authorization", auth.admin)).status).toBe(400);
   });
+
+  it("gives every role its own to-dos card (open, overdue, the next 5 by due) and never anyone else's", async () => {
+    const empty = { open: 0, overdue: 0, next: [] };
+    for (const who of ["admin", "manager", "editor"] as const) expect((await dashboard(who)).todos).toEqual(empty);
+    expect((await dashboard("admin", "mine")).todos).toEqual(empty);
+
+    const add = async (who: Who, body: Record<string, unknown>) => {
+      const r = await request(app).post("/api/v1/todos").set("Authorization", auth[who]).send(body);
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+      return (r.body as { todo: { id: string; version: number } }).todo;
+    };
+    const now = Date.now();
+    await add("editor", { title: "Dash todo undated" });
+    for (let i = 6; i >= 1; i--) await add("editor", { title: `Dash todo ${i}`, dueAt: iso(now + i * HOUR), urgency: "low" });
+    const overdue = await add("editor", { title: "Dash todo overdue", dueAt: iso(now - 2 * HOUR) });
+    const done = await add("editor", { title: "Dash todo finished" });
+    await request(app).patch(`/api/v1/todos/${done.id}`).set("Authorization", auth.editor).send({ done: true, version: 1 });
+
+    const card = (await dashboard("editor")).todos;
+    expect(card).toMatchObject({ open: 8, overdue: 1 });
+    expect(card.next.map((t) => t.title)).toEqual(["Dash todo overdue", "Dash todo 1", "Dash todo 2", "Dash todo 3", "Dash todo 4"]);
+    expect(card.next[0]).toMatchObject({ id: overdue.id, done: false, doneAt: null, urgency: "medium", version: 1 });
+    // The manager and the Admin see none of it.
+    expect((await dashboard("manager")).todos).toEqual(empty);
+    expect((await dashboard("admin")).todos).toEqual(empty);
+  });
 });
 
 describe("GET /api/v1/dashboard/team", () => {

@@ -87,6 +87,12 @@ export function eventReminderPayload(input: { eventId: string; title: string; cl
   };
 }
 
+/** "1 day", "3 days": whole days, for reminders a day or more ahead. */
+function daysWords(ms: number): string {
+  const days = Math.max(1, Math.round(ms / (24 * 60 * 60_000)));
+  return days === 1 ? "1 day" : `${days} days`;
+}
+
 /** task_due_reminder -> the assignee, about 2 hours before the task is due (FR-TSK-11). */
 export function taskDueReminderPayload(input: { taskId: string; title: string; dueAt: Date; timeZone: string; now: Date }): NotificationPayload {
   return {
@@ -94,5 +100,22 @@ export function taskDueReminderPayload(input: { taskId: string; title: string; d
     body: `Due at ${clockIn(input.dueAt, input.timeZone)}.`,
     url: `/app/tasks/${input.taskId}`,
     data: { taskId: input.taskId },
+  };
+}
+
+/**
+ * todo_reminder -> the to-do's owner only (round 1). Sent at the urgency's
+ * moments (1 day before, 1 hour before, at the due time), checked every 10
+ * minutes, so "now" means due within the last/next few minutes; otherwise it
+ * says how long is left.
+ */
+export function todoReminderPayload(input: { todoId: string; title: string; dueAt: Date; timeZone: string; now: Date }): NotificationPayload {
+  const left = input.dueAt.getTime() - input.now.getTime();
+  const when = left < 15 * 60_000 ? "now" : left >= 23 * 60 * 60_000 ? `in ${daysWords(left)}` : `in ${timeUntilWords(left)}`;
+  return {
+    title: `Due ${when}: ${input.title}`,
+    body: `Due at ${clockIn(input.dueAt, input.timeZone)}.`,
+    url: "/app/todos",
+    data: { todoId: input.todoId },
   };
 }

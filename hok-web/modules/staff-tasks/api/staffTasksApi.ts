@@ -1,13 +1,17 @@
 import type { ReferenceLink, Role, StaffTask, StaffTaskPriority, StaffTaskStatus, StaffTaskSummary } from "../../../lib/domain";
 import { apiFetch } from "../../../lib/api/client";
 
+export type TaskRelation = "assigned" | "created" | "team";
+
 export interface StaffTaskListFilters {
   status?: StaffTaskStatus;
   open?: boolean;
   priority?: StaffTaskPriority;
-  /** Admin only (ignored by the API for everyone else). */
   assigneeId?: string;
   role?: Role;
+  clientId?: string;
+  /** Narrow to one relation to the caller: given to me, created by me, or via my client teams (managers). */
+  relation?: TaskRelation;
   overdue?: boolean;
   dueFrom?: string;
   dueTo?: string;

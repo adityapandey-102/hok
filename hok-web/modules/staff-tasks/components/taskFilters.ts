@@ -1,5 +1,5 @@
 import { addDays, dayRange, todayKey, type Role, type StaffTaskPriority, type StaffTaskStatus } from "../../../lib/domain";
-import type { StaffTaskListFilters } from "../api/staffTasksApi";
+import type { StaffTaskListFilters, TaskRelation } from "../api/staffTasksApi";
 
 export type DueFilter = "" | "overdue" | "today" | "week";
 
@@ -9,12 +9,14 @@ export interface TaskFilterState {
   status: "open" | "all" | StaffTaskStatus;
   priority: StaffTaskPriority | "";
   due: DueFilter;
-  /** Admin only. */
+  /** Admin and client managers. */
   assigneeId: string;
   role: Role | "";
+  /** Client managers' tabs: given to me, created by me, via my clients. "" = all of them. */
+  relation: TaskRelation | "";
 }
 
-export const EMPTY_FILTERS: TaskFilterState = { search: "", status: "open", priority: "", due: "", assigneeId: "", role: "" };
+export const EMPTY_FILTERS: TaskFilterState = { search: "", status: "open", priority: "", due: "", assigneeId: "", role: "", relation: "" };
 
 /**
  * Filter bar -> API query. "Due today" / "this week" are the VIEWER's days
@@ -27,6 +29,7 @@ export function toApiFilters(f: TaskFilterState, zone: string, forBoard = false)
     priority: f.priority || undefined,
     assigneeId: f.assigneeId || undefined,
     role: f.role || undefined,
+    relation: f.relation || undefined,
   };
   if (!forBoard) {
     if (f.status === "open") out.open = true;

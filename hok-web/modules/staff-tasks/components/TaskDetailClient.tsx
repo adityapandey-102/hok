@@ -7,8 +7,10 @@ import {
   STAFF_TASK_STATUS_LABELS,
   describeTaskUpdate,
   formatInZone,
+  hasCapability,
   isTaskOverdue,
   nextStatuses,
+  type Role,
   type StaffTask,
   type StaffTaskStatus,
 } from "../../../lib/domain";
@@ -54,9 +56,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 /**
  * One task (FR-TSK-04/05/06/10): details, the editor brief, the status
  * actions with an optional comment, a comment box and the timeline. The
- * assignee and the Admin work on it; only the Admin edits, reopens or deletes.
+ * assignee and the Admin change its status; they and the creator comment;
+ * only the Admin or the creator (`task.canManage`) edits, reassigns, reopens or
+ * deletes. A client manager who is none of those sees it read-only.
  */
-export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { initialTask: StaffTask; isAdmin: boolean; viewerId: string; zone: string }) {
+export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initialTask: StaffTask; role: Role; viewerId: string; zone: string }) {
   const router = useRouter();
   const confirm = useConfirm();
   const { showToast } = useToast();
@@ -66,7 +70,10 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
   const [conflict, setConflict] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
-  const canWork = isAdmin || task.assigneeId === viewerId;
+  const isAdmin = role === "admin";
+  const canStatus = isAdmin || task.assigneeId === viewerId;
+  const canComment = canStatus || task.assignedById === viewerId;
+  const canManage = task.canManage;
   const overdue = isTaskOverdue(task);
   const hasBrief = !!(task.rawFilesUrl || task.referenceUrl || task.script);
 
@@ -128,7 +135,7 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
     <div className="mx-auto max-w-5xl">
       <header className="mb-6">
         <Link href="/app/tasks" className="mb-3 inline-flex items-center gap-1 text-sm text-text-muted transition-colors hover:text-text-primary">
-          <Icon name="chevron-right" size={14} className="rotate-180" /> {isAdmin ? "All tasks" : "My tasks"}
+          <Icon name="chevron-right" size={14} className="rotate-180" /> {hasCapability(role, "staff_tasks:assign") ? "Tasks" : "My tasks"}
         </Link>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
@@ -138,11 +145,11 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
               <PriorityPill priority={task.priority} />
               <span className="flex items-center gap-2 text-sm text-text-muted">
                 <PersonDot name={task.assigneeName} size={24} />
-                {task.assigneeName} ({roleLabel(task.assigneeRole)}){task.assignedByName ? ` · assigned by ${task.assignedByName}` : ""}
+                {task.assigneeName} ({roleLabel(task.assigneeRole)}){task.assignedByName ? ` · Assigned by ${task.assignedByName}` : ""}
               </span>
             </div>
           </div>
-          {isAdmin && (
+          {canManage && (
             <div className="page-actions shrink-0">
               <Button variant="outline" disabled={busy} onClick={() => setEditOpen(true)}>
                 <Icon name="edit" size={16} /> Edit or reassign
@@ -155,6 +162,11 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
         </div>
       </header>
 
+      {!canComment && (
+        <div className="mb-4 flex items-center gap-2 rounded-app-lg bg-accent-bg p-3.5 text-sm text-text-secondary">
+          <Icon name="eye" size={16} className="shrink-0" /> View only: you&apos;re on this client&apos;s team.
+        </div>
+      )}
       {conflict && (
         <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-app-lg border border-error/30 bg-error-bg p-3.5 text-sm text-error">
           <span>Someone else changed this task in the meantime.</span>
@@ -221,15 +233,15 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
         </div>
 
         <div className="flex min-w-0 flex-col gap-5 lg:col-span-5">
-          {canWork && (
-            <Panel icon="check-circle" title="Update" subtitle="Change the status or add a comment">
+          {canComment && (
+            <Panel icon="check-circle" title="Update" subtitle={canStatus ? "Change the status or add a comment" : "Add a comment"}>
               <div className="flex flex-col gap-3 p-5">
                 <div>
-                  <FieldLabel htmlFor="task-comment">Comment (optional with a status change)</FieldLabel>
+                  <FieldLabel htmlFor="task-comment">{canStatus ? "Comment (optional with a status change)" : "Comment"}</FieldLabel>
                   <Textarea id="task-comment" rows={3} maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="What's the update?" />
                 </div>
                 {task.status === "done" ? (
-                  isAdmin ? (
+                  canManage ? (
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                       <Button variant="outline" disabled={busy} onClick={() => reopen("todo")}>
                         <Icon name="refresh" size={15} /> Reopen (To do)
@@ -238,10 +250,10 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
                         Reopen (In progress)
                       </Button>
                     </div>
-                  ) : (
-                    <p className="text-sm text-text-muted">This task is done. Only the Admin can reopen it.</p>
-                  )
-                ) : (
+                  ) : canStatus ? (
+                    <p className="text-sm text-text-muted">This task is done. Only the person who gave it (or the Admin) can reopen it.</p>
+                  ) : null
+                ) : canStatus ? (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                     {nextStatuses(task.status).map((s) => (
                       <Button key={s} variant={s === "done" ? "primary" : "outline"} disabled={busy} onClick={() => changeStatus(s)}>
@@ -249,7 +261,7 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
                       </Button>
                     ))}
                   </div>
-                )}
+                ) : null}
                 <Button variant="ghost" disabled={busy || !comment.trim()} onClick={postComment} className="self-start">
                   <Icon name="send" size={15} /> Post comment only
                 </Button>
@@ -275,7 +287,7 @@ export function TaskDetailClient({ initialTask, isAdmin, viewerId, zone }: { ini
         </div>
       </div>
 
-      {isAdmin && editOpen && (
+      {canManage && editOpen && (
         <TaskFormModal
           open
           task={task}

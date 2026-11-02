@@ -4,7 +4,11 @@ import { ROLES } from "../../../../domain";
 export const TEAM_DEFAULT_LIMIT = 20;
 export const TEAM_MAX_LIMIT = 100;
 
-/** GET /team-members: active staff only; name search; optional role; paged (≤ 100). Parsed strictly like GET /users. */
+/**
+ * GET /team-members: active staff only; name search; optional role; paged (≤ 100).
+ * `assignable=true`: only people whose role the caller may assign a task to.
+ * Parsed strictly like GET /users.
+ */
 export const teamMemberQueryDtoSchema = z.object({
   search: z
     .string()
@@ -13,6 +17,10 @@ export const teamMemberQueryDtoSchema = z.object({
     
     .transform((v) => (v ? v : undefined)).optional(),
   role: z.enum(ROLES).optional(),
+  assignable: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true"),
   limit: z.coerce
     .number()
     .int()

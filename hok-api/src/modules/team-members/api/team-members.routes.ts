@@ -24,7 +24,7 @@ teamMembersRouter.get(
   "/",
   validateQuery(teamMemberQueryDtoSchema),
   asyncHandler(async (req, res) => {
-    const result = await service.list(req.query as unknown as TeamMemberQueryDto);
+    const result = await service.list(req.query as unknown as TeamMemberQueryDto, req.profile!.role);
     res.json({ ...result, members: result.members.map(present) });
   }),
 );

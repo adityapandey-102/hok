@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, lt, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNotNull, lt, or, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../common/database/drizzle-client";
 import { scanLowerBound } from "../../../domain";
@@ -8,24 +8,29 @@ import { clients } from "../../clients/infrastructure/clients.schema";
 import { isOnTeam } from "../../clients/infrastructure/client-team.sql";
 import { eventStages, events } from "../../events/infrastructure/events.schema";
 import { personalEvents } from "../../personal-events/infrastructure/personal-events.schema";
+import { staffTasks } from "../../staff-tasks/infrastructure/staff-tasks.schema";
+import { todos } from "../../todos/infrastructure/todos.schema";
 // The subscribe link's hash lives on the person's profile (Users' table, ADR 0003).
 import { profiles } from "../../users/infrastructure/profile.schema";
-import type { CalendarEventItem, CalendarPersonalItem } from "../domain/calendar.entity";
+import type { CalendarEventItem, CalendarPersonalItem, CalendarTaskItem, CalendarTodoItem } from "../domain/calendar.entity";
 import type {
   CalendarEventFilters,
   CalendarFeedRepositoryPort,
   CalendarPersonalFilters,
   CalendarRange,
   CalendarRepositoryPort,
+  CalendarTaskFilters,
   FeedOwner } from "../application/ports/calendar-repository.port";
 import { guarded } from "../../../common/database/guarded";
 
 const currentStage = alias(eventStages, "current_stage");
+const taskAssignee = alias(profiles, "task_assignee");
 
 /**
- * One query per kind, each: overlap with [from, to), bounded below on
- * starts_at by the 31-day item cap (index-friendly), joined to what a
- * calendar cell shows (client name, current stage), earliest first, capped.
+ * One query per kind. Events and personal entries: overlap with [from, to),
+ * bounded below on starts_at by the 31-day item cap (index-friendly), joined
+ * to what a calendar cell shows (client name, current stage), earliest first,
+ * capped. Tasks and to-dos: `due_at` in [from, to) (see their methods).
  */
 export class DrizzleCalendarRepository implements CalendarRepositoryPort, CalendarFeedRepositoryPort {
   eventsInRange(range: CalendarRange, f: CalendarEventFilters, limit: number) {
@@ -95,6 +100,87 @@ export class DrizzleCalendarRepository implements CalendarRepositoryPort, Calend
         .limit(limit);
       return rows.map(
         (r): CalendarPersonalItem => ({ kind: "personal", ...r, startsAt: r.startsAt.toISOString(), endsAt: r.endsAt.toISOString() }),
+      );
+    });
+  }
+
+  /**
+   * Tasks and to-dos are points in time: `due_at` in [from, to), no overlap
+   * maths and no scan bound needed. Tasks without a due date never appear.
+   * The visibility mirrors the Staff Tasks module (assignee, creator, and --
+   * client managers -- the client's team); the Admin reads all, optionally one assignee.
+   */
+  tasksInRange(range: CalendarRange, f: CalendarTaskFilters, limit: number) {
+    return guarded("load calendar tasks", async () => {
+      const c: SQL[] = [isNotNull(staffTasks.dueAt), gte(staffTasks.dueAt, new Date(range.from)), lt(staffTasks.dueAt, new Date(range.to))];
+      if (f.scope.kind === "all") {
+        if (f.scope.assigneeId) c.push(eq(staffTasks.assigneeId, f.scope.assigneeId));
+      } else {
+        const me = f.scope.userId;
+        c.push(or(eq(staffTasks.assigneeId, me), eq(staffTasks.assignedBy, me), f.scope.viaTeam ? isOnTeam(staffTasks.clientId, me) : undefined)!);
+      }
+      if (f.clientId) c.push(eq(staffTasks.clientId, f.clientId));
+      const rows = await db
+        .select({
+          id: staffTasks.id,
+          title: staffTasks.title,
+          dueAt: staffTasks.dueAt,
+          clientId: staffTasks.clientId,
+          clientName: clients.businessName,
+          assigneeId: staffTasks.assigneeId,
+          assigneeName: taskAssignee.fullName,
+          status: staffTasks.status,
+          priority: staffTasks.priority,
+        })
+        .from(staffTasks)
+        .innerJoin(taskAssignee, eq(taskAssignee.id, staffTasks.assigneeId))
+        .leftJoin(clients, eq(clients.id, staffTasks.clientId))
+        .where(and(...c))
+        .orderBy(asc(staffTasks.dueAt), asc(staffTasks.id))
+        .limit(limit);
+      return rows.map(
+        (r): CalendarTaskItem => ({
+          kind: "task",
+          id: r.id,
+          title: r.title,
+          startsAt: r.dueAt!.toISOString(),
+          endsAt: r.dueAt!.toISOString(),
+          // A task has no zone of its own; the web shows it in the viewer's.
+          timeZone: "UTC",
+          clientId: r.clientId,
+          clientName: r.clientName,
+          ownerId: r.assigneeId,
+          assigneeId: r.assigneeId,
+          assigneeName: r.assigneeName,
+          status: r.status,
+          priority: r.priority,
+        }),
+      );
+    });
+  }
+
+  todosInRange(range: CalendarRange, f: { ownerId: string }, limit: number) {
+    return guarded("load calendar to-dos", async () => {
+      const rows = await db
+        .select({ id: todos.id, title: todos.title, dueAt: todos.dueAt, urgency: todos.urgency, doneAt: todos.doneAt })
+        .from(todos)
+        .where(and(eq(todos.ownerId, f.ownerId), gte(todos.dueAt, new Date(range.from)), lt(todos.dueAt, new Date(range.to))))
+        .orderBy(asc(todos.dueAt), asc(todos.id))
+        .limit(limit);
+      return rows.map(
+        (r): CalendarTodoItem => ({
+          kind: "todo",
+          id: r.id,
+          title: r.title,
+          startsAt: r.dueAt!.toISOString(),
+          endsAt: r.dueAt!.toISOString(),
+          timeZone: "UTC",
+          clientId: null,
+          clientName: null,
+          ownerId: f.ownerId,
+          urgency: r.urgency,
+          done: r.doneAt !== null,
+        }),
       );
     });
   }

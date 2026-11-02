@@ -45,7 +45,7 @@
 <body>
 
 <h1>HOK — Agency Operations Platform</h1>
-<div class="sub">Requirements Summary &nbsp;·&nbsp; Version 0.3 (decisions included) &nbsp;·&nbsp; 13 Oct 2026</div>
+<div class="sub">Requirements Summary &nbsp;·&nbsp; Version 0.4 (team feedback round 1) &nbsp;·&nbsp; 3 Nov 2026</div>
 
 <div class="hero">
   <p><b>What are we building?</b> One website with two sides. The <b>public side</b> is the firm’s portfolio. The <b>private side</b>
@@ -57,10 +57,10 @@
 <h2>1. Who uses it?</h2>
 <table>
   <tr><th>User</th><th>What they do</th></tr>
-  <tr><td><b>Admin</b></td><td>Controls everything. Sees all clients &amp; all data. Creates staff accounts and stage templates. The only one who assigns tasks. Can also have their own clients.</td></tr>
-  <tr><td><b>Social Media Manager</b></td><td>Manages <b>their own clients</b>: events, calendar, content links, client comments. Gets tasks from Admin.</td></tr>
+  <tr><td><b>Admin</b></td><td>Controls everything. Sees all clients &amp; all data. Creates staff accounts and stage templates. Assigns tasks to managers and staff. Can also have their own clients.</td></tr>
+  <tr><td><b>Social Media Manager</b></td><td>Manages <b>their own clients</b>: events, calendar, content links, client comments. Gets tasks from Admin and <b>gives tasks to task-only staff</b>.</td></tr>
   <tr><td><b>Marketing Manager</b></td><td>Same as Social Media Manager.</td></tr>
-  <tr><td><b>Marketing Agent, Developer, Editor</b></td><td><b>Tasks only</b>: receive tasks from Admin, update the status with comments, and mark them done.</td></tr>
+  <tr><td><b>Marketing Agent, Developer, Editor</b></td><td><b>Tasks only</b>: receive tasks from Admin or a manager, update the status with comments, and mark them done. Have their own calendar and to-dos.</td></tr>
   <tr><td><b>Client</b> (outside)</td><td>No login. Opens a <b>private link</b> to see their dashboard and leave comments.</td></tr>
 </table>
 <p class="note" style="margin-top:5px">🔒 <b>Privacy rule:</b> a manager sees only their own clients. Nobody else can see them except Admin. One client = one manager.</p>
@@ -73,9 +73,10 @@
   <tr><td>Client profiles</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c n">✗</td><td class="c n">✗</td></tr>
   <tr><td>Events &amp; shoots</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c n">✗</td><td class="c">view</td></tr>
   <tr><td>Content links (assets)</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c n">✗</td><td class="c n">✗</td></tr>
-  <tr><td>Calendars</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c n">✗</td><td class="c">view</td></tr>
+  <tr><td>Calendars</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c y">✓ my tasks</td><td class="c">view</td></tr>
   <tr><td>Client comments</td><td class="c y">✓ all</td><td class="c y">✓ own</td><td class="c n">✗</td><td class="c y">✓ post</td></tr>
-  <tr><td>Assign tasks</td><td class="c y">✓</td><td class="c n">✗</td><td class="c n">✗</td><td class="c n">✗</td></tr>
+  <tr><td>Assign tasks (only downwards)</td><td class="c y">✓ to managers &amp; staff</td><td class="c y">✓ to staff</td><td class="c n">✗</td><td class="c n">✗</td></tr>
+  <tr><td>My to-dos (private)</td><td class="c y">✓ own</td><td class="c y">✓ own</td><td class="c y">✓ own</td><td class="c n">✗</td></tr>
   <tr><td>Do / update / close my tasks</td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td><td class="c n">✗</td></tr>
   <tr><td>Dashboard</td><td class="c">everything</td><td class="c">my clients</td><td class="c">my tasks</td><td class="c">my events</td></tr>
 </table>
@@ -102,6 +103,7 @@
     <ul><li><b>Client calendar</b>: all events of one client</li>
     <li><b>My calendar</b>: all my clients’ events + my own events</li>
     <li><b>Admin calendar</b>: whole company</li>
+    <li><b>Everyone</b> has a calendar: tasks on their due date + own to-dos. Days show counts; click a day to see and add</li>
     <li>Works across <b>time zones</b>: everyone sees times in their own zone</li></ul></div>
 
   <div class="card"><h3><span class="num">5</span>Client Portal (shared link)</h3>
@@ -115,14 +117,15 @@
     <li>Manager sets status: <b>Received → In Progress → Solved</b> and can reply</li></ul></div>
 
   <div class="card"><h3><span class="num">7</span>Team Tasks</h3>
-    <ul><li>Admin gives a task to <b>one</b> staff member</li>
+    <ul><li>Admin or a manager gives a task to <b>one</b> person below them</li>
     <li>Staff updates the status with a comment: To Do → In Progress → <b>Done</b> (or Blocked). They close it themselves</li>
-    <li>Admin is notified of every update and can reopen</li></ul></div>
+    <li>Whoever gave the task is notified of every update and can reopen</li></ul></div>
 
   <div class="card"><h3><span class="num">8</span>Editor Tasks (extra fields)</h3>
     <ul><li><b>Raw files link</b> (Google Drive)</li>
     <li><b>Reference edit link</b> (the style to follow)</li>
-    <li><b>Script</b></li></ul></div>
+    <li><b>Script</b></li>
+    <li>None of them is required (since Nov 2026)</li></ul></div>
 
   <div class="card"><h3><span class="num">9</span>Notifications</h3>
     <ul><li>Phone/browser push + bell icon in the app</li>
@@ -131,7 +134,8 @@
 
   <div class="card"><h3><span class="num">10</span>Dashboards</h3>
     <ul><li>Each user sees a home screen made for their role</li>
-    <li>Today’s events, pending comments, due tasks, progress at a glance</li></ul></div>
+    <li>Today’s events, pending comments, due tasks, progress at a glance</li>
+    <li><b>My to-dos</b>: private list with reminders by urgency</li></ul></div>
 </div>
 
 <div class="avoid">
@@ -157,7 +161,7 @@
   <tr><td>Event stages</td><td>Admin-made templates, picked when creating an event</td></tr>
   <tr><td>Content links on portal</td><td>Not in first version</td></tr>
   <tr><td>Who gets pushed on a client comment</td><td>Only the client’s manager</td></tr>
-  <tr><td>Who assigns tasks</td><td>Only Admin</td></tr>
+  <tr><td>Who assigns tasks</td><td>Admin and managers, only downwards (Nov 2026)</td></tr>
   <tr><td>Task rules</td><td>One person per task; they can mark it Done</td></tr>
   <tr><td>Mobile</td><td>Mobile-friendly website you can install (no app store)</td></tr>
   <tr><td>Size</td><td>~20–50 staff, ~100–500 clients</td></tr>

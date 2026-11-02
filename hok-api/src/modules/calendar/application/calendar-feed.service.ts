@@ -68,9 +68,9 @@ export class CalendarFeedService {
     // Upcoming and past are read separately so a busy past month never pushes next month out (4 queries, fixed).
     // shortcut: the earliest 100 of the past 30 days + the next 500 of each kind; enough for a firm this size, page it if the Admin's feed ever fills up.
     const reads = await Promise.all([
-      this.calendar.eventsInRange(upcoming, scope.events, CALENDAR_MAX_ITEMS_PER_KIND),
+      scope.events ? this.calendar.eventsInRange(upcoming, scope.events, CALENDAR_MAX_ITEMS_PER_KIND) : none,
       scope.personal ? this.calendar.personalInRange(upcoming, scope.personal, CALENDAR_MAX_ITEMS_PER_KIND) : none,
-      this.calendar.eventsInRange(past, scope.events, FEED_PAST_MAX_PER_KIND),
+      scope.events ? this.calendar.eventsInRange(past, scope.events, FEED_PAST_MAX_PER_KIND) : none,
       scope.personal ? this.calendar.personalInRange(past, scope.personal, FEED_PAST_MAX_PER_KIND) : none,
     ]);
     // An item happening "now" is in both windows: keep it once.

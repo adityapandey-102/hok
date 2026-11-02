@@ -23,13 +23,18 @@ export const CAPABILITIES = [
   // Client comments inbox: read, change status, reply.
   "comments:read",
   "comments:manage",
-  // Staff tasks: only Admin assigns; everyone works on their own.
-  // "own" = tasks whose assignee_id is the caller.
+  // Staff tasks. Assigning goes down the role ladder (see canAssignTo): Admin
+  // true, client managers "own" (only to level-3 roles, only on their own
+  // clients), task-only staff false. Read / update: "own" = tasks assigned to
+  // the caller (read also covers tasks they created and, for managers, tasks
+  // of their clients).
   "staff_tasks:assign",
   "staff_tasks:read",
   "staff_tasks:update",
   // Firm-wide dashboard figures and the global calendar.
   "dashboard:global",
+  // My to-dos: private notes. "own" for every role, the Admin included (no bypass).
+  "todos:manage",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -69,6 +74,30 @@ const CLIENT_MANAGERS_OWN: Record<Role, CapabilityScope> = {
   content_writer: false,
 };
 
+/** Admin assigns to anyone below; client managers to level-3 roles only; task-only staff assign nobody. */
+const ASSIGN_DOWN: Record<Role, CapabilityScope> = {
+  admin: true,
+  social_media_manager: "own",
+  marketing_manager: "own",
+  project_manager: "own",
+  marketing_agent: false,
+  developer: false,
+  editor: false,
+  content_writer: false,
+};
+
+/** Private to each person, whatever the role: nobody (not even the Admin) reaches another person's records. */
+const EVERYONE_PRIVATE: Record<Role, CapabilityScope> = {
+  admin: "own",
+  social_media_manager: "own",
+  marketing_manager: "own",
+  project_manager: "own",
+  marketing_agent: "own",
+  developer: "own",
+  editor: "own",
+  content_writer: "own",
+};
+
 /** Admin sees every task; every other role sees and works on the tasks assigned to them. */
 const EVERYONE_OWN_TASKS: Record<Role, CapabilityScope> = {
   admin: true,
@@ -95,10 +124,11 @@ export const CAPABILITY_MATRIX: Record<Capability, Record<Role, CapabilityScope>
   "portal:manage": CLIENT_MANAGERS_OWN,
   "comments:read": CLIENT_MANAGERS_OWN,
   "comments:manage": CLIENT_MANAGERS_OWN,
-  "staff_tasks:assign": ADMIN_ONLY,
+  "staff_tasks:assign": ASSIGN_DOWN,
   "staff_tasks:read": EVERYONE_OWN_TASKS,
   "staff_tasks:update": EVERYONE_OWN_TASKS,
   "dashboard:global": ADMIN_ONLY,
+  "todos:manage": EVERYONE_PRIVATE,
 };
 
 export function getCapabilityScope(role: Role, capability: Capability): CapabilityScope {

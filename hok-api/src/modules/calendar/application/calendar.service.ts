@@ -8,16 +8,16 @@ export interface CalendarFeed {
   from: string;
   to: string;
   items: CalendarItem[];
-  /** True when either kind hit CALENDAR_MAX_ITEMS_PER_KIND: narrow the range or filter. */
+  /** True when any kind hit CALENDAR_MAX_ITEMS_PER_KIND: narrow the range or filter. */
   truncated: boolean;
 }
 
 /**
- * The merged calendar feed (FR-CAL-01/02/06): client events + personal
- * entries overlapping a range, in at most TWO queries (one per kind, run in
- * parallel), each capped; merged by start time here. Times stay UTC: the web
- * shows them in the viewer's zone and each item's own `timeZone` when it
- * differs (FR-CAL-07).
+ * The merged calendar feed (FR-CAL-01/02/06): client events, personal entries,
+ * tasks and the caller's own to-dos overlapping a range, in at most FOUR
+ * queries (one per kind, run in parallel), each capped; merged by start time
+ * here. Times stay UTC: the web shows them in the viewer's zone and each
+ * item's own `timeZone` when it differs (FR-CAL-07).
  */
 export class CalendarService {
   constructor(
@@ -29,26 +29,34 @@ export class CalendarService {
     assertFeedRange(query.from, query.to);
     const scope = resolveCalendarScope(caller, query.ownerId);
     const range = { from: query.from, to: query.to };
-    const wantEvents = query.include !== "personal";
-    const wantPersonal = query.include !== "events" && scope.personal !== null;
-    // Event-only filters exclude personal entries (they have no type or state).
-    const personalApplies = wantPersonal && query.eventType === undefined && query.state === undefined;
+    // Event-only filters (type, state) leave out every other kind: they have neither.
+    const eventOnly = query.eventType !== undefined || query.state !== undefined;
+    const wants = (kind: "events" | "personal" | "tasks" | "todos") =>
+      (query.include === "all" || query.include === kind) && (kind === "events" || !eventOnly);
     // One extra row tells us whether the cap was hit.
     const limit = this.maxPerKind + 1;
 
-    const [events, personal] = await Promise.all([
-      wantEvents
+    const [events, personal, tasks, todos] = await Promise.all([
+      wants("events") && scope.events
         ? this.repo.eventsInRange(range, { ...scope.events, clientId: query.clientId, eventType: query.eventType, state: query.state }, limit)
         : Promise.resolve([]),
-      personalApplies && scope.personal
+      wants("personal") && scope.personal
         ? this.repo.personalInRange(range, { ownerId: scope.personal.ownerId, clientId: query.clientId }, limit)
         : Promise.resolve([]),
+      wants("tasks") ? this.repo.tasksInRange(range, { scope: scope.tasks, clientId: query.clientId }, limit) : Promise.resolve([]),
+      // To-dos have no client: a client filter leaves them out.
+      wants("todos") && query.clientId === undefined ? this.repo.todosInRange(range, scope.todos, limit) : Promise.resolve([]),
     ]);
-    const truncated = events.length > this.maxPerKind || personal.length > this.maxPerKind;
+    const truncated = [events, personal, tasks, todos].some((rows) => rows.length > this.maxPerKind);
     return {
       from: query.from,
       to: query.to,
-      items: mergeByStart(events.slice(0, this.maxPerKind), personal.slice(0, this.maxPerKind)),
+      items: mergeByStart(
+        events.slice(0, this.maxPerKind),
+        personal.slice(0, this.maxPerKind),
+        tasks.slice(0, this.maxPerKind),
+        todos.slice(0, this.maxPerKind),
+      ),
       truncated,
     };
   }

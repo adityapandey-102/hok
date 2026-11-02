@@ -8,8 +8,8 @@ const DUE: DueFilter[] = ["overdue", "today", "week"];
 const STATUS: TaskFilterState["status"][] = ["todo", "in_progress", "blocked", "done", "all"];
 
 /**
- * Staff tasks (M7): "My tasks" for everyone, the Admin's list + Kanban for the
- * Admin. Links can open it pre-filtered (the dashboard's "View all"):
+ * Staff tasks (M7): "My tasks" for task-only staff; the Admin and the client
+ * managers get list + Kanban, the assignee filter and "New task". Links can open it pre-filtered (the dashboard's "View all"):
  * `?due=overdue|today|week`, `?status=todo|in_progress|blocked|done|all`, and for
  * the Admin `?assigneeId=…&assignee=Name`.
  */
@@ -24,7 +24,8 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const assigneeId = isAdmin && /^[0-9a-f-]{36}$/i.test(one("assigneeId") ?? "") ? one("assigneeId") : undefined;
   return (
     <TasksPageClient
-      isAdmin={isAdmin}
+      role={profile.role}
+      viewerId={profile.id}
       zone={profile.timeZone}
       initialFilters={{ ...(due ? { due } : {}), ...(status ? { status } : {}), ...(assigneeId ? { assigneeId } : {}) }}
       initialAssigneeName={assigneeId ? one("assignee") : undefined}

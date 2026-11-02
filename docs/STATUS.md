@@ -2,6 +2,13 @@
 
 > Updated 2026-10-22. **No agents running.** Resume from here.
 
+## Team feedback plan (2026-11-02, current work)
+- Plan: [PLAN-team-feedback-2026-11.md](PLAN-team-feedback-2026-11.md), 4 rounds. Specs in [specs/](specs/).
+- **Round 1 done and reviewed, uncommitted** (2026-11-03): ladder, calendar for everyone, day pop-up, My to-dos. Gates: API lint/tsc clean, unit 765, integration 259, RBAC 719/719; web lint/tsc clean, unit 194, build + bundle ok, e2e todos/calendar/staff-tasks/dashboard green (helper ran all 74).
+- Production steps after the user's yes to commit + push: `npx supabase@2.119.0 db push` (adds migration `20261102000001_todos.sql`), then the deploys run from GitHub.
+- Next: round 2 (task links, client assets, task templates).
+- Remind the user later (memory): logout-on-500 fix, GitHub CI, 31 hardening notes.
+
 ## Where we are
 - **Phase 1 (M0–M11), the redesign and Phase 2 are done, verified and committed locally** (Phase 2: hok-api ee86dc1, hok-web fa92fc1, 2026-10-21). Nothing is pushed.
 - Commits: hok-api 8e1b23a, hok-web 6a68be2 (M5/M8/M9/M10). **M11 work is uncommitted** until the user says yes. Nothing is pushed.
@@ -70,3 +77,11 @@ All Phase 1 migrations (`20261013000001` … `20261014500001`) and the 4 Phase 2
 
 ## Agent IDs
 None running. Use fresh helpers per docs/WORKFLOW.md.
+
+## Production (live 2026-11-01)
+- Web: https://hok-six-amber.vercel.app (Vercel, root hok-web). API: https://hok-backend-z68kp.ondigitalocean.app (DigitalOcean App Platform, /hok-api, Basic 512 MB, 1 container, BLR1). DB + Auth: Supabase, Mumbai project (the first project was in Tokyo and was replaced for speed).
+- Test data wiped; real Owner account created at /setup; BOOTSTRAP_TOKEN removed (setup answers 403 AUTH_BOOTSTRAP_DISABLED). /api-docs is hidden in production.
+- Verified live: 101/101 production checks, Content Writer 12/12, TRUST_PROXY=1 correct, typical calls 0.1-0.2 s.
+- Alerts: DigitalOcean spend alert + RAM/CPU/restart policies, emails to the owner.
+- Open: Supabase Free has NO backups and pauses after ~1 week idle (Pro $25 recommended before real client data); Vercel Free is non-commercial (Pro $20); repo is public (make private when allowed); $5 DO signup credit expires 90 days after signup; push notifications not tested on a real device; 31 hardening notes and GitHub CI (workflows still inside hok-*/.github) not done.
+- Prod migrations are applied by the user with `npx supabase@2.119.0 db push` from hok-api (linked to the Mumbai project); never run seed against prod (it now refuses non-local databases).

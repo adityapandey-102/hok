@@ -98,7 +98,7 @@ export const clientsApi = {
    * The users API takes one role per call, so this asks once per owner role (3 small calls) and merges.
    */
   async searchOwnerOptions(search: string): Promise<SelectOption<TeamMember>[]> {
-    const lists = await Promise.all(OWNER_ROLES.map((role) => teamMembersApi.searchOptions(search, role)));
+    const lists = await Promise.all(OWNER_ROLES.map((role) => teamMembersApi.searchOptions(search, { role })));
     return mergeOptions(lists);
   },
 };

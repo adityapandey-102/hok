@@ -14,10 +14,12 @@ export interface TeamMember {
  * returns ACTIVE staff only and searches by name, so nothing is filtered here.
  */
 export const teamMembersApi = {
-  async searchOptions(search: string, role?: Role): Promise<SelectOption<TeamMember>[]> {
+  async searchOptions(search: string, opts: { role?: Role; assignable?: boolean } = {}): Promise<SelectOption<TeamMember>[]> {
     const q = new URLSearchParams({ limit: String(SEARCH_SELECT_LIMIT), offset: "0" });
     if (search) q.set("search", search);
-    if (role) q.set("role", role);
+    if (opts.role) q.set("role", opts.role);
+    // Only people the caller may assign a task to (the role ladder), decided by the API.
+    if (opts.assignable) q.set("assignable", "true");
     const page = (await apiFetch(`/team-members?${q.toString()}`)) as { members: TeamMember[] };
     return page.members.map((m) => ({ id: m.id, label: m.fullName, hint: ROLE_LABELS[m.role], data: m }));
   },

@@ -14,8 +14,7 @@ async function login(page: Page, email: string) {
 test.setTimeout(150_000);
 
 /**
- * M7 critical flow: the Admin assigns an editor task (the editor brief is
- * required), the editor works it to Done with a comment, another staff member
+ * M7 critical flow: the Admin assigns an editor task (with its brief), the editor works it to Done with a comment, another staff member
  * can't open it, and the Admin reopens it. Needs migration 20261014200001 and
  * the seeded accounts.
  */
@@ -31,9 +30,7 @@ test("the Admin assigns an editor task; the editor closes it; the Admin reopens 
   await admin.locator("#tf-title").fill(title);
   await admin.locator("#tf-assignee").fill("Meera");
   await admin.getByRole("option", { name: /Meera Nair/ }).click();
-  // Picking an editor shows the brief, and the raw files link is required.
-  await admin.getByRole("button", { name: "Create task" }).click();
-  await expect(admin.getByText("An editor task needs the raw files (Google Drive) link")).toBeVisible();
+  // Picking an editor shows the brief; its links are optional now (decision 2026-11-02).
   await admin.locator("#tf-raw").fill("https://drive.google.com/drive/folders/e2e-raw");
   await admin.locator("#tf-script").fill("Open on the product, end on the logo.");
   await admin.getByRole("button", { name: "Create task" }).click();
@@ -56,7 +53,7 @@ test("the Admin assigns an editor task; the editor closes it; the Admin reopens 
   await meera.getByRole("button", { name: "Start / In progress" }).click();
   await expect(meera.getByText("Starting the cut now.")).toBeVisible();
   await meera.getByRole("button", { name: "Mark done" }).click();
-  await expect(meera.getByText("This task is done. Only the Admin can reopen it.")).toBeVisible();
+  await expect(meera.getByText("This task is done. Only the person who gave it (or the Admin) can reopen it.")).toBeVisible();
 
   // Arjun (Developer) can't open Meera's task.
   const arjunCtx = await browser.newContext();

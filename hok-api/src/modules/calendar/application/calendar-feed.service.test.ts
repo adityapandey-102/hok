@@ -26,6 +26,7 @@ function setup(role: Role = "social_media_manager", active = true) {
   const calendar: CalendarRepositoryPort = {
     eventsInRange: (range, f) => (reads.push({ kind: "events", range, f }), Promise.resolve([])),
     personalInRange: (range, f) => (reads.push({ kind: "personal", range, f }), Promise.resolve([])),
+    tasksInRange: () => Promise.resolve([]), todosInRange: () => Promise.resolve([]),
   };
   const audit: AuditLogger = { record: (e) => (audits.push(e), Promise.resolve()) };
   const service = new CalendarFeedService(links, calendar, audit, "https://hok.example", () => new Date("2026-10-21T00:00:00Z"), "https://api.hok.example");
@@ -56,7 +57,7 @@ describe("CalendarFeedService", () => {
     const { audits } = setup();
     const gone = new CalendarFeedService(
       { feedLink: () => Promise.resolve(null), setFeedLink: () => Promise.resolve(null), findFeedOwner: () => Promise.resolve(null) },
-      { eventsInRange: () => Promise.resolve([]), personalInRange: () => Promise.resolve([]) },
+      { eventsInRange: () => Promise.resolve([]), personalInRange: () => Promise.resolve([]), tasksInRange: () => Promise.resolve([]), todosInRange: () => Promise.resolve([]) },
       { record: (e) => (audits.push(e), Promise.resolve()) },
     );
     expect(await codeOf(gone.create("ghost"))).toBe("USER_NOT_FOUND");
@@ -82,7 +83,7 @@ describe("CalendarFeedService", () => {
         setFeedLink: (u, h) => (h && hashes.set(u, h), Promise.resolve({ createdAt: "2026-10-21T00:00:00.000Z" })),
         findFeedOwner: (h) => Promise.resolve(hashes.get("rohan") === h ? { userId: "rohan", role: "social_media_manager" as Role, fullName: "Rohan" } : null),
       },
-      { eventsInRange: () => Promise.resolve([]), personalInRange: () => Promise.resolve([now]) },
+      { eventsInRange: () => Promise.resolve([]), personalInRange: () => Promise.resolve([now]), tasksInRange: () => Promise.resolve([]), todosInRange: () => Promise.resolve([]) },
       { record: () => Promise.resolve() },
       "https://hok.example",
       () => new Date("2026-10-21T00:00:00Z"),

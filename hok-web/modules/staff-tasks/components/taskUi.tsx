@@ -65,11 +65,9 @@ export function describeTaskError(err: unknown, fallback: string): string {
     case "STAFF_TASK_MODIFIED":
       return "Someone else changed this task. Reload to see the latest version.";
     case "STAFF_TASK_DONE":
-      return "This task is done. Only the Admin can reopen it.";
+      return "This task is done. Only the person who gave it (or the Admin) can reopen it.";
     case "STAFF_TASK_STATUS_UNCHANGED":
       return "The task already has that status.";
-    case "STAFF_TASK_EDITOR_FIELDS_REQUIRED":
-      return "An editor task needs the raw files (Google Drive) link.";
     case "STAFF_TASK_EDITOR_FIELDS_INVALID":
       return "Raw files link, reference link and script are only for editor tasks.";
     case "STAFF_TASK_ASSIGNEE_INVALID":
@@ -77,7 +75,13 @@ export function describeTaskError(err: unknown, fallback: string): string {
     case "STAFF_TASK_EVENT_INVALID":
       return "That event doesn't belong to the chosen client.";
     case "STAFF_TASK_NOT_FOUND":
-      return "This task no longer exists or isn't assigned to you.";
+      return "This task no longer exists or isn't visible to you.";
+    case "STAFF_TASK_FORBIDDEN":
+      return "You can look at this task, but only its assignee, the person who gave it or the Admin can change it.";
+    case "STAFF_TASK_ASSIGNEE_NOT_ALLOWED":
+      return "You can only assign tasks to roles below yours.";
+    case "STAFF_TASK_CLIENT_INVALID":
+      return "Choose one of your own clients (or an event of one).";
     default:
       return err instanceof Error ? err.message : fallback;
   }

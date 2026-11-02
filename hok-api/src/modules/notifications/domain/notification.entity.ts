@@ -16,6 +16,7 @@ export const NOTIFICATION_TYPES = [
   "client_comment",
   "event_reminder",
   "task_due_reminder",
+  "todo_reminder",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -67,10 +68,15 @@ export const NOTIFICATION_TYPE_INFO: Record<NotificationType, NotificationTypeIn
     description: "About 2 hours before a task assigned to you is due.",
     live: true,
   },
+  todo_reminder: {
+    label: "My to-do reminders",
+    description: "Reminders for your own to-dos, based on urgency.",
+    live: true,
+  },
 };
 
 /** Reminder triggers: the bell plays its alert animation while one is unread (FR-NTF-06). */
-export const REMINDER_TYPES = ["event_reminder", "task_due_reminder"] as const satisfies readonly NotificationType[];
+export const REMINDER_TYPES = ["event_reminder", "task_due_reminder", "todo_reminder"] as const satisfies readonly NotificationType[];
 
 export function isNotificationType(value: string): value is NotificationType {
   return (NOTIFICATION_TYPES as readonly string[]).includes(value);

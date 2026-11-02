@@ -14,5 +14,5 @@ export default async function TaskPage({ params }: { params: Promise<{ taskId: s
     throw err;
   });
 
-  return <TaskDetailClient initialTask={result.task} isAdmin={profile.role === "admin"} viewerId={profile.id} zone={profile.timeZone} />;
+  return <TaskDetailClient initialTask={result.task} role={profile.role} viewerId={profile.id} zone={profile.timeZone} />;
 }

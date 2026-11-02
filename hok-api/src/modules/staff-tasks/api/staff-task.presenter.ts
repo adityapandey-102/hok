@@ -1,8 +1,8 @@
-import type { StaffTaskDetail, StaffTaskSummaryEntity } from "../domain/staff-task.entity";
+import type { StaffTaskDetailView, StaffTaskSummaryView } from "../domain/staff-task.entity";
 import type { StaffTaskDetailResponseDto, StaffTaskSummaryResponseDto } from "./dto/staff-task.response.dto";
 
 /** Domain -> response DTO. Explicit field lists so a new column never leaks by accident. */
-export function toStaffTaskDetailResponseDto(t: StaffTaskDetail): StaffTaskDetailResponseDto {
+export function toStaffTaskDetailResponseDto(t: StaffTaskDetailView): StaffTaskDetailResponseDto {
   return {
     id: t.id,
     title: t.title,
@@ -14,6 +14,7 @@ export function toStaffTaskDetailResponseDto(t: StaffTaskDetail): StaffTaskDetai
     assigneeName: t.assigneeName,
     assigneeRole: t.assigneeRole,
     assignedBy: t.assignedBy,
+    assignedById: t.assignedBy,
     assignedByName: t.assignedByName,
     clientId: t.clientId,
     clientName: t.clientName,
@@ -27,6 +28,7 @@ export function toStaffTaskDetailResponseDto(t: StaffTaskDetail): StaffTaskDetai
     version: t.version,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
+    canManage: t.canManage,
     updates: t.updates.map((u) => ({
       id: u.id,
       kind: u.kind,
@@ -42,7 +44,7 @@ export function toStaffTaskDetailResponseDto(t: StaffTaskDetail): StaffTaskDetai
   };
 }
 
-export function toStaffTaskSummaryResponseDto(t: StaffTaskSummaryEntity): StaffTaskSummaryResponseDto {
+export function toStaffTaskSummaryResponseDto(t: StaffTaskSummaryView): StaffTaskSummaryResponseDto {
   return {
     id: t.id,
     title: t.title,
@@ -52,6 +54,8 @@ export function toStaffTaskSummaryResponseDto(t: StaffTaskSummaryEntity): StaffT
     assigneeId: t.assigneeId,
     assigneeName: t.assigneeName,
     assigneeRole: t.assigneeRole,
+    assignedById: t.assignedById,
+    assignedByName: t.assignedByName,
     clientId: t.clientId,
     clientName: t.clientName,
     eventId: t.eventId,
@@ -59,5 +63,6 @@ export function toStaffTaskSummaryResponseDto(t: StaffTaskSummaryEntity): StaffT
     completedAt: t.completedAt,
     version: t.version,
     createdAt: t.createdAt,
+    canManage: t.canManage,
   };
 }

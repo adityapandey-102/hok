@@ -1,6 +1,12 @@
 import type { Role } from "../../../../domain";
 import type { EventState, EventType } from "../../../events/domain/event.entity";
-import type { CalendarEventItem, CalendarPersonalItem } from "../../domain/calendar.entity";
+import type {
+  CalendarEventItem,
+  CalendarPersonalItem,
+  CalendarTaskItem,
+  CalendarTaskScope,
+  CalendarTodoItem,
+} from "../../domain/calendar.entity";
 
 export interface CalendarRange {
   from: string;
@@ -19,10 +25,19 @@ export interface CalendarPersonalFilters {
   clientId?: string;
 }
 
+export interface CalendarTaskFilters {
+  scope: CalendarTaskScope;
+  clientId?: string;
+}
+
 /** Read-only, range-bounded reads for the feed: one query per kind, at most `limit` rows each, earliest first. */
 export interface CalendarRepositoryPort {
   eventsInRange(range: CalendarRange, filters: CalendarEventFilters, limit: number): Promise<CalendarEventItem[]>;
   personalInRange(range: CalendarRange, filters: CalendarPersonalFilters, limit: number): Promise<CalendarPersonalItem[]>;
+  /** Tasks whose due instant is in [from, to), within the scope's visibility. */
+  tasksInRange(range: CalendarRange, filters: CalendarTaskFilters, limit: number): Promise<CalendarTaskItem[]>;
+  /** The owner's own to-dos whose due instant is in [from, to). */
+  todosInRange(range: CalendarRange, filters: { ownerId: string }, limit: number): Promise<CalendarTodoItem[]>;
 }
 
 /** The person a subscribe link belongs to: active people only. */

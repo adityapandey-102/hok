@@ -1,4 +1,6 @@
 import type { EventState, EventType } from "../../events/domain/event.entity";
+import type { StaffTaskPriority, StaffTaskStatus } from "../../staff-tasks/domain/staff-task.entity";
+import type { TodoUrgency } from "../../todos/domain/todo.entity";
 
 /** Most items of EACH kind one feed returns; past it the response says `truncated`. */
 export const CALENDAR_MAX_ITEMS_PER_KIND = 500;
@@ -32,14 +34,42 @@ export interface CalendarPersonalItem extends CalendarItemBase {
   kind: "personal";
 }
 
-export type CalendarItem = CalendarEventItem | CalendarPersonalItem;
+/**
+ * A staff task, placed at its due instant (round 1). `startsAt` = `endsAt` = due_at;
+ * `timeZone` is "UTC" because the task has none of its own (the web shows it in the
+ * viewer's zone). `ownerId` is the assignee; the client may be null.
+ */
+export interface CalendarTaskItem extends CalendarItemBase {
+  kind: "task";
+  status: StaffTaskStatus;
+  priority: StaffTaskPriority;
+  assigneeId: string;
+  assigneeName: string;
+}
+
+/** One of the caller's own to-dos with a due date, placed at its due instant. Never anyone else's. No client. */
+export interface CalendarTodoItem extends CalendarItemBase {
+  kind: "todo";
+  urgency: TodoUrgency;
+  done: boolean;
+}
+
+export type CalendarItem = CalendarEventItem | CalendarPersonalItem | CalendarTaskItem | CalendarTodoItem;
+
+/** Which staff tasks the feed reads: all (Admin; optionally one assignee), or the ones this person may see. */
+export type CalendarTaskScope =
+  | { kind: "all"; assigneeId?: string }
+  | { kind: "own"; userId: string; viaTeam: boolean };
 
 /**
- * Translates the caller's two capabilities into what the feed reads:
- * client events (events:read) and personal entries (personal_events:manage).
- * `ownerId` undefined = every owner (Admin, events only).
+ * Translates the caller's capabilities into what the feed reads. A null part is
+ * not read at all: client events (events:read), personal entries
+ * (personal_events:manage). Tasks follow the staff-task visibility rule. To-dos
+ * are always and only the caller's own. `ownerId` undefined = every owner (Admin, events only).
  */
 export interface CalendarScope {
-  events: { ownerId?: string };
+  events: { ownerId?: string } | null;
   personal: { ownerId: string } | null;
+  tasks: CalendarTaskScope;
+  todos: { ownerId: string };
 }

@@ -170,6 +170,31 @@ export interface TeamWorkloadPage {
 export const DASHBOARD_VIEWS = ["overview", "mine"] as const;
 export type DashboardView = (typeof DASHBOARD_VIEWS)[number];
 
+/** One of the viewer's own to-dos, in the wire shape (the same as GET /todos rows). */
+export interface DashboardTodo {
+  id: string;
+  title: string;
+  notes: string | null;
+  dueAt: string | null;
+  urgency: "low" | "medium" | "high" | "urgent";
+  done: boolean;
+  doneAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** "My to-dos" card (every role, every view): the viewer's own open to-dos. Never anyone else's. */
+export interface TodosSection {
+  open: number;
+  /** Open and past their due time. */
+  overdue: number;
+  /** Up to DASHBOARD_TODOS_LIMIT open ones, soonest due first (no due date last). */
+  next: DashboardTodo[];
+}
+
+export const DASHBOARD_TODOS_LIMIT = 5;
+
 export interface Dashboard {
   role: Role;
   view: DashboardView;
@@ -178,4 +203,6 @@ export interface Dashboard {
   tasks: TasksSection | null;
   clients: ClientsSection | null;
   firm: FirmSection | null;
+  /** The viewer's own to-dos; present for every role and view. */
+  todos: TodosSection;
 }

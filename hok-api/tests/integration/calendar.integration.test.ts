@@ -4,13 +4,14 @@ import { createApp } from "../../src/app";
 import { db } from "../../src/common/database/drizzle-client";
 import { eq } from "drizzle-orm";
 import { profiles } from "../../src/modules/users/infrastructure/profile.schema";
-import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, deleteStageTemplates, type FixtureUser } from "./helpers";
+import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, deleteStaffTasksFor, deleteStageTemplates, type FixtureUser } from "./helpers";
 
 /**
  * M5 end to end: personal entries (owner-only, client link must be the
  * owner's, version, delete), the merged calendar feed (scope, merge order,
- * filters, range cap) and the team-members lookup. Needs migration
- * 20261014300001 applied.
+ * filters, range cap) and the team-members lookup. Round 1: everyone has a
+ * calendar; tasks follow the staff-task visibility rule and to-dos are always
+ * the caller's own. Needs migrations 20261014300001 and 20261102000001 applied.
  */
 const app = createApp();
 let admin: FixtureUser;
@@ -47,10 +48,29 @@ beforeAll(async () => {
     const r = await as(role, request(app).post("/api/v1/events")).send({ clientId, templateId, title, type: "shoot", startsAt, endsAt: "2032-03-06T18:00:00Z" });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
   }
+
+  // Round 1: tasks (all assigned to the editor) and to-dos, in March 2032.
+  const task = async (role: string, body: Body) => {
+    const r = await as(role, request(app).post("/api/v1/staff-tasks")).send({ assigneeId: editor.id, ...body });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+  };
+  await task("admin", { title: "IT Cal admin task", dueAt: "2032-03-10T10:00:00Z" });
+  await task("admin", { title: "IT Cal undated task" });
+  await task("social_media_manager", { title: "IT Cal SMM task", dueAt: "2032-03-11T10:00:00Z", clientId: smmClient });
+  await task("marketing_manager", { title: "IT Cal MM task", dueAt: "2032-03-12T10:00:00Z", clientId: mmClient });
+  const todo = async (role: string, body: Body) => {
+    const r = await as(role, request(app).post("/api/v1/todos")).send(body);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+  };
+  await todo("editor", { title: "IT Cal editor todo", dueAt: "2032-03-10T12:00:00Z", urgency: "high" });
+  await todo("editor", { title: "IT Cal undated todo" });
+  await todo("admin", { title: "IT Cal admin todo", dueAt: "2032-03-13T09:00:00Z" });
+  await todo("social_media_manager", { title: "IT Cal SMM todo", dueAt: "2032-03-14T09:00:00Z" });
 });
 
 afterAll(async () => {
   const owners = [admin, smm, mm, editor].filter(Boolean).map((u) => u.id);
+  await deleteStaffTasksFor(owners);
   await deleteClientsOwnedBy(owners);
   await deleteStageTemplates(templateIds);
   for (const id of owners) await deleteFixtureUser(id); // personal entries cascade
@@ -121,9 +141,11 @@ describe("GET /calendar", () => {
   it("the Admin sees every event; ownerId narrows events and switches the personal entries to that owner", async () => {
     const all = (await as("admin", request(app).get(`/api/v1/calendar?${RANGE}&include=events`))).body as { items: { title: string }[] };
     expect(all.items.map((i) => i.title)).toEqual(expect.arrayContaining(["IT Cal SMM shoot", "IT Cal MM meeting"]));
-    const mmView = (await as("admin", request(app).get(`/api/v1/calendar?${RANGE}&ownerId=${mm.id}`))).body as { items: { title: string; ownerId: string }[] };
-    expect(mmView.items.length).toBeGreaterThan(0);
-    expect(mmView.items.every((i) => i.ownerId === mm.id)).toBe(true);
+    const mmView = (await as("admin", request(app).get(`/api/v1/calendar?${RANGE}&ownerId=${mm.id}`))).body as { items: { kind: string; title: string; ownerId: string }[] };
+    // Events and personal entries switch to that owner; tasks (the assignee's) and the Admin's own to-dos are separate kinds.
+    const ownerKinds = mmView.items.filter((i) => i.kind === "event" || i.kind === "personal");
+    expect(ownerKinds.length).toBeGreaterThan(0);
+    expect(ownerKinds.every((i) => i.ownerId === mm.id)).toBe(true);
   });
 
   it("filters: clientId, eventType (drops personal entries), include=personal", async () => {
@@ -136,11 +158,85 @@ describe("GET /calendar", () => {
     expect(personal.items.every((i) => i.kind === "personal")).toBe(true);
   });
 
-  it("requires a range of at most 92 days; task-only staff 403", async () => {
+  it("requires a range of at most 92 days", async () => {
     expect((await as("admin", request(app).get("/api/v1/calendar"))).status).toBe(400);
     const wide = await as("admin", request(app).get("/api/v1/calendar?from=2032-01-01T00:00:00Z&to=2032-06-01T00:00:00Z"));
     expect((wide.body as { code: string }).code).toBe("CALENDAR_RANGE_INVALID");
-    expect((await as("editor", request(app).get(`/api/v1/calendar?${RANGE}`))).status).toBe(403);
+    expect((await as("admin", request(app).get(`/api/v1/calendar?${RANGE}&include=nope`))).status).toBe(400);
+  });
+});
+
+describe("GET /calendar: tasks and to-dos (round 1)", () => {
+  const RANGE = "from=2032-03-01T00:00:00Z&to=2032-04-01T00:00:00Z";
+  type Item = Body & { kind: string; title: string; id: string };
+  const feed = async (role: string, extra = "") => {
+    const res = await as(role, request(app).get(`/api/v1/calendar?${RANGE}${extra}`));
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    return (res.body as { items: Item[]; truncated: boolean }).items;
+  };
+  const titles = (items: Item[], kind?: string) => items.filter((i) => !kind || i.kind === kind).map((i) => i.title);
+
+  it("task-only staff now have a calendar: their tasks and own to-dos, no events, no personal entries", async () => {
+    const items = await feed("editor");
+    expect(new Set(items.map((i) => i.kind))).toEqual(new Set(["task", "todo"]));
+    expect(titles(items, "task")).toEqual(["IT Cal admin task", "IT Cal SMM task", "IT Cal MM task"]);
+    expect(titles(items, "todo")).toEqual(["IT Cal editor todo"]);
+    expect(items.find((i) => i.title === "IT Cal admin task")).toMatchObject({
+      kind: "task",
+      startsAt: "2032-03-10T10:00:00.000Z",
+      endsAt: "2032-03-10T10:00:00.000Z",
+      timeZone: "UTC",
+      status: "todo",
+      priority: "medium",
+      assigneeId: editor.id,
+      assigneeName: "IT Cal Editor",
+      ownerId: editor.id,
+      clientId: null,
+    });
+    expect(items.find((i) => i.title === "IT Cal SMM task")).toMatchObject({ clientId: smmClient, clientName: `IT Cal SMM Client ${stamp}` });
+    expect(items.find((i) => i.kind === "todo")).toMatchObject({ urgency: "high", done: false, clientId: null, clientName: null, ownerId: editor.id });
+  });
+
+  it("tasks without a due date, and to-dos without one, never appear", async () => {
+    const all = [...(await feed("editor")), ...(await feed("admin"))];
+    expect(titles(all)).not.toContain("IT Cal undated task");
+    expect(titles(all)).not.toContain("IT Cal undated todo");
+  });
+
+  it("a manager sees the tasks they created and their clients', not other tasks; to-dos only their own", async () => {
+    const smmItems = await feed("social_media_manager");
+    expect(titles(smmItems, "task")).toEqual(["IT Cal SMM task"]);
+    expect(titles(smmItems, "todo")).toEqual(["IT Cal SMM todo"]);
+    const mmItems = await feed("marketing_manager");
+    expect(titles(mmItems, "task")).toEqual(["IT Cal MM task"]);
+    expect(titles(mmItems, "todo")).toEqual([]);
+  });
+
+  it("the Admin sees every task (ownerId narrows to an assignee) but only their OWN to-dos, ownerId or not", async () => {
+    const all = await feed("admin");
+    expect(titles(all, "task")).toEqual(expect.arrayContaining(["IT Cal admin task", "IT Cal SMM task", "IT Cal MM task"]));
+    expect(titles(all, "todo")).toEqual(["IT Cal admin todo"]);
+    const forEditor = await feed("admin", `&ownerId=${editor.id}`);
+    expect(titles(forEditor, "task")).toEqual(expect.arrayContaining(["IT Cal admin task"]));
+    expect(titles(forEditor, "todo")).toEqual(["IT Cal admin todo"]);
+    const forMm = await feed("admin", `&ownerId=${mm.id}&include=tasks`);
+    expect(titles(forMm)).toEqual([]);
+  });
+
+  it("include picks one kind; event-only filters drop tasks and to-dos; a client filter drops to-dos only", async () => {
+    expect(new Set((await feed("social_media_manager", "&include=tasks")).map((i) => i.kind))).toEqual(new Set(["task"]));
+    expect(new Set((await feed("social_media_manager", "&include=todos")).map((i) => i.kind))).toEqual(new Set(["todo"]));
+    expect(new Set((await feed("social_media_manager", "&state=active")).map((i) => i.kind))).toEqual(new Set(["event"]));
+    const byClient = await feed("social_media_manager", `&clientId=${smmClient}`);
+    expect(new Set(byClient.map((i) => i.kind))).toEqual(new Set(["event", "personal", "task"]));
+    expect(byClient.every((i) => i.clientId === smmClient)).toBe(true);
+  });
+
+  it("the .ics subscribe link stays manager-only: task-only staff 403, a manager can read theirs", async () => {
+    expect((await as("editor", request(app).get("/api/v1/calendar/feed-link"))).status).toBe(403);
+    expect((await as("editor", request(app).post("/api/v1/calendar/feed-link"))).status).toBe(403);
+    expect((await as("editor", request(app).delete("/api/v1/calendar/feed-link"))).status).toBe(403);
+    expect((await as("social_media_manager", request(app).get("/api/v1/calendar/feed-link"))).status).toBe(200);
   });
 });
 

@@ -30,8 +30,10 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "My clients", href: "/app/my-clients", icon: "user", requires: "dashboard:global" },
       { label: "Clients", href: "/app/clients", icon: "briefcase", requires: "clients:read", tab: "Clients" },
       { label: "Assets", href: "/app/assets", icon: "tag", requires: "assets:read" },
-      { label: "Calendar", href: "/app/calendar", icon: "calendar", requires: "events:read", tab: "Calendar" },
+      // Calendar is for every role now: tasks and to-dos land on it too (round 1).
+      { label: "Calendar", href: "/app/calendar", icon: "calendar", requires: "staff_tasks:read", tab: "Calendar" },
       { label: "Tasks", href: "/app/tasks", icon: "clipboard", requires: "staff_tasks:read", tab: "Tasks" },
+      { label: "To-dos", href: "/app/todos", icon: "check-circle", requires: "todos:manage" },
       { label: "Client comments", href: "/app/comments", icon: "message", requires: "comments:read", badge: "comments" },
       { label: "Notifications", href: "/app/notifications", icon: "bell", tab: "Alerts" },
       { label: "My profile", href: "/app/profile", icon: "user", tab: "Profile" },

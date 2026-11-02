@@ -203,7 +203,8 @@ src/
     client-todos/          client to-do lists (Phase 2): a manager's internal to-dos per client; owns `client_todos`
     events/                client events: copied stages, stage moves + history, state, range query; owns `events`, `event_stages`, `event_stage_history`
     reports/               Admin reports (team status, staff month, client month): read-only aggregates, owns no table
-    staff-tasks/           Admin-assigned staff tasks: assignee row scope, status + timeline, editor brief, reopen; owns `staff_tasks`, `staff_task_updates`
+    staff-tasks/           staff tasks assigned down the role ladder (Admin, client managers): assignee / creator / team row scope, status + timeline, editor brief, reopen; owns `staff_tasks`, `staff_task_updates`
+    todos/                 My to-dos (round 1): a private personal list per person, the Admin included; owns `todos`; the reminders module reads it
   docs/openapi.ts          loads openapi.yaml once for /api-docs (+ drift test)
   db/seed.ts               local dev seed
 supabase/
@@ -358,7 +359,9 @@ records the scope on `req.capabilityScope`; repositories apply the row filter.
 
 | Capability | admin | SMM / MM / PM | agent / developer / editor |
 | --- | --- | --- | --- |
-| `users:manage`, `stage_templates:manage`, `clients:reassign`, `staff_tasks:assign`, `dashboard:global` | ✓ | -- | -- |
+| `users:manage`, `stage_templates:manage`, `clients:reassign`, `dashboard:global` | ✓ | -- | -- |
+| `staff_tasks:assign` (down the role ladder) | ✓ | own | -- |
+| `todos:manage` (private to-dos) | own | own | own |
 | `clients:read/write`, `events:read/write`, `personal_events:manage`, `assets:read/write`, `portal:manage`, `comments:read/manage` | ✓ | own | -- |
 | `staff_tasks:read/update` | ✓ | own | own |
 
@@ -368,7 +371,7 @@ In use today: `users:manage` (all of `/users`); `clients:read` (every
 and reading `/stage-templates`, active only for managers) and
 `stage_templates:manage` (template writes, Admin only); `staff_tasks:read` (every `/staff-tasks`
 route; own tasks for non-admins), `staff_tasks:update` (status, comments) and
-`staff_tasks:assign` (create, edit, reassign, reopen, delete; Admin only). Every authenticated role may read and edit its
+`staff_tasks:assign` (create, edit, reassign, reopen, delete; the Admin, and client managers downwards on the role ladder -- see `roleLevel` / `canAssignTo` in `src/domain/roles.ts`); `todos:manage` (`/todos`, own for every role, the Admin included: there is no bypass). Every authenticated role may read and edit its
 own profile (`/auth/me`). `npm run test:rbac` proves it over HTTP for all seven
 roles (74 checks at M2, 124 at M3; M4 adds the template and event cases).
 
@@ -466,13 +469,13 @@ REQUIREMENTS §5.5. Migration `20261014100001_assets.sql` (tables `assets`, `tag
 
 REQUIREMENTS §5.9 (FR-TSK-01..10; reminders FR-TSK-11 are Phase 2). Migration `20261014200001_staff_tasks.sql` (tables `staff_tasks`, `staff_task_updates`).
 
-- **Who does what.** Only the Admin creates, edits, reassigns, reopens and deletes (`staff_tasks:assign`). Exactly one assignee, any **active** staff member of any role (`400 STAFF_TASK_ASSIGNEE_INVALID`); `assignee_id` is `ON DELETE RESTRICT`. Everyone else has `staff_tasks:read/update = own`: they see only tasks assigned to them (anyone else's is **404 `STAFF_TASK_NOT_FOUND`**, also with a stale version) and work on them. A Social Media / Marketing Manager receives tasks the same way.
+- **Who does what (round 1, 2026-11-02).** Assignment goes **down a role ladder**: level 1 the Admin, level 2 the client managers (SMM / MM / PM), level 3 everyone else; `canAssignTo(a, b)` = a is level 1 or 2 and strictly above b, so the Admin can't assign to an Admin or themselves and a manager only to task-only roles (`400 STAFF_TASK_ASSIGNEE_NOT_ALLOWED`, checked against the **caller's** role, also on reassignment). Exactly one assignee, an **active** account (`400 STAFF_TASK_ASSIGNEE_INVALID`); `assignee_id` is `ON DELETE RESTRICT`. A manager may link only a client whose team they're on, or its events (else `400 STAFF_TASK_CLIENT_INVALID`). **Edit, reassign, reopen and delete**: the Admin, or the task's **creator** (`assigned_by`) while they hold `staff_tasks:assign`, checked on the locked row. **Status**: the assignee or the Admin. **Comments**: the assignee, the creator or the Admin. **Seeing a task**: the Admin all; anyone the tasks assigned to them or created by them; client managers (`clients:read`) also tasks of clients whose team they're on (`viaTeam`; someone moved to a task-only role keeps none). Not visible = **404 `STAFF_TASK_NOT_FOUND`**, also with a stale version; visible but not writable (a team manager who is neither creator nor assignee) = **403 `STAFF_TASK_FORBIDDEN`**. Responses carry `assignedById`, `assignedByName` and `canManage`. The editor raw-files link is optional now (round 2 replaces the editor fields with plain links).
 - **Status.** `todo`, `in_progress`, `blocked`, `done`. The assignee (or the Admin) moves an open task to any other status, done included, with an optional comment (`POST /:id/status`). A done task is closed (`409 STAFF_TASK_DONE`) until the Admin reopens it (`POST /:id/reopen`, to todo / in_progress / blocked). `completed_at` follows the status (DB CHECK).
 - **Timeline.** Every status change, comment, reassign and reopen appends a `staff_task_updates` row **in the same transaction** as the change (append-only; kinds `created`, `status`, `comment`, `reassigned`, `reopened`). Detail returns the newest 100. Comments (`POST /:id/comments`, assignee or Admin, any time) don't bump the task's `version`, so an open edit form isn't invalidated by a discussion.
-- **Editor tasks (decision).** When the assignee is an **editor**, `rawFilesUrl` (the Drive folder) is **required** (`400 STAFF_TASK_EDITOR_FIELDS_REQUIRED`); `referenceUrl` and `script` (up to 20 000 characters) are optional, because not every edit has an example or a script. For every other role the three fields stay empty: sending one is `400 STAFF_TASK_EDITOR_FIELDS_INVALID`, and reassigning a task from an editor to someone else **clears** them (the web warns first). All links must be http(s). Any task may also carry up to 10 `referenceLinks` (`{ url, label }`).
+- **Editor tasks (decision).** When the assignee is an **editor**, `rawFilesUrl` (the Drive folder), `referenceUrl` and `script` (up to 20 000 characters) are all optional since 2026-11-02 (the raw-files rule was dropped; round 2 replaces these fields with plain links). For every other role the three fields stay empty: sending one is `400 STAFF_TASK_EDITOR_FIELDS_INVALID`, and reassigning a task from an editor to someone else **clears** them (the web warns first). All links must be http(s). Any task may also carry up to 10 `referenceLinks` (`{ url, label }`).
 - **Links.** Optional `clientId` / `eventId` (`ON DELETE SET NULL`). An event must belong to the named client; an event alone links its client; changing the client without an event unlinks the old event (`400 STAFF_TASK_CLIENT_INVALID` / `STAFF_TASK_EVENT_INVALID`). The assignee sees the client's name and the event's title on the task even without client access -- that's the task's context, nothing more. **Events safety:** the migration adds the `event_id` FK only if `public.events` exists (it does whenever `migration up` runs, because 20261013000004 sorts first); the repository treats a missing events table (SQLSTATE 42P01) as "no such event", so tasks keep working and `eventId` is refused with 400 instead of a 500.
 - **Optimistic lock.** `version` required on PATCH, status and reopen (`409 STAFF_TASK_MODIFIED`); every write is `SELECT … FOR UPDATE OF staff_tasks` + the service's guard callback + the update + the timeline row. Delete is a hard delete (timeline cascades; `staff_task.deleted` stays in the audit log).
-- **Lists.** `GET /staff-tasks`: page cap 100, one page query (joined to the assignee's profile and the client) + one `count(*)`. Filters: `status`, `open=true` (not done), `priority`, `overdue=true` (due before now and not done), `dueFrom`/`dueTo` (instants; the web sends the viewer's day boundaries), `search` (title), and for the Admin `assigneeId`, `role` (the assignee's) and `clientId`. Order: open before done, soonest due first (no due date last), newest; with `status=done`, latest completed first (one Kanban column = one `status` query).
+- **Lists.** `GET /staff-tasks`: page cap 100, one page query (joined to the assignee's profile and the client) + one `count(*)`. Filters: `status`, `open=true` (not done), `priority`, `overdue=true` (due before now and not done), `dueFrom`/`dueTo` (instants; the web sends the viewer's day boundaries), `search` (title), and, for every caller (always ANDed with their row scope), `assigneeId`, `role` (the assignee's), `clientId` and `relation=assigned|created|team` (`team`: client managers only, else 400). The scope is one extra OR condition (`assignee_id = me OR assigned_by = me OR` the client's team), no per-row work. Order: open before done, soonest due first (no due date last), newest; with `status=done`, latest completed first (one Kanban column = one `status` query).
 - **Notifications (M9).** `StaffTasksService` calls a `StaffTaskNotifier` (`application/ports/staff-task-notifier.port.ts`) after commit: `taskAssigned` (create, reassign), `statusChanged` (status, reopen) and `commentAdded`, each with the actor. `staff-tasks.routes.ts` wires the real one: it notifies the other side (the assignee when the Admin acts, the assigner when the assignee acts).
 - Audit: `staff_task.created`, `staff_task.updated` (field names only), `staff_task.reassigned` (`{ from, to }`), `staff_task.deleted`. Status changes and comments live in the timeline instead.
 
@@ -487,7 +490,7 @@ REQUIREMENTS §5.4 (FR-CTSK-01..04). Migration `20261017000003_client_todos.sql`
 
 ### Calendars and personal events (M5)
 
-REQUIREMENTS §5.6. Migration `20261014300001_personal_events.sql`. `personal-events` owns a manager's own entries (`personal_events:manage`, owner-only; anyone else's is 404). `calendar` owns no table: `GET /calendar?from&to` (≤ 92 days) merges client events and personal entries overlapping the range, in **two** parallel queries (one per kind, each capped at 500, `truncated: true` if hit). A manager gets their clients' events plus their own entries; the Admin gets every event (or one `ownerId`'s). Times are UTC; the web shows them in the viewer's zone.
+REQUIREMENTS §5.6. Migration `20261014300001_personal_events.sql`. `personal-events` owns a manager's own entries (`personal_events:manage`, owner-only; anyone else's is 404). `calendar` owns no table: `GET /calendar?from&to` (≤ 92 days) is open to **every role** (`staff_tasks:read`) and merges four kinds in **four** parallel queries (one per kind, each capped at 500, `truncated: true` if hit; `include=all|events|personal|tasks|todos`): **events** (`events:read`: a manager's clients' events, the Admin's every event or one `ownerId`'s), **personal** entries (`personal_events:manage`, own), **tasks** (the staff-task visibility rule, placed at `due_at`; the Admin all, narrowed by `ownerId`; no due date = not shown) and **to-dos** (always and only the caller's own, even for the Admin with `ownerId`). Event-only filters (`eventType`, `state`) drop the other three kinds; `clientId` filters events, personal entries and tasks and drops to-dos. Times are UTC (a task or to-do carries `timeZone: "UTC"`); the web shows them in the viewer's zone. The `.ics` subscribe link (`/calendar/feed-link`) stays `events:read` (managers) this round. Speed check: `node scripts/perf-calendar.mjs` (local database only).
 
 ### Client portal and comments (M8)
 
@@ -506,6 +509,7 @@ REQUIREMENTS §5.7–5.8. Migration `20261014400001_portal_comments.sql` (`porta
 REQUIREMENTS §5.11. The module owns no table.
 - `GET /api/v1/dashboard?view=overview|mine`, every staff role. `overview` (default): everyone gets their own work (`tasks`, plus `clients` for SMM / MM / PM: the clients whose team they're on), except the **Admin, whose overview is the firm alone** (`firm`: totals incl. overdue, this week's events and team size; tasks by status; the 5 most overdue tasks; this week's events; the 5 newest unresolved comments; the 5 busiest people). `mine`: the caller's own clients and tasks -- the Admin's "My clients" page; the same as `overview` for other roles.
 - Every list is a **preview of at most 5** with a total, so the web links "View all N" to the full, paged page.
+- Every role and view also gets `todos` (round 1): the caller's own `{ open, overdue, next }` (up to 5 open to-dos, soonest due first), two extra queries, never anyone else's.
 - `GET /api/v1/dashboard/team` (`dashboard:global`): the whole team's workload, busiest first; name `search`, `role` (never admin), paged (≤ 50). Two queries.
 - Figures are `count(*) filter (…)` aggregates; the query count is **fixed per role and view** (task-only staff 3, managers 7, the Admin's overview 5 and "My clients" 7, plus the auth lookup), whatever the data size (query-budget test). "Today" and "this week" are the caller's own time zone (`src/domain/zoned-day.ts`, DST-safe).
 
@@ -527,7 +531,7 @@ FR-RPT-01..04. The module owns no table; every endpoint is `dashboard:global` (A
 
 ### Reminders and last seen (Phase 2)
 
-- **Reminders** (`src/modules/reminders`): one per active event (to everyone on the client's team) and per open task with a due time (to the assignee), about **2 hours** ahead. An in-process runner (started in `src/index.ts`, never in tests) checks **every 10 minutes**: one transaction claims due rows through partial "still waiting" indexes with `FOR UPDATE SKIP LOCKED`, stamps `events.reminded_at` / `staff_tasks.due_reminded_at` and writes the bell rows; pushes go out after the commit. Two API instances never send the same reminder; moments already past are skipped; a new start/due time, a reassignment or a reopen clears the stamp. Types `event_reminder`, `task_due_reminder` (mutable in preferences); `GET /notifications/unread-count` also returns `reminders` (the bell's alert animation).
+- **Reminders** (`src/modules/reminders`): one per active event (to everyone on the client's team) and per open task with a due time (to the assignee), about **2 hours** ahead. An in-process runner (started in `src/index.ts`, never in tests) checks **every 10 minutes**: one transaction claims due rows through partial "still waiting" indexes with `FOR UPDATE SKIP LOCKED`, stamps `events.reminded_at` / `staff_tasks.due_reminded_at` and writes the bell rows; pushes go out after the commit. Two API instances never send the same reminder; moments already past are skipped; a new start/due time, a reassignment or a reopen clears the stamp. **My to-do reminders** (`todo_reminder`, to the owner only, link `/app/todos`) are a third claim in the same transaction: each to-do carries its own `next_remind_at` (urgent: 1 day before, 1 hour before and at the due time; high: 1 hour and at due; medium: at due; low: none; computed by `nextTodoReminder`), the claim sends the due ones and moves each to its next moment. A moment missed by more than 30 minutes (the API was down) or an owner who is deactivated is skipped silently but still advanced; done to-dos are never claimed. Types `event_reminder`, `task_due_reminder`, `todo_reminder` (mutable in preferences); `GET /notifications/unread-count` also returns `reminders` (the bell's alert animation).
 - **Last seen**: `requireAuth` writes `profiles.last_seen_at` at most every 5 minutes per person (in-memory note + the same condition in SQL), fire-and-forget. Exposed on users and the team workload; the web reads anything older than 45 days as "not seen".
 
 ### Global search (Phase 2)
@@ -853,17 +857,21 @@ All paths are under `/api/v1`.
 | POST `/clients/:clientId/todos` | bearer | `clients:write` (own client; else 404) | client-todos.routes.ts | `create` | `findClient`, `findEvent`, `create` (client locked FOR SHARE), `findById` |
 | PATCH `/client-todos/:id` | bearer | `clients:write` (own; else 404) | client-todos.routes.ts | `update` | `findEvent`, `update` (locked, guarded) |
 | DELETE `/client-todos/:id` | bearer | `clients:write` (own; else 404) | client-todos.routes.ts | `remove` | `update` (locked, guarded; hard delete) |
-| GET `/staff-tasks` | bearer | `staff_tasks:read` (own for non-admins) | staff-tasks.routes.ts | `list` | `findMany`, `countMany` (status, open, priority, overdue, dueFrom/dueTo, search; Admin: assigneeId, role, clientId; max 100) |
-| GET `/staff-tasks/:id` | bearer | `staff_tasks:read` (own; else 404) | staff-tasks.routes.ts | `get` | `findDetail` (+ timeline, event title) |
-| POST `/staff-tasks` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `create` | `findAssigneeCandidate`, `findClient`, `findEvent`, `create` (+ "created" entry) |
-| PATCH `/staff-tasks/:id` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `update` | `findAssigneeCandidate`, `findClient`, `findEvent`, `update` (locked, guarded; + "reassigned" entry) |
-| DELETE `/staff-tasks/:id` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `delete` | `delete` (locked) |
-| POST `/staff-tasks/:id/status` | bearer | `staff_tasks:update` (own; else 404) | staff-tasks.routes.ts | `changeStatus` | `update` (locked, guarded; + "status" entry) |
-| POST `/staff-tasks/:id/reopen` | bearer | `staff_tasks:assign` (Admin) | staff-tasks.routes.ts | `reopen` | `update` (locked, guarded; + "reopened" entry) |
+| GET `/staff-tasks` | bearer | `staff_tasks:read` (assigned + created + team for non-admins) | staff-tasks.routes.ts | `list` | `findMany`, `countMany` (status, open, priority, overdue, dueFrom/dueTo, search, assigneeId, role, clientId, relation; max 100) |
+| GET `/staff-tasks/:id` | bearer | `staff_tasks:read` (visible; else 404) | staff-tasks.routes.ts | `get` | `findDetail` (+ timeline, event title) |
+| POST `/staff-tasks` | bearer | `staff_tasks:assign` (Admin; managers downwards) | staff-tasks.routes.ts | `create` | `findAssigneeCandidate`, `findClient`, `findEvent`, `create` (+ "created" entry) |
+| PATCH `/staff-tasks/:id` | bearer | `staff_tasks:assign` (Admin or creator; else 403/404) | staff-tasks.routes.ts | `update` | `findAssigneeCandidate`, `findClient`, `findEvent`, `update` (locked, guarded; + "reassigned" entry) |
+| DELETE `/staff-tasks/:id` | bearer | `staff_tasks:assign` (Admin or creator; else 403/404) | staff-tasks.routes.ts | `delete` | `delete` (locked) |
+| POST `/staff-tasks/:id/status` | bearer | `staff_tasks:update` (assignee or Admin; else 403/404) | staff-tasks.routes.ts | `changeStatus` | `update` (locked, guarded; + "status" entry) |
+| POST `/staff-tasks/:id/reopen` | bearer | `staff_tasks:assign` (Admin or creator; else 403/404) | staff-tasks.routes.ts | `reopen` | `update` (locked, guarded; + "reopened" entry) |
+| GET `/todos` | bearer | `todos:manage` (own only) | todos.routes.ts | `list` | `findMany`, `countMany` (status, dueFrom/dueTo; max 100) |
+| POST `/todos` | bearer | `todos:manage` (own) | todos.routes.ts | `create` | `create` (computes `next_remind_at`) |
+| PATCH `/todos/:id` | bearer | `todos:manage` (own; else 404) | todos.routes.ts | `update` | `update` (locked, version; recomputes `next_remind_at`) |
+| DELETE `/todos/:id` | bearer | `todos:manage` (own; else 404) | todos.routes.ts | `delete` | `delete` |
 | GET `/reports/team-status` | bearer | `dashboard:global` (Admin) | reports.routes.ts | `teamStatusPage` | `teamStatus`, `teamStatusCount` (search, role, status, paged max 50) |
 | GET `/reports/staff` | bearer | `dashboard:global` (Admin) | reports.routes.ts | `staffReport` | `person`, `staffFigures` (month in the viewer's zone, last 6 only) |
 | GET `/reports/client` | bearer | `dashboard:global` (Admin) | reports.routes.ts | `clientReport` | `client`, `clientFigures` (month in the viewer's zone, last 6 only) |
-| POST `/staff-tasks/:id/comments` | bearer | `staff_tasks:update` (own; else 404) | staff-tasks.routes.ts | `comment` | `addComment` |
+| POST `/staff-tasks/:id/comments` | bearer | `staff_tasks:update` (assignee, creator or Admin; else 403/404) | staff-tasks.routes.ts | `comment` | `addComment` |
 
 Not in the API (outside `/api/v1`): `GET /health`, `GET /health/ready`, `GET /api-docs`.
 

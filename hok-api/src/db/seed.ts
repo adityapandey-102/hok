@@ -5,7 +5,9 @@
  * three events per client (past, current, upcoming) in each client's time
  * zone. M7: twelve staff tasks across every role (four editor tasks with a
  * brief; some overdue, blocked or done) with matching timelines, reused by
- * (assignee, title). Later milestones add assets, tasks and comments here.
+ * (assignee, title). Round 1 (2026-11-02) adds a task an SMM created for the
+ * editor, tasks due on fixed days of the current month, and 3 private to-dos per
+ * person. Later milestones add assets, tasks and comments here.
  *
  * Deliberately calls the AuthProvider directly, not an Application service --
  * seeding is an administrative bypass of RBAC (the same way migrations and the
@@ -35,6 +37,9 @@ import { assetTags, assets, tags } from "../modules/assets/infrastructure/assets
 import type { AssetType } from "../modules/assets/domain/asset.entity";
 import { staffTaskUpdates, staffTasks } from "../modules/staff-tasks/infrastructure/staff-tasks.schema";
 import type { StaffTaskPriority, StaffTaskStatus } from "../modules/staff-tasks/domain/staff-task.entity";
+import { todos } from "../modules/todos/infrastructure/todos.schema";
+import type { TodoUrgency } from "../modules/todos/domain/todo.entity";
+import { nextTodoReminder } from "../modules/todos/domain/todo.rules";
 import type { Role } from "../domain";
 
 export const SEED_PASSWORD = "Hok@2026";
@@ -333,6 +338,10 @@ interface SeedTask {
   priority: StaffTaskPriority;
   /** Days from today (UTC midnight) + 18:00 UTC; negative = overdue unless done. Omit for no due date. */
   dueInDays?: number;
+  /** Day of the CURRENT month (UTC) at 18:00 UTC, so the month view always has tasks in it. Wins over dueInDays. */
+  dueInMonthDay?: number;
+  /** Who created it (a client manager, assigning down the ladder); the Admin when omitted. */
+  assignedByEmail?: string;
   /** The status path the task has walked, starting after "todo" (each step is a timeline entry). */
   path: StaffTaskStatus[];
   comments?: { byAdmin: boolean; text: string }[];
@@ -356,7 +365,18 @@ const TASKS: SeedTask[] = [
   { assigneeEmail: "rohan.smm@hok.test", title: "Prepare the Q4 content calendar", priority: "high", dueInDays: 4, path: ["in_progress"] },
   { assigneeEmail: "sara.smm@hok.test", title: "Re-upload the Desert Rose RAW files", priority: "urgent", dueInDays: 0, path: [], client: "Desert Rose Spa" },
   { assigneeEmail: "vikram.mm@hok.test", title: "Review the Thames Coffee ad budget", priority: "medium", dueInDays: 10, path: [], client: "Thames Coffee Roasters" },
+  // Round 1: a task an SMM created for the editor (on the SMM's own client), and tasks due on fixed days of this month.
+  { assigneeEmail: "meera.editor@hok.test", assignedByEmail: "rohan.smm@hok.test", title: "Trim the Chai Point behind-the-scenes clip", description: "30 seconds, vertical, with captions.", priority: "medium", dueInMonthDay: 12, path: [], client: "Chai Point Cafe" },
+  { assigneeEmail: "arjun.dev@hok.test", title: "Set up analytics for Urban Threads", priority: "medium", dueInMonthDay: 15, path: [], client: "Urban Threads" },
+  { assigneeEmail: "neha.agent@hok.test", title: "Weekly performance summary for the Admin", priority: "low", dueInMonthDay: 18, path: [] },
+  { assigneeEmail: "isha.writer@hok.test", title: "Proofread the Desert Rose newsletter", priority: "high", dueInMonthDay: 22, path: [], client: "Desert Rose Spa" },
 ];
+
+/** Day `day` of the current UTC month at 18:00 UTC. */
+function dayOfThisMonth(day: number): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), day, 18));
+}
 
 /** Tasks across every role (four editor tasks with a brief), each with a timeline matching its status. Reused by (assignee, title). */
 async function seedStaffTasks(adminId: string | undefined): Promise<void> {
@@ -369,7 +389,7 @@ async function seedStaffTasks(adminId: string | undefined): Promise<void> {
   const people = await db
     .select({ id: profiles.id, email: profiles.email })
     .from(profiles)
-    .where(inArray(profiles.email, [...new Set(TASKS.map((t) => t.assigneeEmail))]));
+    .where(inArray(profiles.email, [...new Set(TASKS.flatMap((t) => (t.assignedByEmail ? [t.assigneeEmail, t.assignedByEmail] : [t.assigneeEmail])))]));
   const idByEmail = new Map(people.map((p) => [p.email, p.id]));
   const clientRows = await db
     .select({ id: clients.id, name: clients.businessName })
@@ -390,6 +410,7 @@ async function seedStaffTasks(adminId: string | undefined): Promise<void> {
       logger.info({ title: t.title }, "seed: staff task already exists -- reused");
       continue;
     }
+    const creatorId = t.assignedByEmail ? (idByEmail.get(t.assignedByEmail) ?? adminId) : adminId;
     const clientId = t.client ? (clientIdByName.get(t.client) ?? null) : null;
     let eventId: string | null = null;
     if (clientId && t.event) {
@@ -408,10 +429,15 @@ async function seedStaffTasks(adminId: string | undefined): Promise<void> {
           title: t.title,
           description: t.description ?? null,
           assigneeId,
-          assignedBy: adminId,
+          assignedBy: creatorId,
           clientId,
           eventId,
-          dueAt: t.dueInDays === undefined ? null : new Date(today + t.dueInDays * DAY + 18 * 3600_000),
+          dueAt:
+            t.dueInMonthDay !== undefined
+              ? dayOfThisMonth(t.dueInMonthDay)
+              : t.dueInDays === undefined
+                ? null
+                : new Date(today + t.dueInDays * DAY + 18 * 3600_000),
           priority: t.priority,
           status,
           completedAt: status === "done" ? at(t.path.length) : null,
@@ -424,7 +450,7 @@ async function seedStaffTasks(adminId: string | undefined): Promise<void> {
       const taskId = row!.id;
       let from: StaffTaskStatus = "todo";
       await tx.insert(staffTaskUpdates).values([
-        { taskId, authorId: adminId, kind: "created" as const, toStatus: "todo" as const, toAssigneeId: assigneeId, createdAt: at(0) },
+        { taskId, authorId: creatorId, kind: "created" as const, toStatus: "todo" as const, toAssigneeId: assigneeId, createdAt: at(0) },
         ...t.path.map((to, i) => {
           const entry = { taskId, authorId: assigneeId, kind: "status" as const, fromStatus: from, toStatus: to, createdAt: at(i + 1) };
           from = to;
@@ -483,6 +509,56 @@ async function seedPersonalEvents(): Promise<void> {
   }
 }
 
+// -- My to-dos (round 1) ---------------------------------------------------------------
+
+interface SeedTodo {
+  title: string;
+  notes?: string;
+  urgency: TodoUrgency;
+  /** Day of the current month (UTC) and hour (UTC). */
+  day: number;
+  hour: number;
+  done?: boolean;
+}
+
+/** Three private to-dos per person, mixed urgencies, due in the current month. Reused by (owner, title). */
+const TODO_PLAN: SeedTodo[] = [
+  { title: "Review this week's priorities", urgency: "urgent", day: 3, hour: 9 },
+  { title: "Reply to pending messages", notes: "Anything older than two days first.", urgency: "high", day: 12, hour: 15 },
+  { title: "Tidy up shared folders", urgency: "low", day: 24, hour: 17 },
+];
+
+async function seedTodos(): Promise<void> {
+  const probe = await db.execute(sql`select to_regclass('public.todos') is not null as ok`);
+  if ((probe.rows[0] as { ok: boolean } | undefined)?.ok !== true) {
+    logger.warn("seed: todos table missing (migration 20261102000001 not applied yet) -- to-dos skipped");
+    return;
+  }
+  const people = await db.select({ id: profiles.id, email: profiles.email }).from(profiles).where(inArray(profiles.email, STAFF.map((p) => p.email)));
+  const now = new Date();
+  for (const [i, person] of people.entries()) {
+    for (const [j, t] of TODO_PLAN.entries()) {
+      // Spread the dates a little so the calendar isn't one column of everyone's to-dos.
+      const day = Math.min(28, t.day + ((i + j) % 4));
+      const dueAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), day, t.hour));
+      const title = j === 2 && i % 2 === 1 ? "Draft ideas for next month" : t.title;
+      const [existing] = await db.select({ id: todos.id }).from(todos).where(and(eq(todos.ownerId, person.id), eq(todos.title, title))).limit(1);
+      if (existing) continue;
+      const done = j === 2 && i % 3 === 0;
+      await db.insert(todos).values({
+        ownerId: person.id,
+        title,
+        notes: t.notes ?? null,
+        dueAt,
+        urgency: t.urgency,
+        doneAt: done ? now : null,
+        nextRemindAt: done ? null : nextTodoReminder(dueAt, t.urgency, now),
+      });
+      logger.info({ owner: person.email, title }, "seed: to-do created");
+    }
+  }
+}
+
 async function main(): Promise<void> {
   // The seed password is public (it is in this repo), so never seed a database off this machine.
   const host = new URL(env.DATABASE_URL).hostname;
@@ -496,6 +572,7 @@ async function main(): Promise<void> {
   await seedPersonalEvents();
   await seedAssets();
   await seedStaffTasks(adminRow?.id);
+  await seedTodos();
   logger.info(`seed: done. Every seeded account uses the password ${SEED_PASSWORD}`);
 }
 

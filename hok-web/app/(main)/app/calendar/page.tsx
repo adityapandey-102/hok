@@ -6,22 +6,29 @@ import { CalendarSubscribe } from "../../../../modules/calendar/components/Calen
 import { ButtonLink } from "../../../../components/ui/Button";
 import { Icon } from "../../../../components/ui/Icon";
 
+/** The calendar is for every role (round 1): events for the client managers, tasks and the person's own to-dos for everyone. */
 export default async function CalendarPage() {
   const { profile } = await apiFetchServer("/auth/me");
-  if (!hasCapability(profile.role, "events:read")) redirect("/app");
+  if (!hasCapability(profile.role, "staff_tasks:read")) redirect("/app");
   const isAdmin = profile.role === "admin";
+  const seesEvents = hasCapability(profile.role, "events:read");
   const canCreate = hasCapability(profile.role, "events:write");
+  const subtitle = isAdmin
+    ? "Every client event and task in the agency, plus your to-dos."
+    : seesEvents
+      ? "Your clients’ events, your tasks and to-dos, and personal entries."
+      : "Your tasks and to-dos.";
   return (
     <div className="mx-auto max-w-6xl">
       <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="page-title">{isAdmin ? "Calendar" : "My calendar"}</h1>
           <p className="text-sm text-text-muted">
-            {isAdmin ? "Every client event in the agency." : "Your clients’ events and personal entries."} Times are shown in {profile.timeZone}.
+            {subtitle} Times are shown in {profile.timeZone}.
           </p>
         </div>
         <div className="page-actions">
-          <CalendarSubscribe timeZone={profile.timeZone} />
+          {seesEvents && <CalendarSubscribe timeZone={profile.timeZone} />}
           {canCreate && (
             <ButtonLink href="/app/events/new">
               <Icon name="plus" size={16} /> New event
@@ -29,7 +36,7 @@ export default async function CalendarPage() {
           )}
         </div>
       </header>
-      <CalendarView viewerTimeZone={profile.timeZone} isAdmin={isAdmin} />
+      <CalendarView viewerTimeZone={profile.timeZone} isAdmin={isAdmin} role={profile.role} />
     </div>
   );
 }

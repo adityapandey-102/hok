@@ -5,6 +5,8 @@ import { createApp } from "../../src/app";
 import { db } from "../../src/common/database/drizzle-client";
 import { events } from "../../src/modules/events/infrastructure/events.schema";
 import { staffTasks } from "../../src/modules/staff-tasks/infrastructure/staff-tasks.schema";
+import { todos } from "../../src/modules/todos/infrastructure/todos.schema";
+import { profiles } from "../../src/modules/users/infrastructure/profile.schema";
 import { createReminderRunner } from "../../src/modules/reminders/reminders.module";
 import {
   bearerFor,
@@ -39,7 +41,7 @@ const HOUR = 3_600_000;
 const iso = (ms: number) => new Date(ms).toISOString();
 type Json = Record<string, unknown>;
 
-async function bellCount(userId: string, type: string, subjectKey: "eventId" | "taskId", subjectId: string): Promise<number> {
+async function bellCount(userId: string, type: string, subjectKey: "eventId" | "taskId" | "todoId", subjectId: string): Promise<number> {
   const res = await db.execute(
     sql`select count(*)::int as n from notifications where user_id = ${userId} and type = ${type} and payload -> 'data' ->> ${subjectKey} = ${subjectId}`,
   );
@@ -136,5 +138,91 @@ describe("reminders", () => {
     await db.update(staffTasks).set({ status: "done", completedAt: new Date() }).where(eq(staffTasks.id, ids.task));
     await runner.runOnce();
     expect(await bellCount(editor.id, "task_due_reminder", "taskId", ids.task)).toBe(1);
+  });
+});
+
+/**
+ * My to-dos (round 1): a to-do carries its own next moment. Due moments are
+ * sent (to the owner only) and the to-do moves on to its next one; done
+ * to-dos are never claimed; a moment missed by more than 30 minutes is
+ * skipped silently but still advanced; a deactivated owner is never told.
+ */
+describe("to-do reminders", () => {
+  const MIN = 60_000;
+  let gone: FixtureUser;
+
+  async function makeTodo(owner: FixtureUser, body: Json): Promise<string> {
+    const res = await request(app).post("/api/v1/todos").set("Authorization", await bearerFor(owner)).send(body);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    return ((res.body as Json).todo as Json).id as string;
+  }
+  async function nextRemind(id: string): Promise<Date | null> {
+    const [row] = await db.select({ at: todos.nextRemindAt }).from(todos).where(eq(todos.id, id));
+    return row!.at;
+  }
+
+  beforeAll(async () => {
+    gone = await createFixtureUser("developer", "Remind Gone");
+  });
+  afterAll(async () => {
+    await deleteFixtureUser(gone.id); // its to-dos cascade
+  });
+
+  it("an urgent to-do due in 50 minutes: the 1-hour reminder goes out and the next moment is the due time", async () => {
+    const dueMs = Date.now() + 50 * MIN;
+    const id = await makeTodo(editor, { title: "Remind urgent", dueAt: iso(dueMs), urgency: "urgent" });
+    // Created 50 minutes before it is due, the first moment left is the due time itself.
+    expect((await nextRemind(id))!.getTime()).toBe(dueMs);
+    // The 1-hour moment passed 10 minutes ago (the runner was between checks).
+    await db.update(todos).set({ nextRemindAt: new Date(dueMs - 60 * MIN) }).where(eq(todos.id, id));
+    await runner.runOnce();
+    expect(await bellCount(editor.id, "todo_reminder", "todoId", id)).toBe(1);
+    expect((await nextRemind(id))!.getTime()).toBe(dueMs);
+    const msg = await db.execute(sql`select payload ->> 'title' as title, payload ->> 'url' as url from notifications where user_id = ${editor.id} and type = 'todo_reminder' and payload -> 'data' ->> 'todoId' = ${id}`);
+    expect(msg.rows[0]).toMatchObject({ url: "/app/todos" });
+    expect((msg.rows[0] as { title: string }).title).toMatch(/^Due in \d+ min: Remind urgent$/);
+    // Nobody else was told, and a second check sends nothing more.
+    expect(await bellCount(owner.id, "todo_reminder", "todoId", id)).toBe(0);
+    await runner.runOnce();
+    expect(await bellCount(editor.id, "todo_reminder", "todoId", id)).toBe(1);
+  });
+
+  it("done to-dos are never claimed", async () => {
+    const id = await makeTodo(editor, { title: "Remind done", dueAt: iso(Date.now() + 50 * MIN), urgency: "high" });
+    const past = new Date(Date.now() - 5 * MIN);
+    await db.update(todos).set({ doneAt: new Date(), nextRemindAt: past }).where(eq(todos.id, id));
+    await runner.runOnce();
+    expect(await bellCount(editor.id, "todo_reminder", "todoId", id)).toBe(0);
+    expect((await nextRemind(id))!.getTime()).toBe(past.getTime());
+  });
+
+  it("a stale reminder (40 minutes old) is skipped silently and the to-do moves on", async () => {
+    const dueMs = Date.now() + 20 * MIN;
+    const id = await makeTodo(editor, { title: "Remind stale", dueAt: iso(dueMs), urgency: "high" });
+    await db.update(todos).set({ nextRemindAt: new Date(Date.now() - 40 * MIN) }).where(eq(todos.id, id));
+    await runner.runOnce();
+    expect(await bellCount(editor.id, "todo_reminder", "todoId", id)).toBe(0);
+    expect((await nextRemind(id))!.getTime()).toBe(dueMs);
+  });
+
+  it("a deactivated owner is never told, but the to-do still moves on", async () => {
+    const dueMs = Date.now() + 20 * MIN;
+    const id = await makeTodo(gone, { title: "Remind gone", dueAt: iso(dueMs), urgency: "high" });
+    await db.update(profiles).set({ active: false }).where(eq(profiles.id, gone.id));
+    await db.update(todos).set({ nextRemindAt: new Date(Date.now() - 5 * MIN) }).where(eq(todos.id, id));
+    await runner.runOnce();
+    expect(await bellCount(gone.id, "todo_reminder", "todoId", id)).toBe(0);
+    expect((await nextRemind(id))!.getTime()).toBe(dueMs);
+  });
+
+  it("a medium to-do reminds once, at its due time, and then has no moment left", async () => {
+    const dueMs = Date.now() + 5 * MIN;
+    const id = await makeTodo(editor, { title: "Remind medium", dueAt: iso(dueMs), urgency: "medium" });
+    expect((await nextRemind(id))!.getTime()).toBe(dueMs);
+    // Time passes: the due time is now a minute ago.
+    await db.update(todos).set({ dueAt: new Date(Date.now() - MIN), nextRemindAt: new Date(Date.now() - MIN) }).where(eq(todos.id, id));
+    await runner.runOnce();
+    expect(await bellCount(editor.id, "todo_reminder", "todoId", id)).toBe(1);
+    expect(await nextRemind(id)).toBeNull();
   });
 });

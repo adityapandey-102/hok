@@ -16,7 +16,7 @@ import { PushPrompt } from "./PushPrompt";
 
 const POLL_MS = 60_000;
 /** Notification types that are reminders (the bell's alert animation). */
-const REMINDER_TYPES: readonly string[] = ["event_reminder", "task_due_reminder"];
+const REMINDER_TYPES: readonly string[] = ["event_reminder", "task_due_reminder", "todo_reminder"];
 
 /**
  * The header bell: an unread badge (polled every 60s, paused while the tab is

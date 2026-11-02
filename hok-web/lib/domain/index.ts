@@ -29,3 +29,6 @@ export * from "./types/staffTask";
 export * from "./validation/staffTask";
 export * from "./types/clientTodo";
 export * from "./validation/clientTodo";
+export * from "./types/todo";
+export * from "./validation/todo";
+export * from "./utils/todo";

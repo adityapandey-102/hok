@@ -27,8 +27,8 @@ describe("capabilities matrix", () => {
     }
   });
 
-  it("gives admin unrestricted (true) access to everything", () => {
-    for (const capability of CAPABILITIES) {
+  it("gives admin unrestricted (true) access to everything except the private to-dos", () => {
+    for (const capability of CAPABILITIES.filter((c) => c !== "todos:manage")) {
       expect(getCapabilityScope("admin", capability)).toBe(true);
     }
   });
@@ -50,8 +50,8 @@ describe("capabilities matrix", () => {
     }
   });
 
-  it("keeps admin-only powers admin-only (users, templates, reassigning, assigning tasks, global dashboard)", () => {
-    const adminOnly: Capability[] = ["users:manage", "stage_templates:manage", "clients:reassign", "staff_tasks:assign", "dashboard:global"];
+  it("keeps admin-only powers admin-only (users, templates, reassigning, global dashboard)", () => {
+    const adminOnly: Capability[] = ["users:manage", "stage_templates:manage", "clients:reassign", "dashboard:global"];
     for (const role of ROLES.filter((r) => r !== "admin")) {
       for (const capability of adminOnly) {
         expect(getCapabilityScope(role, capability)).toBe(false);
@@ -63,6 +63,19 @@ describe("capabilities matrix", () => {
     for (const role of ROLES.filter((r) => r !== "admin")) {
       expect(getCapabilityScope(role, "staff_tasks:read")).toBe("own");
       expect(getCapabilityScope(role, "staff_tasks:update")).toBe("own");
+    }
+  });
+
+  it("lets the Admin and the client managers assign tasks (managers 'own'), and nobody else", () => {
+    expect(getCapabilityScope("admin", "staff_tasks:assign")).toBe(true);
+    for (const role of MANAGERS) expect(getCapabilityScope(role, "staff_tasks:assign")).toBe("own");
+    for (const role of TASK_ONLY) expect(hasCapability(role, "staff_tasks:assign")).toBe(false);
+  });
+
+  it("makes to-dos private to every role, the Admin included (no bypass)", () => {
+    for (const role of ROLES) {
+      expect(getCapabilityScope(role, "todos:manage")).toBe("own");
+      expect(isScopedToOwnRecords(role, "todos:manage")).toBe(true);
     }
   });
 

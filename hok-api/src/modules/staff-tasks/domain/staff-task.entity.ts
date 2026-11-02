@@ -16,6 +16,10 @@ export type OpenStaffTaskStatus = (typeof OPEN_STAFF_TASK_STATUSES)[number];
 export const STAFF_TASK_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 export type StaffTaskPriority = (typeof STAFF_TASK_PRIORITIES)[number];
 
+/** List `relation` filter: assigned to me, created by me, or on one of my client teams (managers). */
+export const STAFF_TASK_RELATIONS = ["assigned", "created", "team"] as const;
+export type StaffTaskRelation = (typeof STAFF_TASK_RELATIONS)[number];
+
 /** Timeline entry kinds (staff_task_updates.kind). */
 export const STAFF_TASK_UPDATE_KINDS = ["created", "status", "comment", "reassigned", "reopened"] as const;
 export type StaffTaskUpdateKind = (typeof STAFF_TASK_UPDATE_KINDS)[number];
@@ -57,6 +61,8 @@ export interface StaffTaskEntity extends StaffTaskFields {
   assignedBy: string | null;
   assignedByName: string | null;
   clientName: string | null;
+  /** The linked client's team (profile ids), for in-memory visibility guards after the lock; [] without a client. Never in a response. */
+  teamIds: string[];
   status: StaffTaskStatus;
   completedAt: string | null;
   version: number;
@@ -95,6 +101,9 @@ export interface StaffTaskSummaryEntity {
   assigneeId: string;
   assigneeName: string;
   assigneeRole: Role;
+  /** Who created (assigned) it; null if that account is gone. */
+  assignedById: string | null;
+  assignedByName: string | null;
   clientId: string | null;
   clientName: string | null;
   eventId: string | null;
@@ -104,3 +113,11 @@ export interface StaffTaskSummaryEntity {
   version: number;
   createdAt: string;
 }
+
+/**
+ * What the caller gets back: the row plus whether *they* may edit, reassign,
+ * reopen and delete it (the Admin, or its creator while they still hold
+ * staff_tasks:assign), so the web needs no role logic of its own.
+ */
+export type StaffTaskDetailView = StaffTaskDetail & { canManage: boolean };
+export type StaffTaskSummaryView = StaffTaskSummaryEntity & { canManage: boolean };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildStaffTaskPayload, parseReferenceLinks, staffTaskFormSchema, type StaffTaskFormValues } from "./staffTask";
+import type { Role } from "../constants/roles";
 import { describeTaskUpdate, isTaskOverdue, nextStatuses, type StaffTaskUpdate } from "../types/staffTask";
 
 const base: StaffTaskFormValues = {
@@ -16,8 +17,8 @@ const base: StaffTaskFormValues = {
   referenceLinks: "",
 };
 
-const firstError = (role: Parameters<typeof staffTaskFormSchema>[0], v: Partial<StaffTaskFormValues>) => {
-  const r = staffTaskFormSchema(role).safeParse({ ...base, ...v });
+const firstError = (_role: Role | null, v: Partial<StaffTaskFormValues>) => {
+  const r = staffTaskFormSchema.safeParse({ ...base, ...v });
   return r.success ? null : r.error.issues[0]?.path.join(".");
 };
 
@@ -28,10 +29,9 @@ describe("staffTaskFormSchema", () => {
     expect(firstError("developer", { assigneeId: "" })).toBe("assigneeId");
   });
 
-  it("an editor task needs the raw files link; others don't", () => {
-    expect(firstError("editor", {})).toBe("rawFilesUrl");
+  it("an editor task no longer needs the raw files link (decision 2026-11-02)", () => {
+    expect(firstError("editor", {})).toBeNull();
     expect(firstError("editor", { rawFilesUrl: "https://drive.google.com/x" })).toBeNull();
-    expect(firstError("developer", {})).toBeNull();
   });
 
   it("links must be http(s)", () => {

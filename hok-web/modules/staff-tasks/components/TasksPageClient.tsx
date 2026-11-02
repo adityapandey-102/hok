@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ROLES,
   ROLE_LABELS,
+  hasCapability,
   STAFF_TASK_PRIORITIES,
   STAFF_TASK_PRIORITY_LABELS,
   STAFF_TASK_STATUSES,
@@ -12,6 +13,8 @@ import {
   type Role,
   type StaffTaskPriority,
 } from "../../../lib/domain";
+import type { TaskRelation } from "../api/staffTasksApi";
+import { teamMembersApi } from "../../team-members/api/teamMembersApi";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
 import { usersApi } from "../../admin-users/api/usersApi";
 import { EMPTY_FILTERS, toApiFilters, type DueFilter, type TaskFilterState } from "./taskFilters";
@@ -30,19 +33,30 @@ import { useToast } from "../../../components/ui/Toast";
 type View = "list" | "board";
 const VIEW_KEY = "hok.tasks.view";
 
+const RELATIONS: { id: "all" | TaskRelation; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "assigned", label: "Assigned to me" },
+  { id: "created", label: "I assigned" },
+  { id: "team", label: "My clients" },
+];
+
 /**
- * /app/tasks. Everyone but the Admin sees "My tasks" (FR-TSK-08): their own
- * tasks with status, priority and due filters, overdue highlighted. The Admin
- * (FR-TSK-09) sees every task, adds assignee and role filters, switches
- * between list and Kanban, and creates tasks.
+ * /app/tasks. Task-only staff see "My tasks" (FR-TSK-08): the tasks assigned to
+ * them with status, priority and due filters, overdue highlighted. The Admin
+ * (FR-TSK-09) sees every task. Client managers see the tasks assigned to them,
+ * the ones they gave and their clients' tasks, with a segmented filter for the
+ * three. Anyone who may assign (`staff_tasks:assign`: the Admin and the client
+ * managers) also gets the assignee and role filters, list / Kanban, and "New task".
  */
 export function TasksPageClient({
-  isAdmin,
+  role,
+  viewerId,
   zone,
   initialFilters = {},
   initialAssigneeName,
 }: {
-  isAdmin: boolean;
+  role: Role;
+  viewerId: string;
   zone: string;
   /** From the URL (e.g. the dashboard's "View all overdue"). */
   initialFilters?: Partial<TaskFilterState>;
@@ -50,6 +64,10 @@ export function TasksPageClient({
 }) {
   const router = useRouter();
   const { showToast } = useToast();
+  const isAdmin = role === "admin";
+  // Admin and the client managers: create, board, assignee filter. The API decides who may do what to each task.
+  const canAssign = hasCapability(role, "staff_tasks:assign");
+  const isManager = canAssign && !isAdmin;
   const [filters, setFilters] = useState<TaskFilterState>(() => ({ ...EMPTY_FILTERS, ...initialFilters }));
   const debouncedSearch = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
   const [page, setPage] = useState(0);
@@ -59,7 +77,7 @@ export function TasksPageClient({
 
   // Remember the Admin's view per browser (a convenience; falls back to the list).
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canAssign) return;
     // Read after mount (never during render), so the server and first client render agree.
     const restore = () => {
       try {
@@ -69,7 +87,7 @@ export function TasksPageClient({
       }
     };
     restore();
-  }, [isAdmin]);
+  }, [canAssign]);
 
   function chooseView(next: View) {
     setView(next);
@@ -87,7 +105,7 @@ export function TasksPageClient({
   }
 
   const effective = { ...filters, search: debouncedSearch };
-  const board = isAdmin && view === "board";
+  const board = canAssign && view === "board";
   const apiFilters = toApiFilters(effective, zone, board);
   const filterKey = JSON.stringify(apiFilters);
   const filtered = JSON.stringify({ ...filters, search: filters.search.trim() }) !== JSON.stringify(EMPTY_FILTERS);
@@ -96,10 +114,12 @@ export function TasksPageClient({
     <div className={`mx-auto ${board ? "max-w-7xl" : "max-w-5xl"}`}>
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="page-title">{isAdmin ? "Tasks" : "My tasks"}</h1>
-          <p className="text-sm text-text-muted">{isAdmin ? "Every task you've assigned to the team." : "Tasks the Admin has assigned to you."}</p>
+          <h1 className="page-title">{canAssign ? "Tasks" : "My tasks"}</h1>
+          <p className="text-sm text-text-muted">
+            {isAdmin ? "Every task you've assigned to the team." : isManager ? "Tasks assigned to you, tasks you've given, and your clients' tasks." : "Tasks assigned to you."}
+          </p>
         </div>
-        {isAdmin && (
+        {canAssign && (
           <div className="page-actions items-center">
             <Segmented
               label="View"
@@ -118,6 +138,17 @@ export function TasksPageClient({
           </div>
         )}
       </header>
+
+      {isManager && (
+        <Segmented
+          label="Which tasks"
+          options={RELATIONS}
+          value={filters.relation || "all"}
+          onChange={(id) => update("relation", id === "all" ? "" : id)}
+          className="mb-3 self-start max-sm:w-full"
+          stretch
+        />
+      )}
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <div className="relative sm:col-span-2">
@@ -156,7 +187,7 @@ export function TasksPageClient({
           <option value="today">Due today</option>
           <option value="week">Due in the next 7 days</option>
         </Select>
-        {isAdmin && (
+        {canAssign && (
           <>
             <SearchSelect
               aria-label="Filter by assignee"
@@ -164,7 +195,7 @@ export function TasksPageClient({
               value={filters.assigneeId || null}
               selectedLabel={filters.assigneeId === initialFilters.assigneeId ? initialAssigneeName : undefined}
               clearable
-              load={(q) => usersApi.searchOptions(q)}
+              load={(q) => (isAdmin ? usersApi.searchOptions(q) : teamMembersApi.searchOptions(q))}
               onChange={(id) => update("assigneeId", id ?? "")}
             />
             <Select aria-label="Filter by role" value={filters.role} onChange={(e) => update("role", e.target.value as Role | "")}>
@@ -181,13 +212,13 @@ export function TasksPageClient({
       </div>
 
       {board ? (
-        <TaskBoard filters={apiFilters} filterKey={filterKey} zone={zone} reloadKey={reloadKey} />
+        <TaskBoard filters={apiFilters} filterKey={filterKey} zone={zone} reloadKey={reloadKey} isAdmin={isAdmin} viewerId={viewerId} />
       ) : (
         <TaskList
           filters={apiFilters}
           filterKey={filterKey}
           zone={zone}
-          showAssignee={isAdmin}
+          showAssignee={canAssign}
           reloadKey={reloadKey}
           filtered={filtered}
           page={page}
@@ -195,7 +226,7 @@ export function TasksPageClient({
         />
       )}
 
-      {isAdmin && formOpen && (
+      {canAssign && formOpen && (
         <TaskFormModal
           open
           zone={zone}

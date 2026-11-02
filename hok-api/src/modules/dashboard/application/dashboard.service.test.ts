@@ -27,6 +27,8 @@ function fakeRepo() {
       }),
     team: (_now, f, limit, offset) => log("team", f.search ?? (limit === 5 && offset === 0 ? "dashboard" : "page"), []),
     teamCount: () => log("teamCount", undefined, 7),
+    todoSummary: (id) => log("todoSummary", id, { open: 4, overdue: 1 }),
+    nextTodos: (id) => log("nextTodos", id, []),
   };
   return { repo, calls };
 }
@@ -35,41 +37,50 @@ const NOW = () => new Date("2026-10-16T06:00:00Z");
 const viewer = (role: Role) => ({ userId: "u1", role, timeZone: "Asia/Kolkata" });
 
 describe("DashboardService", () => {
-  it("gives task-only staff just their own tasks (3 reads)", async () => {
+  it("gives task-only staff just their own tasks and to-dos (5 reads)", async () => {
     const { repo, calls } = fakeRepo();
     const d = await new DashboardService(repo, NOW).get(viewer("editor"));
     expect(d.clients).toBeNull();
     expect(d.firm).toBeNull();
     expect(d.tasks).toMatchObject({ counts, dueToday: 1, overdue: 0, open: [], recentComments: [] });
-    expect(calls.sort()).toEqual(["openTasks:u1", "recentTaskComments:u1", "taskSummary:u1"]);
+    expect(d.todos).toEqual({ open: 4, overdue: 1, next: [] });
+    expect(calls.sort()).toEqual(["nextTodos:u1", "openTasks:u1", "recentTaskComments:u1", "taskSummary:u1", "todoSummary:u1"]);
   });
 
-  it("gives managers their own clients, never the firm (7 reads)", async () => {
+  it("gives managers their own clients, never the firm (9 reads)", async () => {
     const { repo, calls } = fakeRepo();
     const d = await new DashboardService(repo, NOW).get(viewer("social_media_manager"));
     expect(d.firm).toBeNull();
     expect(d.clients).toMatchObject({ clientCount: 3, unresolvedComments: { received: 2, inProgress: 1 } });
-    expect(calls).toHaveLength(7);
+    expect(calls).toHaveLength(9);
     expect(calls.filter((c) => c.endsWith(":firm") || c === "firmTotals" || c === "team")).toEqual([]);
   });
 
-  it("gives Admin the firm alone on the overview (5 reads)", async () => {
+  it("gives Admin the firm alone on the overview (7 reads, the Admin's own to-dos included)", async () => {
     const { repo, calls } = fakeRepo();
     const d = await new DashboardService(repo, NOW).get(viewer("admin"));
     expect(d.firm?.totals).toEqual({ clients: 9, activeEvents: 4, openTasks: 5, overdueTasks: 1, unresolvedComments: 2, weekEvents: 3, teamSize: 6 });
     expect(d.clients).toBeNull();
     expect(d.tasks).toBeNull();
-    expect(calls.sort()).toEqual(["events:firm", "firmTotals", "latestComments:firm", "openTasks:overdue", "team:dashboard"]);
+    expect(calls.sort()).toEqual(["events:firm", "firmTotals", "latestComments:firm", "nextTodos:u1", "openTasks:overdue", "team:dashboard", "todoSummary:u1"]);
   });
 
-  it("gives Admin their own clients and tasks on 'mine' (7 reads, no firm)", async () => {
+  it("gives Admin their own clients and tasks on 'mine' (9 reads, no firm)", async () => {
     const { repo, calls } = fakeRepo();
     const d = await new DashboardService(repo, NOW).get(viewer("admin"), "mine");
     expect(d.view).toBe("mine");
     expect(d.firm).toBeNull();
     expect(d.clients?.weekEventCount).toBe(4);
-    expect(calls).toHaveLength(7);
+    expect(calls).toHaveLength(9);
     expect(calls).toEqual(expect.arrayContaining(["events:u1", "clientSummary:u1", "taskSummary:u1"]));
+  });
+
+  it("every role gets only their own to-dos: the owner is always the viewer", async () => {
+    for (const role of ["admin", "social_media_manager", "editor"] as const) {
+      const { repo, calls } = fakeRepo();
+      await new DashboardService(repo, NOW).get(viewer(role));
+      expect(calls.filter((c) => c.startsWith("todoSummary") || c.startsWith("nextTodos")).sort()).toEqual(["nextTodos:u1", "todoSummary:u1"]);
+    }
   });
 
   it("computes today in the viewer's zone", async () => {

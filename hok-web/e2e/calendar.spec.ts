@@ -49,8 +49,10 @@ test("a manager sees an event in the right calendar slot, switches views and sta
     await page.getByRole("button", { name: "Next", exact: true }).click();
   }
   await expect(heading).toHaveText(MONTH_TITLE);
-  await expect(page.locator(`[data-day="${DAY}"]`).getByText(title)).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(`[data-day="${NEXT_DAY}"]`).getByText(title)).toHaveCount(0);
+  // A month cell shows counts per kind, never chips.
+  await expect(page.locator(`[data-day="${DAY}"]`)).toContainText("1 event", { timeout: 15_000 });
+  await expect(page.locator(`[data-day="${DAY}"]`).getByText(title)).toHaveCount(0);
+  await expect(page.locator(`[data-day="${NEXT_DAY}"]`)).not.toContainText("event");
 
   // List view shows it under the same day.
   await page.getByRole("tab", { name: "List" }).click();
@@ -60,17 +62,22 @@ test("a manager sees an event in the right calendar slot, switches views and sta
   await page.getByRole("tab", { name: "Week" }).click();
   await expect(page.getByTestId("calendar-title")).toContainText("–");
   await page.getByRole("tab", { name: "Month" }).click();
-  await page.locator(`[data-day="${DAY}"]`).getByText(title).click();
+  // The day's cell is a button: it opens the day pop-up, which lists the event and links to it.
+  await page.locator(`[data-day="${DAY}"] button`).click();
+  const dayDialog = page.getByRole("dialog");
+  await expect(dayDialog.getByRole("heading", { name: new RegExp(`${D} ${SHORT[M]}`) })).toBeVisible();
+  await dayDialog.getByRole("link", { name: new RegExp(title) }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible({ timeout: 30_000 });
 
-  // An empty day starts a new event prefilled with that date.
+  // An empty day's pop-up says so, and "New event" starts an event prefilled with that date.
   await page.goto("/app/calendar");
   await page.getByRole("tab", { name: "Month" }).click();
   for (let i = 0; i < 36 && !(await heading.innerText()).includes(MONTH_TITLE); i++) {
     await page.getByRole("button", { name: "Next", exact: true }).click();
   }
-  await page.getByRole("button", { name: new RegExp(`Add an event on .* ${D + 1} ${SHORT[M]}`) }).first().click();
-  await page.getByRole("link", { name: "Client event" }).click();
+  await page.locator(`[data-day="${NEXT_DAY}"] button`).click();
+  await expect(page.getByRole("dialog").getByText("Nothing on this day.")).toBeVisible();
+  await page.getByRole("dialog").getByRole("link", { name: "New event" }).click();
   await expect(page).toHaveURL(new RegExp(`date=${NEXT_DAY}`));
   await page.locator("#ne-client").fill("Chai Point");
   await page.getByRole("option", { name: /Chai Point Cafe/ }).click();
@@ -86,23 +93,28 @@ test("a manager creates a personal event from an empty day and sees it in month 
   for (let i = 0; i < 36 && !(await heading.innerText()).includes("December 2026"); i++) {
     await page.getByRole("button", { name: "Next", exact: true }).click();
   }
-  await page.getByRole("button", { name: /Add an event on .*15 Dec/ }).first().click();
-  await page.getByRole("button", { name: "Personal event" }).click();
+  const cell = page.locator('[data-day="2026-12-15"] button');
+  await cell.click();
+  await page.getByRole("dialog").getByRole("button", { name: "New personal entry" }).click();
   await page.locator("#pe-title").fill(title);
   await expect(page.locator("#pe-start")).toHaveValue("2026-12-15T09:00");
   await page.getByRole("button", { name: "Create personal event" }).click();
-  const chip = page.locator('[data-day="2026-12-15"]').getByText(title);
-  await expect(chip).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-day="2026-12-15"]')).toContainText("personal", { timeout: 15_000 });
 
-  // Edit, then delete.
-  await chip.click();
+  // The day pop-up lists it; edit, then delete.
+  await cell.click();
+  await page.getByRole("dialog").getByRole("button", { name: new RegExp(`^.*${title}`) }).click();
   await page.locator("#pe-title").fill(title + " v2");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.locator('[data-day="2026-12-15"]').getByText(title + " v2")).toBeVisible({ timeout: 15_000 });
-  await page.locator('[data-day="2026-12-15"]').getByText(title + " v2").click();
+  await expect(page.locator("#pe-title")).toHaveCount(0, { timeout: 15_000 });
+  await cell.click();
+  await expect(page.getByRole("dialog").getByText(title + " v2")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("dialog").getByText(title + " v2").click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("button", { name: "Yes, delete" }).click();
-  await expect(page.locator('[data-day="2026-12-15"]').getByText(title)).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator("#pe-title")).toHaveCount(0, { timeout: 15_000 });
+  await cell.click();
+  await expect(page.getByRole("dialog").getByText(title)).toHaveCount(0);
 });
 
 test("a manager makes a Google Calendar link; the feed serves their calendar until it's turned off", async ({ page, request }) => {

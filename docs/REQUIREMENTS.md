@@ -2,8 +2,9 @@
 
 | | |
 |---|---|
-| **Version** | 0.3 — portfolio website + needleye design system added (0.2: stakeholder answers incorporated) |
-| **Date** | 2026-10-13 |
+| **Version** | 0.4 — team feedback round 1: task ladder, calendar for everyone, day pop-up, My to-dos (0.3: portfolio website + needleye design system) |
+| **Date** | 2026-11-03 (0.3: 2026-10-13) |
+| **Changes from 0.3** | Admin and managers assign tasks down a role ladder (FR-TSK-01/05); everyone sees tasks they're assigned, created, or (managers) on their clients; calendar for every role with tasks and to-dos, counts per day and a day pop-up (FR-CAL-09/10); private My to-dos with urgency reminders (§5.14); editor raw-files link no longer required. Plan: [PLAN-team-feedback-2026-11.md](PLAN-team-feedback-2026-11.md) |
 | **Status** | Requirements agreed in principle; architecture draft in [ARCHITECTURE.md](ARCHITECTURE.md) |
 | **Changes from 0.1** | Open questions answered (§10); Marketing Agent → tasks only; stage templates; editor task fields; multiple time zones; plain portal branding; assignee closes own task; client portal moved into Phase 1 |
 
@@ -87,8 +88,10 @@ Legend: ✅ full · 👤 own records only · 👁 view only · ❌ no access
 | Post comments from portal | — | — | — | ✅ own |
 | View / update client comment status | ✅ (all) | 👤 | ❌ | 👁 status of own comments |
 | Personal calendar | ✅ | 👤 | ❌ | ❌ |
-| Assign staff tasks | ✅ | ❌ | ❌ | ❌ |
-| View / update assigned tasks | ✅ (all) | 👤 assigned to me | 👤 assigned to me | ❌ |
+| Assign staff tasks (v0.4: down the ladder only) | ✅ to managers + task-only staff | 👤 to task-only staff, own clients only | ❌ | ❌ |
+| View tasks | ✅ (all) | 👤 assigned to me, created by me, my clients' | 👤 assigned to me | ❌ |
+| Calendar (v0.4) | ✅ events + all tasks | 👤 events + my tasks | 👤 my tasks | ❌ |
+| My to-dos (v0.4, private) | 👤 own only | 👤 own only | 👤 own only | ❌ |
 | Dashboard | ✅ global | 👤 | 👤 tasks only | 👁 own portal |
 
 **Data isolation rule:** a Client Manager can **only** see clients they own (and everything attached to them). Other managers cannot see them. Admin sees all. A client has exactly **one** owner at a time.
@@ -179,7 +182,9 @@ Purpose: never forget **where** content lives. The platform stores **links**, no
 | FR-CAL-05 | Create/edit an event directly from the calendar (click on a date/slot). |
 | FR-CAL-06 | Admin has a **global calendar** with all events across the firm, filterable by manager and client. |
 | FR-CAL-07 | Times are shown in the **viewer's** time zone; event details also show the event's own local time when it differs. |
-| FR-CAL-08 | Subscribe link for Google Calendar / Apple / Outlook (ICS feed): one secret, revocable link per person with a calendar; shows the same items as their HOK calendar (last 30 days, next 6 months); read-only. *(Dropped on 2026-10-17, brought back on 2026-10-22.)* |
+| FR-CAL-08 | Subscribe link for Google Calendar / Apple / Outlook (ICS feed): one secret, revocable link per person with a calendar; shows the same items as their HOK calendar (last 30 days, next 6 months); read-only. *(Dropped on 2026-10-17, brought back on 2026-10-22.)* Still client managers only, and only events + personal entries (v0.4). |
+| FR-CAL-09 | *(v0.4)* **Every role has a calendar.** Events and personal entries as above (managers and Admin); **tasks** on their due date (the tasks the person can see, FR-TSK-09); the person's own **to-dos** on their due date (never anyone else's, Admin included). |
+| FR-CAL-10 | *(v0.4)* Month view shows **counts per kind** on each day (e.g. "2 events · 3 tasks · 1 to-do"), not item chips. Clicking a day opens a **pop-up** listing that day's items with **New event / New task / New to-do / New personal entry**, each shown only to roles allowed to create it. Week and list views keep chips. |
 
 ### 5.7 Client Portal (POR) — Phase 1
 
@@ -216,16 +221,16 @@ Tasks the **Admin** assigns to staff — the **only** module available to Market
 
 | ID | Requirement |
 |---|---|
-| FR-TSK-01 | **Only Admin** can create a task and assign it to **exactly one** staff member of any role. |
+| FR-TSK-01 | *(v0.4)* The **Admin and the client managers** (SMM, MM, PM) create tasks, each with **exactly one** assignee, **only downwards**: Admin (incl. Owner) → managers and task-only staff; managers → task-only staff. No same-level or upward assignment. A manager can link only clients on their team. *(Before v0.4: Admin only.)* |
 | FR-TSK-02 | Common fields: title, description, assignee, due date, priority, optional related client/event, optional reference links, status. |
 | FR-TSK-03 | Statuses: **To Do → In Progress → Done**, plus **Blocked**. |
 | FR-TSK-04 | The **assignee** updates the status — **including marking it Done** — and can add a comment with each update. All updates form a timeline on the task. |
-| FR-TSK-05 | Admin can reopen a Done task, edit, reassign or delete tasks. |
-| FR-TSK-06 | Admin and assignee can comment on the task at any time (discussion thread). |
-| FR-TSK-07 | Assignee is notified when a task is assigned; Admin is notified when status changes or a comment is added. |
+| FR-TSK-05 | The Admin, or the task's **creator** (v0.4), can reopen a Done task, edit, reassign (down the ladder) or delete it. |
+| FR-TSK-06 | The Admin, the creator and the assignee can comment on the task at any time (discussion thread). Managers who see a task only through their client's team have read-only access. |
+| FR-TSK-07 | Assignee is notified when a task is assigned; the task's creator is notified when the assignee changes the status or comments. |
 | FR-TSK-08 | Assignee sees "My Tasks" (filter: status, priority, due date; overdue highlighted). |
-| FR-TSK-09 | Admin sees all tasks, filterable by assignee, role, status, due date. Board (Kanban) and list views. |
-| FR-TSK-10 | **Editor tasks** additionally carry: **Raw files link** (Google Drive), **Reference edit link** (example of the desired style), and **Script** (text). These fields appear when the assignee is an Editor. |
+| FR-TSK-09 | Admin sees all tasks, filterable by assignee, role, status, due date. Board (Kanban) and list views. *(v0.4)* Managers see tasks assigned to them, created by them and linked to their clients, with filters All / Assigned to me / I assigned / My clients. |
+| FR-TSK-10 | **Editor tasks** additionally carry: **Raw files link** (Google Drive), **Reference edit link** (example of the desired style), and **Script** (text). These fields appear when the assignee is an Editor. *(v0.4: none of them is required any more; round 2 replaces them with a Links area on every task.)* |
 | FR-TSK-11 | *(Phase 2)* Due-date reminder: notify the assignee **2 hours before** the task is due. |
 
 ### 5.10 Notifications (NTF)
@@ -248,6 +253,16 @@ Tasks the **Admin** assigns to staff — the **only** module available to Market
 | FR-DSH-02 | **SMM / Marketing Manager** | My clients count · today's & upcoming events · events by stage · unresolved client comments · tasks assigned to me by Admin · mini calendar · *(Phase 2)* my client tasks due/overdue. |
 | FR-DSH-03 | **Marketing Agent / Developer / Editor** | My tasks by status · due today / overdue · recent comments on my tasks. |
 | FR-DSH-04 | **Client (portal)** | Current event + stage tracker · upcoming events · my comments & status. |
+| FR-DSH-05 | *(v0.4)* **Every staff role** | A **My to-dos** card: open and overdue counts, the next 5 with a tick to complete, Add and View all. |
+
+### 5.14 My To-dos (TODO) — v0.4
+
+| ID | Requirement |
+|---|---|
+| FR-TODO-01 | Every staff member has a **private** to-do list: title, optional notes, optional due date and time, urgency (low / medium / high / urgent), done tick. Nobody else sees it, the Admin included. |
+| FR-TODO-02 | Shown on the To-dos page, the dashboard card (FR-DSH-05) and the calendar on the due date (FR-CAL-09). |
+| FR-TODO-03 | Reminders (bell + push) by urgency: urgent 1 day, 1 hour and at the due time; high 1 hour and at due; medium at due; low none. Checked every 10 minutes by the existing reminder job (one query for the whole company), so up to 10 minutes late; a moment missed by over 30 minutes (API down) is skipped. |
+| FR-TODO-04 | Separate from client to-dos (§5.4), which stay shared per client. |
 
 ### 5.12 Public Portfolio Website (SITE)
 

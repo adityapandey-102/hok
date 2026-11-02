@@ -24,13 +24,13 @@ import { Select, Textarea } from "../../../components/ui/Select";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { Icon } from "../../../components/ui/Icon";
 
-function initialValues(task?: StaffTask, zone?: string): StaffTaskFormValues {
+function initialValues(task: StaffTask | undefined, zone: string, defaultDue: string): StaffTaskFormValues {
   return {
     title: task?.title ?? "",
     description: task?.description ?? "",
     assigneeId: task?.assigneeId ?? "",
     priority: task?.priority ?? "medium",
-    due: task?.dueAt && zone ? isoToZonedInput(task.dueAt, zone) : "",
+    due: task ? (task.dueAt ? isoToZonedInput(task.dueAt, zone) : "") : defaultDue,
     clientId: task?.clientId ?? "",
     eventId: task?.eventId ?? "",
     rawFilesUrl: task?.rawFilesUrl ?? "",
@@ -41,16 +41,20 @@ function initialValues(task?: StaffTask, zone?: string): StaffTaskFormValues {
 }
 
 /**
- * The Admin's create/edit form (FR-TSK-01/02/05/10) in a modal. Picking an
- * Editor shows the editor brief (raw files link required, reference link and
- * script optional); moving a task away from an editor warns that the brief
- * will be cleared. The due date is typed in the Admin's own time zone.
+ * The create/edit form (FR-TSK-01/02/05/10) in a modal, for the Admin and the
+ * client managers. The assignee picker lists only the people the caller may
+ * assign to (the role ladder, decided by the API). Picking an Editor shows the
+ * editor brief (raw files link, reference link and script, all optional);
+ * moving a task away from an editor warns that the brief will be cleared. The
+ * due date is typed in the creator's own time zone; `defaultDue` prefills a new
+ * task ("YYYY-MM-DDTHH:mm", e.g. 17:00 on the calendar day it was added from).
  * The parent mounts it only while open, so each opening starts from fresh state.
  */
 export function TaskFormModal({
   open,
   task,
   zone,
+  defaultDue = "",
   onClose,
   onSaved,
 }: {
@@ -58,12 +62,13 @@ export function TaskFormModal({
   /** Present = edit. */
   task?: StaffTask;
   zone: string;
+  defaultDue?: string;
   onClose: () => void;
   onSaved: (task: StaffTask) => void;
 }) {
   const titleId = useId();
   const editing = !!task;
-  const [v, setV] = useState<StaffTaskFormValues>(() => initialValues(task, zone));
+  const [v, setV] = useState<StaffTaskFormValues>(() => initialValues(task, zone, defaultDue));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -78,7 +83,7 @@ export function TaskFormModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-    const parsed = staffTaskFormSchema(role).safeParse(v);
+    const parsed = staffTaskFormSchema.safeParse(v);
     if (!parsed.success) {
       const next: Record<string, string> = {};
       for (const issue of parsed.error.issues) next[String(issue.path[0])] ??= issue.message;
@@ -130,7 +135,7 @@ export function TaskFormModal({
               placeholder="Search people…"
               value={v.assigneeId || null}
               selectedLabel={task?.assigneeName}
-              load={(q) => teamMembersApi.searchOptions(q)}
+              load={(q) => teamMembersApi.searchOptions(q, { assignable: true })}
               onChange={(id, item) => {
                 set("assigneeId", id ?? "");
                 setPickedRole(item?.data?.role ?? null);
@@ -173,9 +178,7 @@ export function TaskFormModal({
             <fieldset className="grid grid-cols-1 gap-4 rounded-app border border-border bg-accent-bg p-4 sm:col-span-2 sm:grid-cols-2">
               <legend className="px-1 text-xs font-semibold text-text-secondary">Editor brief</legend>
               <div>
-                <FieldLabel required htmlFor="tf-raw">
-                  Raw files link (Google Drive)
-                </FieldLabel>
+                <FieldLabel htmlFor="tf-raw">Raw files link (Google Drive)</FieldLabel>
                 <Input id="tf-raw" type="url" placeholder="https://drive.google.com/…" value={v.rawFilesUrl} onChange={(e) => set("rawFilesUrl", e.target.value)} />
                 <FieldError>{errors.rawFilesUrl}</FieldError>
               </div>

@@ -21,10 +21,15 @@
  *   M6: /assets (create incl. URL validation, list, tag suggest, get, edit + stale
  *       version, soft delete) for all six roles. Needs migration 20261014100001.
  *   Phase 2: /clients/:id/todos + /client-todos/:id (create, list, edit + stale version, delete, scope, archive)
- *   M7: /staff-tasks (list, create incl. the editor brief rule, get, status +
- *       stale version, comments, edit, done -> reopen, delete): Admin manages;
- *       everyone else only the tasks assigned to them (others' are 404).
- *       Needs migration 20261014200001. Its fixture tasks are deleted at the end.
+ *   M7: /staff-tasks (list, create, get, status + stale version, comments,
+ *       edit, done -> reopen, delete). Round 1 (2026-11-02): assignment goes down the
+ *       role ladder (Admin -> anyone below, managers -> task-only roles); the
+ *       Admin or a task's creator manages it; a caller sees tasks assigned to
+ *       them, created by them and (managers) their clients' (others are 404; a
+ *       visible task they may not write to is 403). Needs migration 20261014200001.
+ *       Its fixture tasks are deleted at the end.
+ *   Round 1: /todos (private per person, the Admin included), /calendar for every
+ *       role, /team-members?assignable=true. Needs migration 20261102000001.
  *
  * Creates its own fixtures (one fresh account per non-admin role) every run,
  * so it never depends on `npm run seed` beyond the admin account it signs in
@@ -311,11 +316,24 @@ async function main() {
   const calRange = "from=2026-12-01T00:00:00Z&to=2026-12-31T00:00:00Z";
   for (const [role, token] of everyone) {
     const expected = TASK_ONLY.includes(role) ? 403 : 200;
-    check(`GET /calendar as ${role} -> ${expected}`, (await req(`/calendar?${calRange}`, {}, token)).status, expected);
+    // Round 1: every role has a calendar (tasks and to-dos at least).
+    check(`GET /calendar as ${role} -> 200`, (await req(`/calendar?${calRange}`, {}, token)).status, 200);
     check(`GET /team-members as ${role} -> ${expected}`, (await req("/team-members", {}, token)).status, expected);
+    check(`GET /team-members?assignable=true as ${role} -> ${expected}`, (await req("/team-members?assignable=true", {}, token)).status, expected);
   }
   const mmCal = await req(`/calendar?${calRange}&ownerId=${smm.id}`, {}, mm.token);
-  check("GET /calendar as MM never shows the SMM's items (ownerId ignored)", mmCal.body?.items?.every((i) => i.ownerId === mm.id), true);
+  check(
+    "GET /calendar as MM never shows the SMM's events or entries (ownerId ignored)",
+    mmCal.body?.items?.filter((i) => i.kind === "event" || i.kind === "personal").every((i) => i.ownerId === mm.id),
+    true,
+  );
+  const edCal = await req(`/calendar?${calRange}`, {}, target.token);
+  check("GET /calendar as editor holds no events or personal entries", edCal.body?.items?.every((i) => i.kind === "task" || i.kind === "todo"), true);
+  check("GET /calendar with include=nope -> 400", (await req(`/calendar?${calRange}&include=nope`, {}, admin.token)).status, 400);
+  const asgSmm = await req("/team-members?assignable=true&limit=100", {}, smm.token);
+  check("GET /team-members?assignable=true as SMM lists task-only roles only", asgSmm.body?.members?.every((m) => TASK_ONLY.includes(m.role)) && asgSmm.body?.members?.length > 0, true);
+  const asgAdmin = await req("/team-members?assignable=true&limit=100", {}, admin.token);
+  check("GET /team-members?assignable=true as admin lists no admin", asgAdmin.body?.members?.every((m) => m.role !== "admin"), true);
 
   console.log("\n--- calendar subscribe link (FR-CAL-08; own link only; task-only: 403; public feed: token only) ---");
   for (const [role, token] of everyone) {
@@ -439,32 +457,59 @@ async function main() {
     check("POST /clients/:id/todos on an archived client as SMM -> 409", (await req(`/clients/${tdClient.id}/archive`, { method: "POST", body: "{}" }, admin.token)).status === 200 && (await req(`/clients/${tdClient.id}/todos`, { method: "POST", body: tdBody }, smm.token)).status, 409);
   }
 
-  console.log("\n--- staff tasks (admin: all + manages; everyone else: only tasks assigned to them, others' are 404) ---");
+  console.log("\n--- staff tasks (ladder: admin -> anyone below, managers -> task-only; admin or creator manages; assignee / creator / team see them) ---");
   // Runs before the users section: that section regenerates the editor's password, revoking its token.
   const NON_ADMIN = everyone.filter(([r]) => r !== "admin");
+  const MANAGERS = ["social_media_manager", "marketing_manager", "project_manager"];
   const taskBody = (extra = {}) => JSON.stringify({ title: `RBAC task ${stamp}`, assigneeId: target.id, rawFilesUrl: "https://drive.google.com/drive/folders/rbac", ...extra });
+  const extraTasks = []; // every fixture task, deleted at the end
+  const track = (r) => (r.body?.task?.id && extraTasks.push(r.body.task.id), r);
   for (const [role, token] of everyone) {
     check(`GET /staff-tasks as ${role} -> 200`, (await req("/staff-tasks", {}, token)).status, 200);
   }
-  for (const [role, token] of NON_ADMIN) {
-    check(`POST /staff-tasks as ${role} -> 403`, (await req("/staff-tasks", { method: "POST", body: taskBody() }, token)).status, 403);
+  // Create, to a task-only person (the editor): Admin and the managers; task-only roles never.
+  for (const [role, token] of everyone) {
+    const expected = TASK_ONLY.includes(role) ? 403 : 201;
+    check(`POST /staff-tasks (to the editor) as ${role} -> ${expected}`, track(await req("/staff-tasks", { method: "POST", body: taskBody() }, token)).status, expected);
+  }
+  // Create, to a manager (the SMM): only the Admin; a manager is refused by the ladder.
+  const toManager = JSON.stringify({ title: `RBAC to-manager ${stamp}`, assigneeId: smm.id });
+  for (const [role, token] of everyone) {
+    const expected = TASK_ONLY.includes(role) ? 403 : role === "admin" ? 201 : 400;
+    check(`POST /staff-tasks (to the SMM) as ${role} -> ${expected}`, track(await req("/staff-tasks", { method: "POST", body: toManager }, token)).status, expected);
   }
   check(
-    "POST /staff-tasks (editor task without the raw files link) as admin -> 400",
-    (await req("/staff-tasks", { method: "POST", body: taskBody({ rawFilesUrl: null }) }, admin.token)).status,
+    "POST /staff-tasks (to the admin) as admin -> 400 (the ladder is strictly downwards)",
+    (await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: admin.profile.id }) }, admin.token)).status,
     400,
   );
-  const taskRes = await req("/staff-tasks", { method: "POST", body: taskBody() }, admin.token);
+  check(
+    "POST /staff-tasks (to the admin) as SMM -> 400",
+    (await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: admin.profile.id }) }, smm.token)).status,
+    400,
+  );
+  const ladder = await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: mm.id }) }, smm.token);
+  check("... the refusal is STAFF_TASK_ASSIGNEE_NOT_ALLOWED", ladder.body?.code, "STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
+  check(
+    "POST /staff-tasks (editor task without the raw files link) as admin -> 201 (the brief is optional now)",
+    track(await req("/staff-tasks", { method: "POST", body: taskBody({ rawFilesUrl: null }) }, admin.token)).status,
+    201,
+  );
+  const taskRes = track(await req("/staff-tasks", { method: "POST", body: taskBody() }, admin.token));
   check("POST /staff-tasks (to the editor) as admin -> 201", taskRes.status, 201);
   const tid = taskRes.body?.task?.id;
+
+  // The Admin's task has no client: only the Admin and the editor (assignee) can see it.
   const taskReadExpect = { admin: 200, social_media_manager: 404, marketing_manager: 404, project_manager: 404, marketing_agent: 404, developer: 404, editor: 200, content_writer: 404 };
   for (const [role, token] of everyone) {
-    check(`GET /staff-tasks/:id (editor's) as ${role} -> ${taskReadExpect[role]}`, (await req(`/staff-tasks/${tid}`, {}, token)).status, taskReadExpect[role]);
+    check(`GET /staff-tasks/:id (editor's, admin-created) as ${role} -> ${taskReadExpect[role]}`, (await req(`/staff-tasks/${tid}`, {}, token)).status, taskReadExpect[role]);
   }
   const devList = await req("/staff-tasks?limit=100", {}, staff.developer.token);
   check("GET /staff-tasks as developer never lists the editor's task", devList.body?.tasks?.some((t) => t.id === tid), false);
   const edList = await req(`/staff-tasks?assigneeId=${staff.developer.id}&limit=100`, {}, target.token);
-  check("GET /staff-tasks as editor lists only the editor's tasks (assigneeId filter ignored)", edList.body?.tasks?.every((t) => t.assigneeId === target.id), true);
+  check("GET /staff-tasks as editor with another assigneeId lists nothing outside their scope", edList.body?.tasks?.every((t) => t.assigneeId === target.id), true);
+  check("GET /staff-tasks?relation=team as developer -> 400 (managers only)", (await req("/staff-tasks?relation=team", {}, staff.developer.token)).status, 400);
+  check("GET /staff-tasks?relation=bogus -> 400", (await req("/staff-tasks?relation=bogus", {}, admin.token)).status, 400);
 
   for (const [role, token] of NON_ADMIN.filter(([r]) => r !== "editor")) {
     const body = JSON.stringify({ status: "in_progress", version: 1 });
@@ -475,28 +520,105 @@ async function main() {
   check("POST /staff-tasks/:id/status with the stale version -> 409", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "blocked", version: 1 }) }, target.token)).status, 409);
   check("POST /staff-tasks/:id/comments (own) as editor -> 201", (await req(`/staff-tasks/${tid}/comments`, { method: "POST", body: JSON.stringify({ body: "Cut is up" }) }, target.token)).status, 201);
   check("POST /staff-tasks/:id/comments as admin -> 201", (await req(`/staff-tasks/${tid}/comments`, { method: "POST", body: JSON.stringify({ body: "Thanks" }) }, admin.token)).status, 201);
+
+  // Edit / reopen / delete on the Admin's task: managers can't see it (404); task-only roles lack staff_tasks:assign (403).
+  const manageExpect = (role) => (role === "admin" ? null : MANAGERS.includes(role) ? 404 : 403);
   for (const [role, token] of NON_ADMIN) {
-    check(`PATCH /staff-tasks/:id as ${role} -> 403`, (await req(`/staff-tasks/${tid}`, { method: "PATCH", body: JSON.stringify({ priority: "urgent", version: 2 }) }, token)).status, 403);
+    check(`PATCH /staff-tasks/:id (admin's task) as ${role} -> ${manageExpect(role)}`, (await req(`/staff-tasks/${tid}`, { method: "PATCH", body: JSON.stringify({ priority: "urgent", version: 2 }) }, token)).status, manageExpect(role));
   }
   check("PATCH /staff-tasks/:id as admin -> 200", (await req(`/staff-tasks/${tid}`, { method: "PATCH", body: JSON.stringify({ priority: "urgent", version: 2 }) }, admin.token)).status, 200);
   check("POST /staff-tasks/:id/status done (own) as editor -> 200", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "done", version: 3 }) }, target.token)).status, 200);
   check("POST /staff-tasks/:id/status on a done task as editor -> 409", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "todo", version: 4 }) }, target.token)).status, 409);
   for (const [role, token] of NON_ADMIN) {
-    check(`POST /staff-tasks/:id/reopen as ${role} -> 403`, (await req(`/staff-tasks/${tid}/reopen`, { method: "POST", body: JSON.stringify({ version: 4 }) }, token)).status, 403);
+    check(`POST /staff-tasks/:id/reopen (admin's task) as ${role} -> ${manageExpect(role)}`, (await req(`/staff-tasks/${tid}/reopen`, { method: "POST", body: JSON.stringify({ version: 4 }) }, token)).status, manageExpect(role));
   }
   check("POST /staff-tasks/:id/reopen as admin -> 200", (await req(`/staff-tasks/${tid}/reopen`, { method: "POST", body: JSON.stringify({ version: 4 }) }, admin.token)).status, 200);
-  // A manager receives tasks too, and sees only their own.
-  const smmTask = await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: `RBAC smm task ${stamp}`, assigneeId: smm.id }) }, admin.token);
+
+  // A manager receives tasks too (from the Admin), and sees only their own.
+  const smmTask = track(await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: `RBAC smm task ${stamp}`, assigneeId: smm.id }) }, admin.token));
   check("POST /staff-tasks (to the SMM) as admin -> 201", smmTask.status, 201);
   check("GET /staff-tasks/:id (SMM's) as SMM -> 200", (await req(`/staff-tasks/${smmTask.body?.task?.id}`, {}, smm.token)).status, 200);
   check("GET /staff-tasks/:id (SMM's) as MM -> 404", (await req(`/staff-tasks/${smmTask.body?.task?.id}`, {}, mm.token)).status, 404);
+
+  // A task the SMM created: the SMM (creator) manages it, other managers don't see it, task-only roles can't write.
+  const smmMade = track(await req("/staff-tasks", { method: "POST", body: taskBody({ title: `RBAC smm-made ${stamp}` }) }, smm.token));
+  const mid = smmMade.body?.task?.id;
+  check("... the creator's canManage is true", smmMade.body?.task?.canManage, true);
+  check("GET /staff-tasks/:id (SMM-created) as admin -> 200", (await req(`/staff-tasks/${mid}`, {}, admin.token)).status, 200);
+  check("GET /staff-tasks/:id (SMM-created) as MM -> 404", (await req(`/staff-tasks/${mid}`, {}, mm.token)).status, 404);
+  check("PATCH /staff-tasks/:id (SMM-created) as MM -> 404", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ title: "x", version: 1 }) }, mm.token)).status, 404);
+  check("PATCH /staff-tasks/:id (SMM-created) as editor (the assignee) -> 403", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ title: "x", version: 1 }) }, target.token)).status, 403);
+  check("PATCH /staff-tasks/:id (SMM-created) as SMM (creator) -> 200", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ title: `RBAC smm-made ${stamp} b`, version: 1 }) }, smm.token)).status, 200);
+  check("PATCH /staff-tasks/:id reassigning sideways (to the MM) as SMM -> 400", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ assigneeId: mm.id, version: 2 }) }, smm.token)).status, 400);
+  check("PATCH /staff-tasks/:id (SMM-created) as admin -> 200", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ title: `RBAC smm-made ${stamp} c`, version: 2 }) }, admin.token)).status, 200);
+  check("POST /staff-tasks/:id/comments (SMM-created) as SMM (creator) -> 201", (await req(`/staff-tasks/${mid}/comments`, { method: "POST", body: JSON.stringify({ body: "Please hurry" }) }, smm.token)).status, 201);
+  check("POST /staff-tasks/:id/status (SMM-created) as SMM (not the assignee) -> 403", (await req(`/staff-tasks/${mid}/status`, { method: "POST", body: JSON.stringify({ status: "in_progress", version: 3 }) }, smm.token)).status, 403);
+
+  // A client's team sees its tasks read-only (403 on writes); a manager off the team gets 404.
+  const teamClient = (await req("/clients", { method: "POST", body: newClient("task-team-client") }, smm.token)).body?.client;
+  const mmClient = (await req("/clients", { method: "POST", body: newClient("task-mm-client") }, mm.token)).body?.client;
+  const teamTask = track(await req("/staff-tasks", { method: "POST", body: taskBody({ title: `RBAC team task ${stamp}`, clientId: teamClient?.id }) }, admin.token));
+  const ttid = teamTask.body?.task?.id;
+  check("POST /staff-tasks linking a client as admin -> 201", teamTask.status, 201);
+  check("GET /staff-tasks/:id (client's task) as SMM on the team -> 200", (await req(`/staff-tasks/${ttid}`, {}, smm.token)).status, 200);
+  check("... canManage is false for the team manager", (await req(`/staff-tasks/${ttid}`, {}, smm.token)).body?.task?.canManage, false);
+  check("GET /staff-tasks/:id (client's task) as MM off the team -> 404", (await req(`/staff-tasks/${ttid}`, {}, mm.token)).status, 404);
+  const teamList = await req(`/staff-tasks?relation=team&limit=100`, {}, smm.token);
+  check("GET /staff-tasks?relation=team as SMM lists the client's task", teamList.body?.tasks?.some((t) => t.id === ttid), true);
+  check("PATCH /staff-tasks/:id (client's task) as SMM on the team -> 403", (await req(`/staff-tasks/${ttid}`, { method: "PATCH", body: JSON.stringify({ title: "x", version: 1 }) }, smm.token)).status, 403);
+  const forbidden = await req(`/staff-tasks/${ttid}`, { method: "PATCH", body: JSON.stringify({ title: "x", version: 1 }) }, smm.token);
+  check("... the refusal is STAFF_TASK_FORBIDDEN", forbidden.body?.code, "STAFF_TASK_FORBIDDEN");
+  check("POST /staff-tasks/:id/reopen (client's task) as SMM on the team -> 403", (await req(`/staff-tasks/${ttid}/reopen`, { method: "POST", body: JSON.stringify({ version: 1 }) }, smm.token)).status, 403);
+  check("POST /staff-tasks/:id/comments (client's task) as SMM on the team -> 403", (await req(`/staff-tasks/${ttid}/comments`, { method: "POST", body: JSON.stringify({ body: "hi" }) }, smm.token)).status, 403);
+  check("DELETE /staff-tasks/:id (client's task) as SMM on the team -> 403", (await req(`/staff-tasks/${ttid}`, { method: "DELETE" }, smm.token)).status, 403);
+  check(
+    "POST /staff-tasks linking another team's client as SMM -> 400",
+    (await req("/staff-tasks", { method: "POST", body: taskBody({ clientId: mmClient?.id }) }, smm.token)).status,
+    400,
+  );
+  check("POST /staff-tasks linking their own client as SMM -> 201", track(await req("/staff-tasks", { method: "POST", body: taskBody({ clientId: teamClient?.id }) }, smm.token)).status, 201);
+
   for (const [role, token] of NON_ADMIN) {
-    check(`DELETE /staff-tasks/:id as ${role} -> 403`, (await req(`/staff-tasks/${tid}`, { method: "DELETE" }, token)).status, 403);
+    check(`DELETE /staff-tasks/:id (admin's task) as ${role} -> ${manageExpect(role)}`, (await req(`/staff-tasks/${tid}`, { method: "DELETE" }, token)).status, manageExpect(role));
   }
-  // Fixture tasks are deleted (the API has a task delete, Admin only).
+  check("DELETE /staff-tasks/:id (SMM-created) as MM -> 404", (await req(`/staff-tasks/${mid}`, { method: "DELETE" }, mm.token)).status, 404);
+  check("DELETE /staff-tasks/:id (SMM-created) as SMM (creator) -> 204", (await req(`/staff-tasks/${mid}`, { method: "DELETE" }, smm.token)).status, 204);
+  // Fixture tasks are deleted (the API has a task delete); the fixture clients are archived (they have no delete).
   check("DELETE /staff-tasks/:id as admin -> 204", (await req(`/staff-tasks/${tid}`, { method: "DELETE" }, admin.token)).status, 204);
   check("... a deleted task is 404 for the admin", (await req(`/staff-tasks/${tid}`, {}, admin.token)).status, 404);
-  if (smmTask.body?.task?.id) await req(`/staff-tasks/${smmTask.body.task.id}`, { method: "DELETE" }, admin.token);
+  for (const id of extraTasks) await req(`/staff-tasks/${id}`, { method: "DELETE" }, admin.token);
+  for (const c of [teamClient, mmClient]) if (c) await req(`/clients/${c.id}/archive`, { method: "POST", body: "{}" }, admin.token);
+
+  console.log("\n--- my to-dos (round 1: todos:manage is own for every role; nobody, the Admin included, reaches another person's) ---");
+  check("GET /todos without a token -> 401", (await req("/todos")).status, 401);
+  const myTodos = {};
+  for (const [role, token] of everyone) {
+    const created = await req("/todos", { method: "POST", body: JSON.stringify({ title: `RBAC todo ${role} ${stamp}`, urgency: "high", dueAt: "2026-12-05T09:00:00Z" }) }, token);
+    check(`POST /todos as ${role} -> 201`, created.status, 201);
+    myTodos[role] = created.body?.todo;
+    check(`GET /todos as ${role} -> 200`, (await req("/todos?status=all&limit=100", {}, token)).status, 200);
+    const mine = await req("/todos?status=all&limit=100", {}, token);
+    check(`GET /todos as ${role} lists only their own`, mine.body?.todos?.every((t) => !t.title.endsWith(String(stamp)) || t.title === `RBAC todo ${role} ${stamp}`), true);
+  }
+  // Everyone against the editor's to-do: only the editor reaches it; the Admin gets a 404 too.
+  const editorTodo = myTodos.editor;
+  for (const [role, token] of everyone) {
+    const expected = role === "editor" ? 200 : 404;
+    check(`PATCH /todos/:id (editor's) as ${role} -> ${expected}`, (await req(`/todos/${editorTodo?.id}`, { method: "PATCH", body: JSON.stringify({ notes: `by ${role}`, version: 1 }) }, token)).status, expected);
+  }
+  const fromAdmin = await req(`/todos/${editorTodo?.id}`, { method: "PATCH", body: JSON.stringify({ notes: "x", version: 2 }) }, admin.token);
+  check("... the Admin's refusal is TODO_NOT_FOUND", fromAdmin.body?.code, "TODO_NOT_FOUND");
+  for (const [role, token] of everyone.filter(([r]) => r !== "editor")) {
+    check(`DELETE /todos/:id (editor's) as ${role} -> 404`, (await req(`/todos/${editorTodo?.id}`, { method: "DELETE" }, token)).status, 404);
+  }
+  check("PATCH /todos/:id with a stale version as editor -> 409", (await req(`/todos/${editorTodo?.id}`, { method: "PATCH", body: JSON.stringify({ notes: "again", version: 1 }) }, target.token)).status, 409);
+  check("PATCH /todos/:id done as editor -> 200", (await req(`/todos/${editorTodo?.id}`, { method: "PATCH", body: JSON.stringify({ done: true, version: 2 }) }, target.token)).status, 200);
+  check("POST /todos with a blank title -> 400", (await req("/todos", { method: "POST", body: JSON.stringify({ title: "  " }) }, target.token)).status, 400);
+  check("GET /todos?status=nope -> 400", (await req("/todos?status=nope", {}, target.token)).status, 400);
+  for (const [role, token] of everyone) {
+    check(`DELETE /todos/:id (own) as ${role} -> 204`, (await req(`/todos/${myTodos[role]?.id}`, { method: "DELETE" }, token)).status, 204);
+  }
+  check("... a deleted to-do is 404", (await req(`/todos/${editorTodo?.id}`, { method: "DELETE" }, target.token)).status, 404);
 
   console.log("\n--- dashboard (M10: every role; own tasks for all, own clients for admin / SMM / MM, the firm for admin only) ---");
   check("GET /dashboard without a token -> 401", (await req("/dashboard")).status, 401);

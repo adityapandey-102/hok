@@ -16,6 +16,8 @@ import { assetsRouter } from "../modules/assets/api/assets.routes";
 import { ASSET_TYPES } from "../modules/assets/domain/asset.entity";
 import { staffTasksRouter } from "../modules/staff-tasks/api/staff-tasks.routes";
 import { STAFF_TASK_PRIORITIES, STAFF_TASK_STATUSES, STAFF_TASK_UPDATE_KINDS } from "../modules/staff-tasks/domain/staff-task.entity";
+import { todosRouter } from "../modules/todos/api/todos.routes";
+import { TODO_URGENCIES } from "../modules/todos/domain/todo.entity";
 import { clientTodosByClientRouter, clientTodosRouter } from "../modules/client-todos/api/client-todos.routes";
 import { CLIENT_TODO_PRIORITIES, CLIENT_TODO_STATUSES } from "../modules/client-todos/domain/client-todo.entity";
 import { notificationsRouter } from "../modules/notifications/api/notifications.routes";
@@ -55,6 +57,7 @@ const MOUNTED: [string, Router][] = [
   ["/api/v1/assets", assetsRouter],
   ["/api/v1/staff-tasks", staffTasksRouter],
   ["/api/v1/client-todos", clientTodosRouter],
+  ["/api/v1/todos", todosRouter],
   ["/api/v1/notifications", notificationsRouter],
   ["/api/v1/portal-links", portalLinksRouter],
   ["/api/v1/client-comments", clientCommentsRouter],
@@ -124,6 +127,12 @@ describe("openapi.yaml stays in sync with the Client to-dos module", () => {
   it("documents exactly the to-do statuses and priorities, in order", () => {
     expect(schemas.ClientTodoStatus?.enum).toEqual([...CLIENT_TODO_STATUSES]);
     expect(schemas.ClientTodoPriority?.enum).toEqual([...CLIENT_TODO_PRIORITIES]);
+  });
+});
+
+describe("openapi.yaml stays in sync with the To-dos module", () => {
+  it("documents exactly the to-do urgencies, in order", () => {
+    expect(schemas.TodoUrgency?.enum).toEqual([...TODO_URGENCIES]);
   });
 });
 

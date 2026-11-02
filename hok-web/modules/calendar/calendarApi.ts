@@ -5,7 +5,7 @@ import type { FeedResult } from "./calendarItems";
 export interface CalendarFeedFilters {
   from: string;
   to: string;
-  include?: "all" | "events" | "personal";
+  include?: "all" | "events" | "personal" | "tasks" | "todos";
   clientId?: string;
   ownerId?: string;
   eventType?: EventType;

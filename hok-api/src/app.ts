@@ -22,6 +22,7 @@ import { teamMembersRouter } from "./modules/team-members/api/team-members.route
 import { assetsRouter } from "./modules/assets/api/assets.routes";
 import { staffTasksRouter } from "./modules/staff-tasks/api/staff-tasks.routes";
 import { clientTodosByClientRouter, clientTodosRouter } from "./modules/client-todos/api/client-todos.routes";
+import { todosRouter } from "./modules/todos/api/todos.routes";
 import { notificationsRouter } from "./modules/notifications/api/notifications.routes";
 import { portalLinksRouter } from "./modules/portal/api/portal-links.routes";
 import { portalPublicRouter } from "./modules/portal/api/portal-public.routes";
@@ -143,6 +144,7 @@ export function createApp() {
   apiV1.use("/assets", assetsRouter);
   apiV1.use("/staff-tasks", staffTasksRouter);
   apiV1.use("/client-todos", clientTodosRouter);
+  apiV1.use("/todos", todosRouter);
   apiV1.use("/notifications", notificationsRouter);
   apiV1.use("/portal-links", portalLinksRouter);
   apiV1.use("/client-comments", clientCommentsRouter);

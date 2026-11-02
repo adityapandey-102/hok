@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, gte, ilike, lt, ne, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, ilike, isNull, lt, ne, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
@@ -12,7 +12,8 @@ import { clientComments } from "../../client-comments/infrastructure/client-comm
 import { eventStages, events } from "../../events/infrastructure/events.schema";
 import { staffTaskUpdates, staffTasks } from "../../staff-tasks/infrastructure/staff-tasks.schema";
 import { profiles } from "../../users/infrastructure/profile.schema";
-import type { DashboardComment, DashboardEvent, DashboardTask, StageGroup, WorkloadRow } from "../domain/dashboard.entity";
+import { todos } from "../../todos/infrastructure/todos.schema";
+import type { DashboardComment, DashboardEvent, DashboardTask, DashboardTodo, StageGroup, WorkloadRow } from "../domain/dashboard.entity";
 import type { DashboardRepositoryPort, TeamFilter, Window } from "../application/ports/dashboard-repository.port";
 import { guarded } from "../../../common/database/guarded";
 
@@ -266,6 +267,42 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
     return guarded("count team", async () => {
       const [r] = await db.select({ n: count() }).from(profiles).where(teamWhere(filter));
       return r?.n ?? 0;
+    });
+  }
+
+  /** One grouped query over the owner's open to-dos (todos_owner_open_due_idx). */
+  todoSummary(ownerId: string, now: Date) {
+    return guarded("load to-do summary", async () => {
+      const [r] = await db
+        .select({ open: sql<number>`count(*)::int`, overdue: countWhere(lt(todos.dueAt, now)) })
+        .from(todos)
+        .where(and(eq(todos.ownerId, ownerId), isNull(todos.doneAt)));
+      return { open: r?.open ?? 0, overdue: r?.overdue ?? 0 };
+    });
+  }
+
+  nextTodos(ownerId: string, limit: number) {
+    return guarded("load next to-dos", async () => {
+      const rows = await db
+        .select()
+        .from(todos)
+        .where(and(eq(todos.ownerId, ownerId), isNull(todos.doneAt)))
+        .orderBy(sql`${todos.dueAt} asc nulls last`, desc(todos.createdAt), desc(todos.id))
+        .limit(limit);
+      return rows.map(
+        (r): DashboardTodo => ({
+          id: r.id,
+          title: r.title,
+          notes: r.notes,
+          dueAt: r.dueAt ? r.dueAt.toISOString() : null,
+          urgency: r.urgency,
+          done: false,
+          doneAt: null,
+          version: r.version,
+          createdAt: r.createdAt.toISOString(),
+          updatedAt: r.updatedAt.toISOString(),
+        }),
+      );
     });
   }
 }

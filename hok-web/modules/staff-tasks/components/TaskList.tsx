@@ -87,7 +87,7 @@ export function TaskList({
           </button>
         </div>
       ) : tasks.length === 0 ? (
-        <EmptyState icon="clipboard" title={filtered ? "No tasks match your filters." : "No tasks yet."} description={filtered ? "Try a different filter." : "Tasks the Admin assigns will show up here."} />
+        <EmptyState icon="clipboard" title={filtered ? "No tasks match your filters." : "No tasks yet."} description={filtered ? "Try a different filter." : "Tasks assigned to you will show up here."} />
       ) : (
         <ul className="divide-y divide-border-light">
           {tasks.map((t, i) => (

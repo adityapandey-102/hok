@@ -142,14 +142,16 @@ export const ERROR_CODES = {
   ASSET_RANGE_INVALID: "ASSET_RANGE_INVALID",
 
   // -- Staff tasks ----------------------------------------------------------------
-  /** No such task, or it's assigned to someone else -- the same 404 either way. */
+  /** No such task, or one the caller may not see (not theirs, not created by them, not their client's) -- the same 404 either way. */
   STAFF_TASK_NOT_FOUND: "STAFF_TASK_NOT_FOUND",
   /** Stale `version` on a task write (409). */
   STAFF_TASK_MODIFIED: "STAFF_TASK_MODIFIED",
   /** The assignee isn't an active staff account (400). */
   STAFF_TASK_ASSIGNEE_INVALID: "STAFF_TASK_ASSIGNEE_INVALID",
-  /** An editor task without its raw files link (400). */
-  STAFF_TASK_EDITOR_FIELDS_REQUIRED: "STAFF_TASK_EDITOR_FIELDS_REQUIRED",
+  /** The assignee's role is not below the caller's on the ladder: "You can only assign tasks to roles below yours" (400). */
+  STAFF_TASK_ASSIGNEE_NOT_ALLOWED: "STAFF_TASK_ASSIGNEE_NOT_ALLOWED",
+  /** The caller can see the task (their client's team) but isn't its creator or assignee, so may not write to it (403). */
+  STAFF_TASK_FORBIDDEN: "STAFF_TASK_FORBIDDEN",
   /** Raw files link / reference link / script sent for a non-editor assignee (400). */
   STAFF_TASK_EDITOR_FIELDS_INVALID: "STAFF_TASK_EDITOR_FIELDS_INVALID",
   /** The linked client doesn't exist (400). */
@@ -162,6 +164,12 @@ export const ERROR_CODES = {
   STAFF_TASK_DONE: "STAFF_TASK_DONE",
   /** Reopening a task that isn't done (409). */
   STAFF_TASK_NOT_DONE: "STAFF_TASK_NOT_DONE",
+
+  // -- My to-dos (round 1): private, per person ---------------------------------------
+  /** No such to-do, or it is someone else's (the Admin included) -- the same 404 either way. */
+  TODO_NOT_FOUND: "TODO_NOT_FOUND",
+  /** Stale `version` on a to-do write (409). */
+  TODO_MODIFIED: "TODO_MODIFIED",
 
   // -- Client to-dos (Phase 2) --------------------------------------------------------
   /** No such to-do, or it belongs to another manager's client -- the same 404 either way. */

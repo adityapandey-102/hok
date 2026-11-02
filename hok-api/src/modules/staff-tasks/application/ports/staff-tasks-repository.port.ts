@@ -4,18 +4,24 @@ import type {
   StaffTaskEntity,
   StaffTaskFields,
   StaffTaskPriority,
+  StaffTaskRelation,
   StaffTaskStatus,
   StaffTaskSummaryEntity,
 } from "../../domain/staff-task.entity";
-import type { AssigneeCandidate, TaskClientRef, TaskEventRef } from "../../domain/staff-task.rules";
+import type { AssigneeCandidate, StaffTaskScope, TaskClientRef, TaskEventRef } from "../../domain/staff-task.rules";
 
 /**
- * Server-side list filters. `assigneeId` is already resolved by the service
- * from the caller's scope (the assignee's own id, or the Admin's filter).
+ * Server-side list filters. `scope` is the caller's row scope and is ANDed
+ * with every other filter (one query, no per-row work): "all" adds nothing;
+ * "own" adds `assignee = me OR creator = me [OR on the client's team]`.
  */
 export interface StaffTaskListFilters {
+  scope: StaffTaskScope;
+  /** The caller, for `relation`. */
+  callerId: string;
+  relation?: StaffTaskRelation;
   assigneeId?: string;
-  /** The assignee's role (Admin filter). */
+  /** The assignee's role. */
   role?: Role;
   status?: StaffTaskStatus;
   /** Every status except done. Ignored when `status` is set. */
@@ -74,6 +80,7 @@ export interface StaffTasksRepositoryPort {
   /** The task + event title + the newest updates (capped); null if missing. */
   findDetail(id: string): Promise<StaffTaskDetail | null>;
   findAssigneeCandidate(userId: string): Promise<AssigneeCandidate | null>;
+  /** The client and its team; null if there's no such client. */
   findClient(clientId: string): Promise<TaskClientRef | null>;
   /** Null if there's no such event -- or no events table yet (migration 20261013000004 not applied). */
   findEvent(eventId: string): Promise<TaskEventRef | null>;

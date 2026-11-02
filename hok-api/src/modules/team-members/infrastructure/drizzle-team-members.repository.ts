@@ -1,4 +1,4 @@
-import { and, asc, eq, ilike, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 import { containsPattern } from "../../../common/database/like-pattern";
 // Cross-module Infrastructure-only read of the Users module's `profiles` (ADR 0003). Owns no table.
@@ -12,6 +12,7 @@ export class DrizzleTeamMembersRepository implements TeamMembersRepositoryPort {
     const c: SQL[] = [eq(profiles.active, true)];
     if (f.search) c.push(ilike(profiles.fullName, containsPattern(f.search)));
     if (f.role) c.push(eq(profiles.role, f.role));
+    if (f.roles) c.push(inArray(profiles.role, [...f.roles]));
     return and(...c);
   }
 

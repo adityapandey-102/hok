@@ -10,7 +10,7 @@ export interface StaffTaskFormValues {
   description: string;
   assigneeId: string;
   priority: StaffTaskPriority;
-  /** "YYYY-MM-DDTHH:mm" in the Admin's zone, or "". */
+  /** "YYYY-MM-DDTHH:mm" in the creator's zone, or "". */
   due: string;
   clientId: string;
   eventId: string;
@@ -28,36 +28,30 @@ const optionalUrl = z
 
 /**
  * Light client-side check of the task form; hok-api re-validates everything.
- * `assigneeRole` decides the editor rule (FR-TSK-10): an editor task needs the
- * raw files link; reference link and script are optional.
+ * The editor links and the script are optional (decision 2026-11-02: the raw
+ * files link is no longer required for an editor task).
  */
-export function staffTaskFormSchema(assigneeRole: Role | null) {
-  return z
-    .object({
-      title: z.string().trim().min(1, "Please enter a title").max(160, "The title is too long"),
-      description: z.string().max(5000, "The description is too long"),
-      assigneeId: z.string().min(1, "Choose who the task is for"),
-      priority: z.enum(STAFF_TASK_PRIORITIES),
-      due: z.string().refine((v) => v === "" || /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v), "Pick a due date and time"),
-      clientId: z.string(),
-      eventId: z.string(),
-      rawFilesUrl: optionalUrl,
-      referenceUrl: optionalUrl,
-      script: z.string().max(20_000, "The script is too long"),
-      referenceLinks: z.string().refine(
-        (v) => parseReferenceLinks(v).every((l) => isHttpUrl(l.url)),
-        "Each reference link must be a full https:// link, one per line",
-      ),
-    })
-    .refine((v) => !isEditorRole(assigneeRole) || v.rawFilesUrl.trim() !== "", {
-      path: ["rawFilesUrl"],
-      message: "An editor task needs the raw files (Google Drive) link",
-    })
-    .refine((v) => parseReferenceLinks(v.referenceLinks).length <= 10, {
-      path: ["referenceLinks"],
-      message: "At most 10 reference links",
-    });
-}
+export const staffTaskFormSchema = z
+  .object({
+    title: z.string().trim().min(1, "Please enter a title").max(160, "The title is too long"),
+    description: z.string().max(5000, "The description is too long"),
+    assigneeId: z.string().min(1, "Choose who the task is for"),
+    priority: z.enum(STAFF_TASK_PRIORITIES),
+    due: z.string().refine((v) => v === "" || /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v), "Pick a due date and time"),
+    clientId: z.string(),
+    eventId: z.string(),
+    rawFilesUrl: optionalUrl,
+    referenceUrl: optionalUrl,
+    script: z.string().max(20_000, "The script is too long"),
+    referenceLinks: z.string().refine(
+      (v) => parseReferenceLinks(v).every((l) => isHttpUrl(l.url)),
+      "Each reference link must be a full https:// link, one per line",
+    ),
+  })
+  .refine((v) => parseReferenceLinks(v.referenceLinks).length <= 10, {
+    path: ["referenceLinks"],
+    message: "At most 10 reference links",
+  });
 
 /** "https://a\n\n https://b " -> [{ url: "https://a" }, { url: "https://b" }]. */
 export function parseReferenceLinks(text: string): { url: string; label: null }[] {
@@ -70,7 +64,7 @@ export function parseReferenceLinks(text: string): { url: string; label: null }[
 
 /**
  * The API body for create (blank optional fields omitted) or edit (blank ones
- * sent as null so they clear). The due date is the Admin's wall time in their
+ * sent as null so they clear). The due date is the creator's wall time in their
  * zone, sent as an instant with its offset. The editor brief is sent only for
  * an editor; for anyone else it is cleared on edit (the API clears it on
  * reassign anyway).

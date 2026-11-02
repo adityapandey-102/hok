@@ -38,15 +38,17 @@ tags:
   - name: Events
     description: Client events with copied stages, stage moves + history, cancel/postpone. Scoped by the client's owner (`events:read` / `events:write`).
   - name: Calendar
-    description: "Personal entries (`personal_events:manage`, owner-only) and the merged calendar feed (`events:read`)."
+    description: "Personal entries (`personal_events:manage`, owner-only) and the merged calendar feed (every role: `staff_tasks:read`; the .ics subscribe link stays `events:read`)."
   - name: Team members
-    description: Active-staff lookup for pickers (`events:write`).
+    description: Active-staff lookup for pickers (`events:write`), also the task assignee picker (`assignable=true`).
   - name: Assets
     description: Asset link library -- links only, never files. Per client, with type, comment, reusable tags and an optional event. Scoped by the client's owner (`assets:read` / `assets:write`). Internal only; never on the portal.
   - name: Staff tasks
-    description: Tasks the Admin assigns to staff (one assignee, any role). Admin creates, edits, reassigns, reopens and deletes (`staff_tasks:assign`); the assignee sees only their own tasks (others are 404) and changes the status with an optional comment (`staff_tasks:read` / `staff_tasks:update`). Every status change and comment is an append-only timeline entry.
+    description: "Tasks assigned down the role ladder (Admin to anyone below; client managers to task-only roles; never sideways or up). One assignee. The Admin, or a task's creator (`assigned_by`) while they hold `staff_tasks:assign`, edits, reassigns, reopens and deletes; the assignee (or the Admin) changes the status with an optional comment. A caller sees the tasks assigned to them, created by them and -- client managers -- their clients' tasks; anything else is a 404. A team manager who only sees a task gets 403 `STAFF_TASK_FORBIDDEN` on any write. Every status change and comment is an append-only timeline entry."
   - name: Client to-dos
     description: A manager's internal to-do list per client (optionally about one of the client's events). Reads need `clients:read`, writes `clients:write`; scoped by the client's owner (others are 404). Read-only on archived clients. Internal only; never on the portal.
+  - name: To-dos
+    description: "My to-dos: a private personal list per person, the Admin included (`todos:manage`, scope own for every role). Another person's to-do is a 404 `TODO_NOT_FOUND`. No audit entries. Reminders follow urgency (urgent 1 day, 1 hour and at due; high 1 hour and at due; medium at due; low none)."
   - name: Notifications
     description: The caller's own bell (in-app notifications), per-trigger preferences and the devices that receive web push. Every role; always scoped to the caller (someone else's row is a 404).
   - name: Portal
@@ -1106,23 +1108,30 @@ paths:
   /api/v1/calendar:
     get:
       tags: [Calendar]
-      summary: The merged calendar feed for a range (client events + personal entries)
+      summary: The merged calendar feed for a range (events, personal entries, tasks, own to-dos)
       description: |
-        `events:read`. Items overlapping `[from, to)` (required, ≤ 92 days),
-        earliest first, two queries at most. A manager: their clients' events +
-        their own entries (`ownerId` ignored). The Admin: every client event, or
-        one owner's (`ownerId`); personal entries of `ownerId`, else the
-        Admin's own. `eventType` / `state` filter events and drop personal
-        entries. Each kind is capped at 500 (`truncated: true` if hit).
+        Every role (`staff_tasks:read`). Items in `[from, to)` (required, ≤ 92 days),
+        earliest first, four queries at most (one per kind, in parallel).
+        **event** (`events:read`): a manager's clients' events (`ownerId`
+        ignored); the Admin every event, or one owner's. **personal**
+        (`personal_events:manage`): the caller's own; the Admin's are `ownerId`'s,
+        else their own. **task**: the staff-task visibility rule (assigned to the
+        caller, created by them and, for client managers, their clients' tasks;
+        the Admin all, narrowed to an assignee by `ownerId`), placed at `due_at`;
+        tasks without a due date never appear. **todo**: always and only the
+        caller's own, even for the Admin with `ownerId`, placed at `due_at`.
+        `eventType` / `state` filter events and drop every other kind; `clientId`
+        filters events, personal entries and tasks and drops to-dos. Each kind is
+        capped at 500 (`truncated: true` if hit).
         Instants are UTC; show them in the viewer's zone and each item's own
         `timeZone` when it differs.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
         - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
-        - { name: include, in: query, schema: { type: string, enum: [all, events, personal], default: all } }
+        - { name: include, in: query, schema: { type: string, enum: [all, events, personal, tasks, todos], default: all } }
         - { name: clientId, in: query, schema: { type: string, format: uuid } }
-        - { name: ownerId, in: query, description: Admin only., schema: { type: string, format: uuid } }
+        - { name: ownerId, in: query, description: "Admin only: narrows events, personal entries and tasks (never to-dos).", schema: { type: string, format: uuid } }
         - { name: eventType, in: query, schema: { $ref: "#/components/schemas/EventType" } }
         - { name: state, in: query, schema: { $ref: "#/components/schemas/EventState" } }
       responses:
@@ -1437,11 +1446,12 @@ paths:
     get:
       tags: [Team members]
       summary: Active staff, for pickers (an event's team)
-      description: "`events:write` (Admin, SMM, MM); task-only staff 403. Active accounts only, sorted by name, exactly `{ id, fullName, role }` each. Full accounts stay Admin-only on /users."
+      description: "`events:write` (Admin and client managers); task-only staff 403. Active accounts only, sorted by name, exactly `{ id, fullName, role }` each. `assignable=true`: only people whose role the caller may assign a task to (the ladder: the Admin to every other role, a manager to task-only roles), filtered by role in SQL. Full accounts stay Admin-only on /users."
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: search, in: query, description: Name contains., schema: { type: string, maxLength: 80 } }
         - { name: role, in: query, schema: { $ref: "#/components/schemas/Role" } }
+        - { name: assignable, in: query, description: "true: only roles the caller may assign tasks to.", schema: { type: string, enum: ["true", "false"], default: "false" } }
         - { name: limit, in: query, description: Default 20; clamped to 1..100., schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
         - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
       responses:
@@ -1718,10 +1728,14 @@ paths:
   /api/v1/staff-tasks:
     get:
       tags: [Staff tasks]
-      summary: List tasks ("My tasks", or the Admin's list / one Kanban column)
+      summary: List the tasks the caller can see ("My tasks", the Admin's list, a manager's board / one Kanban column)
       description: |
-        The Admin sees every task (filters `assigneeId`, `role`, `clientId`);
-        anyone else only the tasks assigned to them (those filters ignored).
+        The Admin sees every task. Anyone else sees the tasks assigned to them,
+        created by them and, for client managers, tasks of clients whose team
+        they're on (one query). `assigneeId`, `role` and `clientId` are open to
+        every caller and always ANDed with that scope; `relation` narrows to
+        assigned-to-me / created-by-me / my client teams (`team`: client
+        managers only, else 400).
         Order: open before done, soonest due first (no due date last), newest;
         with `status=done`, most recently completed first. `overdue=true`:
         past due and not done. `open=true`: everything but done.
@@ -1730,9 +1744,10 @@ paths:
         - { name: status, in: query, schema: { $ref: "#/components/schemas/StaffTaskStatus" } }
         - { name: open, in: query, schema: { type: string, enum: ["true", "false"] } }
         - { name: priority, in: query, schema: { $ref: "#/components/schemas/StaffTaskPriority" } }
-        - { name: assigneeId, in: query, description: Admin only., schema: { type: string, format: uuid } }
-        - { name: role, in: query, description: "Admin only: the assignee's role.", schema: { $ref: "#/components/schemas/Role" } }
-        - { name: clientId, in: query, description: Admin only., schema: { type: string, format: uuid } }
+        - { name: relation, in: query, description: "assigned: assigned to me. created: created by me. team: via my client teams (client managers).", schema: { type: string, enum: [assigned, created, team] } }
+        - { name: assigneeId, in: query, schema: { type: string, format: uuid } }
+        - { name: role, in: query, description: "The assignee's role.", schema: { $ref: "#/components/schemas/Role" } }
+        - { name: clientId, in: query, schema: { type: string, format: uuid } }
         - { name: overdue, in: query, schema: { type: string, enum: ["true", "false"] } }
         - { name: dueFrom, in: query, description: "Due on/after this instant (with offset).", schema: { type: string, format: date-time } }
         - { name: dueTo, in: query, description: "Due before this instant; must be after dueFrom.", schema: { type: string, format: date-time } }
@@ -1757,12 +1772,17 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [Staff tasks]
-      summary: Create and assign a task (Admin)
+      summary: Create and assign a task (Admin, or a client manager downwards)
       description: |
-        `staff_tasks:assign`. Exactly one assignee, any active staff member
-        (`400 STAFF_TASK_ASSIGNEE_INVALID`). **Editor tasks** (assignee role
-        `editor`) need `rawFilesUrl` (`400 STAFF_TASK_EDITOR_FIELDS_REQUIRED`);
-        `referenceUrl` and `script` are optional. For any other role the three
+        `staff_tasks:assign` (Admin; client managers own). Exactly one assignee,
+        an active staff member (`400 STAFF_TASK_ASSIGNEE_INVALID`) whose role is
+        **below the caller's** on the ladder -- the Admin to anyone but another
+        Admin or themselves, a manager to task-only roles
+        (`400 STAFF_TASK_ASSIGNEE_NOT_ALLOWED`, "You can only assign tasks to roles
+        below yours"). A manager may link only a client whose team they're on, or
+        one of its events; anything else is `400 STAFF_TASK_CLIENT_INVALID`.
+        **Editor tasks** (assignee role `editor`) may carry `rawFilesUrl`,
+        `referenceUrl` and `script`, none required. For any other role the three
         editor fields must be empty (`400 STAFF_TASK_EDITOR_FIELDS_INVALID`).
         An `eventId` must belong to `clientId` when both are sent; an event
         alone links its client (`400 STAFF_TASK_CLIENT_INVALID` /
@@ -1799,12 +1819,16 @@ paths:
         "404": { $ref: "#/components/responses/StaffTaskNotFound" }
     patch:
       tags: [Staff tasks]
-      summary: Edit and/or reassign a task (Admin)
+      summary: Edit and/or reassign a task (Admin, or its creator)
       description: |
-        `staff_tasks:assign`. Send only the fields to change + `version`
-        (required). `assigneeId` reassigns (a "reassigned" timeline entry).
-        Reassigning to a non-editor **clears** the editor brief; to an editor
-        needs a raw files link (stored or sent). Changing `clientId` without
+        `staff_tasks:assign`, and the caller is the Admin or the task's creator
+        (a team manager who only sees the task gets `403 STAFF_TASK_FORBIDDEN`;
+        a task the caller can't see is a 404). Send only the fields to change +
+        `version` (required). `assigneeId` reassigns (a "reassigned" timeline
+        entry), judged against the **caller's** ladder (`400
+        STAFF_TASK_ASSIGNEE_NOT_ALLOWED`); keeping the same assignee is not a
+        reassignment. Reassigning to a non-editor **clears** the editor brief.
+        A manager keeps to their own clients (`400 STAFF_TASK_CLIENT_INVALID`). Changing `clientId` without
         an `eventId` unlinks the old client's event. Status moves through
         `/status` and `/reopen`.
       security: [{ bearerAuth: [] }]
@@ -1829,8 +1853,8 @@ paths:
         "409": { $ref: "#/components/responses/StaffTaskConflict" }
     delete:
       tags: [Staff tasks]
-      summary: Delete a task (Admin)
-      description: "`staff_tasks:assign`. Hard delete; the timeline goes with it, the audit log keeps a `staff_task.deleted` entry."
+      summary: Delete a task (Admin, or its creator)
+      description: "`staff_tasks:assign`; the Admin or the creator (else 403 `STAFF_TASK_FORBIDDEN` / 404). Hard delete; the timeline goes with it, the audit log keeps a `staff_task.deleted` entry."
       security: [{ bearerAuth: [] }]
       responses:
         "204": { description: Deleted. }
@@ -1842,8 +1866,8 @@ paths:
       tags: [Staff tasks]
       summary: Change the status (assignee or Admin), with an optional comment
       description: |
-        `staff_tasks:update` (own for the assignee; another person's task is
-        `404`). Any open status to any other, including `done`. The change and
+        `staff_tasks:update`; the assignee or the Admin (a task the caller can't
+        see is `404`; one they can see but may not move, `403 STAFF_TASK_FORBIDDEN`). Any open status to any other, including `done`. The change and
         its timeline entry are one transaction. Refused: the same status
         (`409 STAFF_TASK_STATUS_UNCHANGED`), a done task (`409 STAFF_TASK_DONE`;
         only the Admin reopens), a stale version (`409 STAFF_TASK_MODIFIED`).
@@ -1871,9 +1895,9 @@ paths:
   /api/v1/staff-tasks/{id}/reopen:
     post:
       tags: [Staff tasks]
-      summary: Reopen a done task (Admin)
+      summary: Reopen a done task (Admin, or its creator)
       description: |
-        `staff_tasks:assign`. Back to `todo` (default), `in_progress` or
+        `staff_tasks:assign`; the Admin or the creator (else 403 `STAFF_TASK_FORBIDDEN` / 404). Back to `todo` (default), `in_progress` or
         `blocked`, with a "reopened" timeline entry. `409 STAFF_TASK_NOT_DONE`
         if it isn't done.
       security: [{ bearerAuth: [] }]
@@ -1900,8 +1924,8 @@ paths:
   /api/v1/staff-tasks/{id}/comments:
     post:
       tags: [Staff tasks]
-      summary: Comment on a task (assignee or Admin)
-      description: "`staff_tasks:update` (own for the assignee). Allowed at any time, done or not. Doesn't change the task's `version`."
+      summary: Comment on a task (assignee, creator or Admin)
+      description: "`staff_tasks:update`; the assignee, the creator or the Admin (a team manager who only sees the task gets 403 `STAFF_TASK_FORBIDDEN`). Allowed at any time, done or not. Doesn't change the task's `version`."
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/StaffTaskId"
@@ -1920,6 +1944,108 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+  # ------------------------------------------------------ My to-dos (round 1) --
+  /api/v1/todos:
+    get:
+      tags: [To-dos]
+      summary: The caller's own to-dos
+      description: |
+        `todos:manage` (every role, own only -- the Admin sees only their own
+        too). `status=open` (default): not done, soonest due first (no due date
+        last), then newest. `done`: most recently done first. `all`: open ones
+        first, then done ones. `dueFrom` inclusive, `dueTo` exclusive. Paged
+        (`limit` ≤ 100); two queries whatever the page size.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, done, all], default: open } }
+        - { name: dueFrom, in: query, schema: { type: string, format: date-time } }
+        - { name: dueTo, in: query, description: Must be after dueFrom., schema: { type: string, format: date-time } }
+        - { name: limit, in: query, description: Default 50; clamped to 1..100., schema: { type: integer, default: 50, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [todos, total, limit, offset]
+                properties:
+                  todos: { type: array, items: { $ref: "#/components/schemas/Todo" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [To-dos]
+      summary: Add a to-do
+      description: "`todos:manage`. Owned by the caller; `urgency` defaults to `medium`. The next reminder moment follows the due time and urgency. Unknown keys are refused."
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              additionalProperties: false
+              properties:
+                title: { type: string, minLength: 1, maxLength: 200, description: Trimmed. }
+                notes: { type: string, maxLength: 2000, nullable: true }
+                dueAt: { type: string, format: date-time, nullable: true, description: "With an offset or Z." }
+                urgency: { $ref: "#/components/schemas/TodoUrgency" }
+      responses:
+        "201": { description: Created., content: { application/json: { schema: { $ref: "#/components/schemas/TodoEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/todos/{id}:
+    parameters:
+      - $ref: "#/components/parameters/TodoId"
+    patch:
+      tags: [To-dos]
+      summary: Edit, tick or untick a to-do
+      description: |
+        `todos:manage`; the caller's own only (another person's, the Admin's
+        included, is `404 TODO_NOT_FOUND`). Send only the fields to change +
+        `version` (required; stale = `409 TODO_MODIFIED`). `done: true` stamps
+        `doneAt` and clears the reminder; `done: false` brings it back. Changing
+        `dueAt` (null clears it) or `urgency` recomputes the reminder.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              additionalProperties: false
+              properties:
+                title: { type: string, minLength: 1, maxLength: 200 }
+                notes: { type: string, maxLength: 2000, nullable: true }
+                dueAt: { type: string, format: date-time, nullable: true }
+                urgency: { $ref: "#/components/schemas/TodoUrgency" }
+                done: { type: boolean }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Saved., content: { application/json: { schema: { $ref: "#/components/schemas/TodoEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/TodoNotFound" }
+        "409": { $ref: "#/components/responses/TodoConflict" }
+    delete:
+      tags: [To-dos]
+      summary: Delete a to-do
+      description: "`todos:manage`; the caller's own only. Hard delete."
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/TodoNotFound" }
   /api/v1/notifications:
     get:
       tags: [Notifications]
@@ -2265,6 +2391,12 @@ components:
       required: true
       description: A non-UUID is `404 STAFF_TASK_NOT_FOUND`.
       schema: { type: string, format: uuid }
+    TodoId:
+      name: id
+      in: path
+      required: true
+      description: A non-UUID is `404 TODO_NOT_FOUND`.
+      schema: { type: string, format: uuid }
     NotificationId:
       name: id
       in: path
@@ -2368,8 +2500,18 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    TodoNotFound:
+      description: "`TODO_NOT_FOUND` -- no such to-do, or someone else's (the Admin's view included; the same answer)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TodoConflict:
+      description: "`TODO_MODIFIED` (stale version: reload)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     StaffTaskNotFound:
-      description: "`STAFF_TASK_NOT_FOUND` -- no such task, or one assigned to someone else (the same answer)."
+      description: "`STAFF_TASK_NOT_FOUND` -- no such task, or one the caller may not see (not assigned to them, not created by them, not their client's; the same answer)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -2592,10 +2734,18 @@ components:
         doneThisWeek: { type: integer, description: Closed in the last 7 days. }
     Dashboard:
       type: object
-      required: [role, view, window, tasks, clients, firm]
+      required: [role, view, window, tasks, clients, firm, todos]
       properties:
         role: { $ref: "#/components/schemas/Role" }
         view: { type: string, enum: [overview, mine] }
+        todos:
+          type: object
+          description: The caller's own to-dos (every role, every view; never anyone else's). Two queries.
+          required: [open, overdue, next]
+          properties:
+            open: { type: integer }
+            overdue: { type: integer, description: Open and past their due time. }
+            next: { type: array, description: "Up to 5 open to-dos, soonest due first (no due date last).", items: { $ref: "#/components/schemas/Todo" } }
         window:
           type: object
           required: [timeZone, today, todayStart, tomorrowStart, weekEnd]
@@ -3048,10 +3198,10 @@ components:
         personalEvent: { $ref: "#/components/schemas/PersonalEvent" }
     CalendarItem:
       type: object
-      description: "`kind: event` items also carry eventType, state, currentStageName, currentStagePosition, stageCount; `kind: personal` items carry only the common fields (fetch /personal-events/{id} for the description)."
+      description: "`kind: event` items also carry eventType, state, currentStageName, currentStagePosition, stageCount; `kind: personal` items carry only the common fields (fetch /personal-events/{id} for the description). `kind: task` items sit at the task's due instant (startsAt = endsAt, timeZone UTC: show it in the viewer's zone), ownerId = the assignee, and carry status, priority, assigneeId, assigneeName. `kind: todo` items are the caller's own to-dos at their due instant (no client) and carry urgency and done."
       required: [kind, id, title, startsAt, endsAt, timeZone, clientId, clientName, ownerId]
       properties:
-        kind: { type: string, enum: [event, personal] }
+        kind: { type: string, enum: [event, personal, task, todo] }
         id: { type: string, format: uuid }
         title: { type: string }
         startsAt: { type: string, format: date-time }
@@ -3065,6 +3215,12 @@ components:
         currentStageName: { type: string }
         currentStagePosition: { type: integer }
         stageCount: { type: integer }
+        status: { $ref: "#/components/schemas/StaffTaskStatus" }
+        priority: { $ref: "#/components/schemas/StaffTaskPriority" }
+        assigneeId: { type: string, format: uuid }
+        assigneeName: { type: string }
+        urgency: { $ref: "#/components/schemas/TodoUrgency" }
+        done: { type: boolean }
     EventEnvelope:
       type: object
       required: [event]
@@ -3188,13 +3344,13 @@ components:
         eventId: { type: string, format: uuid, nullable: true }
         dueAt: { type: string, format: date-time, nullable: true, description: "With an offset or Z." }
         priority: { $ref: "#/components/schemas/StaffTaskPriority" }
-        rawFilesUrl: { type: string, maxLength: 2048, nullable: true, description: "Editor tasks: the raw files (Google Drive) link. Required for an editor." }
+        rawFilesUrl: { type: string, maxLength: 2048, nullable: true, description: "Editor tasks: the raw files (Google Drive) link. Optional." }
         referenceUrl: { type: string, maxLength: 2048, nullable: true, description: "Editor tasks: an example of the desired style." }
         script: { type: string, maxLength: 20000, nullable: true, description: "Editor tasks: the script." }
         referenceLinks: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/ReferenceLink" } }
     StaffTaskSummary:
       type: object
-      required: [id, title, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, clientId, clientName, eventId, hasEditorBrief, completedAt, version, createdAt]
+      required: [id, title, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedById, assignedByName, clientId, clientName, eventId, hasEditorBrief, completedAt, version, createdAt, canManage]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -3204,6 +3360,8 @@ components:
         assigneeId: { type: string, format: uuid }
         assigneeName: { type: string }
         assigneeRole: { $ref: "#/components/schemas/Role" }
+        assignedById: { type: string, format: uuid, nullable: true, description: Who created (assigned) it; null if that account is gone. }
+        assignedByName: { type: string, nullable: true }
         clientId: { type: string, format: uuid, nullable: true }
         clientName: { type: string, nullable: true }
         eventId: { type: string, format: uuid, nullable: true }
@@ -3211,9 +3369,10 @@ components:
         completedAt: { type: string, format: date-time, nullable: true }
         version: { type: integer }
         createdAt: { type: string, format: date-time }
+        canManage: { type: boolean, description: "The caller may edit, reassign, reopen and delete this task: the Admin, or its creator while they hold staff_tasks:assign." }
     StaffTaskDetail:
       type: object
-      required: [id, title, description, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedBy, assignedByName, clientId, clientName, eventId, eventTitle, rawFilesUrl, referenceUrl, script, referenceLinks, completedAt, version, createdAt, updatedAt, updates]
+      required: [id, title, description, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedBy, assignedById, assignedByName, clientId, clientName, eventId, eventTitle, rawFilesUrl, referenceUrl, script, referenceLinks, completedAt, version, createdAt, updatedAt, canManage, updates]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -3224,7 +3383,8 @@ components:
         assigneeId: { type: string, format: uuid }
         assigneeName: { type: string }
         assigneeRole: { $ref: "#/components/schemas/Role" }
-        assignedBy: { type: string, format: uuid, nullable: true }
+        assignedBy: { type: string, format: uuid, nullable: true, description: Same as assignedById; kept for existing clients. }
+        assignedById: { type: string, format: uuid, nullable: true }
         assignedByName: { type: string, nullable: true }
         clientId: { type: string, format: uuid, nullable: true }
         clientName: { type: string, nullable: true }
@@ -3238,6 +3398,7 @@ components:
         version: { type: integer }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        canManage: { type: boolean, description: "The caller may edit, reassign, reopen and delete this task: the Admin, or its creator while they hold staff_tasks:assign." }
         updates:
           type: array
           description: The timeline, newest first, at most 100.
@@ -3260,10 +3421,32 @@ components:
       required: [task]
       properties:
         task: { $ref: "#/components/schemas/StaffTaskDetail" }
+    TodoUrgency:
+      type: string
+      enum: [low, medium, high, urgent]
+    Todo:
+      type: object
+      required: [id, title, notes, dueAt, urgency, done, doneAt, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        notes: { type: string, nullable: true }
+        dueAt: { type: string, format: date-time, nullable: true }
+        urgency: { $ref: "#/components/schemas/TodoUrgency" }
+        done: { type: boolean }
+        doneAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer, description: Optimistic-lock token; send it back on PATCH. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TodoEnvelope:
+      type: object
+      required: [todo]
+      properties:
+        todo: { $ref: "#/components/schemas/Todo" }
     NotificationType:
       type: string
-      description: "The trigger (FR-NTF-03). Live today: client_reassigned. The task triggers go live with the M7 wiring, client_comment with M8."
-      enum: [client_reassigned, task_assigned, task_status_changed, task_commented, client_comment, event_reminder, task_due_reminder]
+      description: "The trigger (FR-NTF-03). todo_reminder is the owner's own to-do reminder (link /app/todos)."
+      enum: [client_reassigned, task_assigned, task_status_changed, task_commented, client_comment, event_reminder, task_due_reminder, todo_reminder]
     Notification:
       type: object
       required: [id, type, title, body, url, data, actorName, readAt, createdAt]
@@ -3290,7 +3473,7 @@ components:
       required: [count, reminders]
       properties:
         count: { type: integer }
-        reminders: { type: integer, description: Unread reminders among them (event_reminder, task_due_reminder); the bell plays its alert animation while > 0. }
+        reminders: { type: integer, description: Unread reminders among them (event_reminder, task_due_reminder, todo_reminder); the bell plays its alert animation while > 0. }
     NotificationPreference:
       type: object
       required: [type, label, description, push, inApp]
