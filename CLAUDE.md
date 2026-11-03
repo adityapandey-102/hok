@@ -24,12 +24,12 @@ Core capabilities of the agency-management side:
 - **Client portfolio management**: HOK owns every client; the Admin gives each one a **team** of client managers, one of them the **lead** (2026-10-23). Managers see only clients whose team they're on; Admin sees all.
 - **Stage templates** (Admin-made) → **client events** (e.g. social media shoots) whose stages are shown to the client.
 - **Client-specific tasks** (internal to-dos per client, Phase 2).
-- **Asset link library**: paste links (Drive/Dropbox/etc.) with comment + tags. No file uploads; internal only.
+- **Asset link library**: paste links (Drive/Dropbox/etc.) with comment + tags. No file uploads; internal unless marked "Show to client" on an event (2026-11-04).
 - **Calendars**: per-client, personal per manager (client events + own events), global for Admin; since 2026-11-03 every role has one (tasks by due date + own to-dos, day counts + day pop-up). Supports multiple time zones.
 - **My to-dos** (2026-11-03): private per person (Admin can't see them), urgency-based reminders.
 - **Client portal**: shareable generated link (link only, revocable). The client sees their dashboard, current event stage and upcoming events, and can post comments. Plain design.
 - **Client comments**: push notification to the client's team; status Received → In Progress → Solved.
-- **Staff tasks**: assigned **only downwards** (Admin → managers + task-only staff; managers → task-only staff, 2026-11-03), one assignee, who can mark Done. The creator or Admin edits/reassigns/reopens/deletes. Editor tasks also have optional raw-files, reference and script fields.
+- **Staff tasks**: assigned **only downwards** (Admin → managers + task-only staff; managers → task-only staff, 2026-11-03), one assignee, who can mark Done. The creator or Admin edits/reassigns/reopens/deletes. Since 2026-11-04 every task comes from an Admin-made **task template** and moves through stages (status derived; blocked flag), and has a Brief plus Links (brief / delivered); a delivered link can be shared with the client as a "Show to client" asset.
 - **Role dashboards**, **web push (PWA)** and **in-app notifications**.
 
 Docs:
@@ -55,7 +55,7 @@ Docs:
 | Project Manager | Same as SMM (added 2026-10-23) |
 | Marketing Agent | **Staff tasks only** |
 | Developer | Staff tasks only |
-| Editor | Staff tasks only (editor tasks carry raw files link, reference link, script) |
+| Editor | Staff tasks only (brief + links on every task since 2026-11-04) |
 | Content Writer | Staff tasks only (writing tasks: description and reference links; added 2026-11-01) |
 | Client (external) | Portal via generated link, no account |
 

@@ -88,6 +88,8 @@ export const ERROR_CODES = {
   STAGE_TEMPLATE_NAME_TAKEN: "STAGE_TEMPLATE_NAME_TAKEN",
   /** Two stages with the same name (ignoring case) in one template (400). */
   STAGE_TEMPLATE_STAGES_INVALID: "STAGE_TEMPLATE_STAGES_INVALID",
+  /** `roles` sent for an event template, or on a task template a role that can't be assigned tasks (400). */
+  STAGE_TEMPLATE_ROLES_INVALID: "STAGE_TEMPLATE_ROLES_INVALID",
 
   // -- Events -------------------------------------------------------------------
   /** No such event, or it belongs to another manager's client -- the same 404 either way. */
@@ -140,6 +142,10 @@ export const ERROR_CODES = {
   ASSET_EVENT_INVALID: "ASSET_EVENT_INVALID",
   /** `from`/`to` reversed (400). */
   ASSET_RANGE_INVALID: "ASSET_RANGE_INVALID",
+  /** Marking an asset visible to the client needs an event: the portal shows assets per event (400). */
+  ASSET_CLIENT_VISIBLE_NEEDS_EVENT: "ASSET_CLIENT_VISIBLE_NEEDS_EVENT",
+  /** The stage isn't one of the asset's event's stages (400). */
+  ASSET_STAGE_INVALID: "ASSET_STAGE_INVALID",
 
   // -- Staff tasks ----------------------------------------------------------------
   /** No such task, or one the caller may not see (not theirs, not created by them, not their client's) -- the same 404 either way. */
@@ -152,18 +158,34 @@ export const ERROR_CODES = {
   STAFF_TASK_ASSIGNEE_NOT_ALLOWED: "STAFF_TASK_ASSIGNEE_NOT_ALLOWED",
   /** The caller can see the task (their client's team) but isn't its creator or assignee, so may not write to it (403). */
   STAFF_TASK_FORBIDDEN: "STAFF_TASK_FORBIDDEN",
-  /** Raw files link / reference link / script sent for a non-editor assignee (400). */
-  STAFF_TASK_EDITOR_FIELDS_INVALID: "STAFF_TASK_EDITOR_FIELDS_INVALID",
   /** The linked client doesn't exist (400). */
   STAFF_TASK_CLIENT_INVALID: "STAFF_TASK_CLIENT_INVALID",
   /** The linked event doesn't exist or belongs to another client (400). */
   STAFF_TASK_EVENT_INVALID: "STAFF_TASK_EVENT_INVALID",
-  /** The task already has the requested status (409). */
-  STAFF_TASK_STATUS_UNCHANGED: "STAFF_TASK_STATUS_UNCHANGED",
-  /** A status change on a done task -- only the Admin reopens it (409). */
+  /** A stage move or block on a done task -- a manager reopens it first (409). */
   STAFF_TASK_DONE: "STAFF_TASK_DONE",
   /** Reopening a task that isn't done (409). */
   STAFF_TASK_NOT_DONE: "STAFF_TASK_NOT_DONE",
+  /** The chosen task template doesn't exist, is inactive, isn't a task template, or isn't offered for the assignee's role (400). */
+  STAFF_TASK_TEMPLATE_INVALID: "STAFF_TASK_TEMPLATE_INVALID",
+  /** The stage isn't one of this task's stages (400). */
+  STAFF_TASK_STAGE_INVALID: "STAFF_TASK_STAGE_INVALID",
+  /** The task is already at that stage (409). */
+  STAFF_TASK_STAGE_UNCHANGED: "STAFF_TASK_STAGE_UNCHANGED",
+  /** "Mark complete" is only offered from the last stage (409). */
+  STAFF_TASK_NOT_AT_LAST_STAGE: "STAFF_TASK_NOT_AT_LAST_STAGE",
+  /** Blocking a task that is already blocked (409). */
+  STAFF_TASK_ALREADY_BLOCKED: "STAFF_TASK_ALREADY_BLOCKED",
+  /** Unblocking a task that isn't blocked (409). */
+  STAFF_TASK_NOT_BLOCKED: "STAFF_TASK_NOT_BLOCKED",
+  /** A task holds at most 50 links (409). */
+  STAFF_TASK_LINKS_LIMIT: "STAFF_TASK_LINKS_LIMIT",
+  /** No such link on this task (404); also a "brief" link where a delivered one is needed to share. */
+  STAFF_TASK_LINK_NOT_FOUND: "STAFF_TASK_LINK_NOT_FOUND",
+  /** The delivered link was already shared with the client (409). */
+  STAFF_TASK_LINK_ALREADY_SHARED: "STAFF_TASK_LINK_ALREADY_SHARED",
+  /** Sharing needs the task to be linked to an event (409). */
+  STAFF_TASK_NO_EVENT: "STAFF_TASK_NO_EVENT",
 
   // -- My to-dos (round 1): private, per person ---------------------------------------
   /** No such to-do, or it is someone else's (the Admin included) -- the same 404 either way. */

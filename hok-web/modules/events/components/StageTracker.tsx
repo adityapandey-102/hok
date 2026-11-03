@@ -1,13 +1,16 @@
 import type { StageRef } from "../../../lib/domain";
 import { StageRail } from "../../../components/brand/StageRail";
 
-/** An event's stages in order (finished, current, to come), on HOK's stage rail. */
-export function StageTracker({ stages, currentStageId }: { stages: StageRef[]; currentStageId: string }) {
+/**
+ * A stage list in order (finished, current, to come), on HOK's stage rail. Events and staff
+ * tasks share it. `done` marks the whole list finished (a completed task has no current stage).
+ */
+export function StageTracker({ stages, currentStageId, label = "Event stages", done = false }: { stages: StageRef[]; currentStageId: string; label?: string; done?: boolean }) {
   return (
     <StageRail
-      label="Event stages"
+      label={label}
       stages={stages.map((s) => ({ key: s.id, name: s.name }))}
-      currentIndex={stages.findIndex((s) => s.id === currentStageId)}
+      currentIndex={done ? stages.length : stages.findIndex((s) => s.id === currentStageId)}
     />
   );
 }

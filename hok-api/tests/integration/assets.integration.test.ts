@@ -151,6 +151,57 @@ describe("assets (integration)", () => {
     expect((un.body as { asset: AssetBody }).asset.eventId).toBeNull();
   });
 
+  it("client-visible assets (round 2): need an event, a stage of that event, and are cleared with it", async () => {
+    const ev = await as("social_media_manager", request(app).post("/api/v1/events")).send({
+      clientId, templateId, title: `IT Asset Vis Event ${stamp}`, type: "shoot", startsAt: "2031-02-01T10:00:00Z", endsAt: "2031-02-01T11:00:00Z",
+    });
+    expect(ev.status, JSON.stringify(ev.body)).toBe(201);
+    const event = (ev.body as { event: { id: string; stages: { id: string; name: string }[] } }).event;
+    const otherEv = await as("social_media_manager", request(app).post("/api/v1/events")).send({
+      clientId, templateId, title: `IT Asset Vis Other ${stamp}`, type: "shoot", startsAt: "2031-02-02T10:00:00Z", endsAt: "2031-02-02T11:00:00Z",
+    });
+    const other = (otherEv.body as { event: { id: string; stages: { id: string }[] } }).event;
+    const post = (body: Record<string, unknown>) =>
+      as("social_media_manager", request(app).post("/api/v1/assets")).send({ clientId, title: `IT vis ${stamp}`, url: "https://a.test/v", type: "photo", ...body });
+    const code = (r: request.Response) => (r.body as { code?: string }).code;
+
+    // Needs an event; the stage must be that event's.
+    const noEvent = await post({ visibleToClient: true });
+    expect([noEvent.status, code(noEvent)]).toEqual([400, "ASSET_CLIENT_VISIBLE_NEEDS_EVENT"]);
+    const wrongStage = await post({ eventId: event.id, visibleToClient: true, eventStageId: other.stages[0]!.id });
+    expect([wrongStage.status, code(wrongStage)]).toEqual([400, "ASSET_STAGE_INVALID"]);
+    const stageNoEvent = await post({ eventStageId: event.stages[0]!.id });
+    expect([stageNoEvent.status, code(stageNoEvent)]).toEqual([400, "ASSET_STAGE_INVALID"]);
+
+    const made = await post({ eventId: event.id, visibleToClient: true, eventStageId: event.stages[1]!.id });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const a = (made.body as { asset: AssetBody }).asset;
+    expect(a).toMatchObject({ visibleToClient: true, eventStageId: event.stages[1]!.id, eventStageName: event.stages[1]!.name });
+    // A plain asset defaults to hidden.
+    expect(await create()).toMatchObject({ visibleToClient: false, eventStageId: null, eventStageName: null });
+
+    // The filter.
+    const list = await as("social_media_manager", request(app).get(`/api/v1/assets?eventId=${event.id}&visibleToClient=true`));
+    expect((list.body as { assets: { id: string }[] }).assets.map((x) => x.id)).toEqual([a.id]);
+    expect((await as("social_media_manager", request(app).get("/api/v1/assets?visibleToClient=maybe"))).status).toBe(400);
+
+    // Edit: another stage of the same event; a stage of another event is refused.
+    const restaged = await as("social_media_manager", request(app).patch(`/api/v1/assets/${a.id}`)).send({ eventStageId: event.stages[0]!.id, version: a.version });
+    expect((restaged.body as { asset: AssetBody }).asset).toMatchObject({ eventStageId: event.stages[0]!.id, visibleToClient: true });
+    const bad = await as("social_media_manager", request(app).patch(`/api/v1/assets/${a.id}`)).send({ eventStageId: other.stages[0]!.id, version: a.version + 1 });
+    expect([bad.status, code(bad)]).toEqual([400, "ASSET_STAGE_INVALID"]);
+
+    // Moving to another event clears the stage and keeps it visible; unlinking clears both.
+    const moved = await as("social_media_manager", request(app).patch(`/api/v1/assets/${a.id}`)).send({ eventId: other.id, version: a.version + 1 });
+    expect((moved.body as { asset: AssetBody }).asset).toMatchObject({ eventId: other.id, eventStageId: null, visibleToClient: true });
+    const unlinked = await as("social_media_manager", request(app).patch(`/api/v1/assets/${a.id}`)).send({ eventId: null, version: a.version + 2 });
+    expect((unlinked.body as { asset: AssetBody }).asset).toMatchObject({ eventId: null, eventStageId: null, visibleToClient: false });
+    const relinkVisible = await as("social_media_manager", request(app).patch(`/api/v1/assets/${a.id}`)).send({ visibleToClient: true, version: a.version + 3 });
+    expect([relinkVisible.status, code(relinkVisible)]).toEqual([400, "ASSET_CLIENT_VISIBLE_NEEDS_EVENT"]);
+    // Task-only staff can't reach any of this.
+    expect((await as("editor", request(app).get("/api/v1/assets?visibleToClient=true"))).status).toBe(403);
+  });
+
   it("row scope: another manager's asset is 404, task-only staff 403, admin sees all", async () => {
     const a = await create();
     expect((await as("marketing_manager", request(app).get(`/api/v1/assets/${a.id}`))).status).toBe(404);

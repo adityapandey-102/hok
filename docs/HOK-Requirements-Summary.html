@@ -45,7 +45,7 @@
 <body>
 
 <h1>HOK — Agency Operations Platform</h1>
-<div class="sub">Requirements Summary &nbsp;·&nbsp; Version 0.4 (team feedback round 1) &nbsp;·&nbsp; 3 Nov 2026</div>
+<div class="sub">Requirements Summary &nbsp;·&nbsp; Version 0.4 (team feedback rounds 1–2) &nbsp;·&nbsp; 4 Nov 2026</div>
 
 <div class="hero">
   <p><b>What are we building?</b> One website with two sides. The <b>public side</b> is the firm’s portfolio. The <b>private side</b>
@@ -97,7 +97,7 @@
     <ul><li>Paste a link (Drive, Dropbox, Canva…). <b>No file upload</b></li>
     <li>Add type (photo / video / doc), a comment and <b>tags</b></li>
     <li>Search by tag or comment, so you never lose where content is</li>
-    <li>Internal only. Clients don’t see these</li></ul></div>
+    <li>Internal by default. Mark one <b>“Show to client”</b> on an event and the client sees it in the portal</li></ul></div>
 
   <div class="card"><h3><span class="num">4</span>Calendars</h3>
     <ul><li><b>Client calendar</b>: all events of one client</li>
@@ -118,14 +118,14 @@
 
   <div class="card"><h3><span class="num">7</span>Team Tasks</h3>
     <ul><li>Admin or a manager gives a task to <b>one</b> person below them</li>
-    <li>Staff updates the status with a comment: To Do → In Progress → <b>Done</b> (or Blocked). They close it themselves</li>
+    <li>Every task uses an Admin-made <b>task template</b> (e.g. “Reel edit”: Brief → Rough cut → Final cut → Delivered) and moves through its stages; can be marked <b>Blocked</b> with a reason</li>
     <li>Whoever gave the task is notified of every update and can reopen</li></ul></div>
 
-  <div class="card"><h3><span class="num">8</span>Editor Tasks (extra fields)</h3>
-    <ul><li><b>Raw files link</b> (Google Drive)</li>
-    <li><b>Reference edit link</b> (the style to follow)</li>
-    <li><b>Script</b></li>
-    <li>None of them is required (since Nov 2026)</li></ul></div>
+  <div class="card"><h3><span class="num">8</span>Brief &amp; Links on every task</h3>
+    <ul><li><b>Brief</b>: the script or instructions</li>
+    <li><b>Brief and inputs</b>: raw files, references (added by the manager)</li>
+    <li><b>Delivered work</b>: the finished file (added by the assignee)</li>
+    <li>The manager can <b>share delivered work with the client</b> in one click</li></ul></div>
 
   <div class="card"><h3><span class="num">9</span>Notifications</h3>
     <ul><li>Phone/browser push + bell icon in the app</li>
@@ -149,7 +149,7 @@
 <p><b>Client feedback</b></p>
 <div class="flow"><span class="step">Client comments “change music”</span><span class="arrow">→</span><span class="step">Manager gets push</span><span class="arrow">→</span><span class="step">In Progress</span><span class="arrow">→</span><span class="step">Solved + reply</span></div>
 <p><b>Editing task</b></p>
-<div class="flow"><span class="step">Admin assigns “Edit reel” + Drive link, reference, script</span><span class="arrow">→</span><span class="step">Editor updates status + comment</span><span class="arrow">→</span><span class="step">Editor marks Done</span><span class="arrow">→</span><span class="step">Admin notified</span></div>
+<div class="flow"><span class="step">Manager assigns “Reel edit” task + brief links</span><span class="arrow">→</span><span class="step">Editor moves it through the stages</span><span class="arrow">→</span><span class="step">Editor adds the delivered link, completes</span><span class="arrow">→</span><span class="step">Manager shares it with the client</span></div>
 </div>
 
 <h2>5. Decisions made</h2>
@@ -159,7 +159,7 @@
   <tr><td>Sharing clients</td><td>No. One manager per client; Admin can move it</td></tr>
   <tr><td>Portal security</td><td>Link only; can be turned off or replaced</td></tr>
   <tr><td>Event stages</td><td>Admin-made templates, picked when creating an event</td></tr>
-  <tr><td>Content links on portal</td><td>Not in first version</td></tr>
+  <tr><td>Content links on portal</td><td>Only links marked “Show to client” (Nov 2026)</td></tr>
   <tr><td>Who gets pushed on a client comment</td><td>Only the client’s manager</td></tr>
   <tr><td>Who assigns tasks</td><td>Admin and managers, only downwards (Nov 2026)</td></tr>
   <tr><td>Task rules</td><td>One person per task; they can mark it Done</td></tr>

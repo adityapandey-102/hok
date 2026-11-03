@@ -3,12 +3,15 @@ import type {
   StaffTaskDetail,
   StaffTaskEntity,
   StaffTaskFields,
+  StaffTaskLink,
   StaffTaskPriority,
   StaffTaskRelation,
   StaffTaskStatus,
   StaffTaskSummaryEntity,
+  TaskLinkKind,
+  TaskStage,
 } from "../../domain/staff-task.entity";
-import type { AssigneeCandidate, StaffTaskScope, TaskClientRef, TaskEventRef } from "../../domain/staff-task.rules";
+import type { AssigneeCandidate, StaffTaskScope, TaskClientRef, TaskEventRef, TaskTemplate } from "../../domain/staff-task.rules";
 
 /**
  * Server-side list filters. `scope` is the caller's row scope and is ANDed
@@ -43,21 +46,39 @@ export interface StaffTaskPage {
   offset: number;
 }
 
+/** A link to add to a task: the brief links of a new task, or one added later. */
+export interface NewTaskLink {
+  kind: TaskLinkKind;
+  url: string;
+  label: string | null;
+  stageId: string | null;
+  addedBy: string;
+}
+
 export interface NewStaffTaskRecord extends StaffTaskFields {
   assigneeId: string;
   assignedBy: string;
+  /** The task template; its name and stage names are snapshotted onto the task. */
+  templateId: string;
+  templateName: string;
+  stageNames: string[];
+  /** Brief links added at creation. */
+  links: { url: string; label: string | null }[];
 }
 
 /** One timeline entry to append in the same transaction as the change. */
 export interface StaffTaskUpdateEntry {
-  kind: "status" | "reassigned" | "reopened";
+  kind: "reassigned" | "reopened" | "stage" | "completed" | "blocked" | "unblocked";
   authorId: string;
   comment: string | null;
+  /** The stage a move or reopen lands on. The stage the task was at is taken from the locked row. */
+  toStageId?: string;
 }
 
 /**
  * What one guarded write changes. `status` stamps / clears completed_at in the
- * repository. `entry` (optional) is appended to the timeline in the same
+ * repository. `stageId` moves the task to that stage. `blockedReason` sets (or, null,
+ * clears) the reason. `entry` (optional) is appended to the timeline in the same
  * transaction, with from/to taken from the locked row and these changes.
  * An empty object writes nothing (and doesn't bump the version).
  */
@@ -65,26 +86,62 @@ export interface StaffTaskChanges {
   fields?: Partial<StaffTaskFields>;
   assigneeId?: string;
   status?: StaffTaskStatus;
+  stageId?: string;
+  blockedReason?: string | null;
   entry?: StaffTaskUpdateEntry;
 }
 
-/** Guard callback: given the row as it stands after the lock, throw or return the changes. */
-export type StaffTaskChangeDecision = (current: StaffTaskEntity) => StaffTaskChanges;
+/** Guard callback: given the row as it stands after the lock (and its stages), throw or return the changes. */
+export type StaffTaskChangeDecision = (current: StaffTaskEntity, stages: TaskStage[]) => StaffTaskChanges;
+
+/** What a link write sees under the task's lock. */
+export interface LinkWriteContext {
+  task: StaffTaskEntity;
+  stages: TaskStage[];
+  /** How many links the task holds right now. */
+  linkCount: number;
+}
+
+/** What a link removal / share sees under the task's lock. */
+export interface LinkTargetContext {
+  task: StaffTaskEntity;
+  link: StaffTaskLink;
+}
+
+/** The event (and its client) a delivered link is shared on, read under a lock inside the share transaction. */
+export interface ShareEventContext {
+  eventId: string;
+  clientId: string;
+  /** The client's team and status: the caller must be on it, and an archived client is read-only. */
+  teamIds: string[];
+  clientStatus: "active" | "paused" | "archived";
+  /** The event's stage ids, to validate the chosen one. */
+  stageIds: string[];
+}
+
+export interface ShareInput {
+  title: string | null;
+  /** An event stage, or null. */
+  stageId: string | null;
+  createdBy: string;
+}
 
 /** Persistence contract for staff tasks -- data access only, every multi-step write in one transaction. */
 export interface StaffTasksRepositoryPort {
-  /** One page joined to the assignee's name/role and the client's name (no per-row queries). */
+  /** One page joined to the assignee's name/role, the client's name and the current stage (no per-row queries). */
   findMany(filters: StaffTaskListFilters, page: StaffTaskPage): Promise<StaffTaskSummaryEntity[]>;
   countMany(filters: StaffTaskListFilters): Promise<number>;
   findById(id: string): Promise<StaffTaskEntity | null>;
-  /** The task + event title + the newest updates (capped); null if missing. */
+  /** The task + event title + its stages, links and the newest updates (each one query); null if missing. */
   findDetail(id: string): Promise<StaffTaskDetail | null>;
   findAssigneeCandidate(userId: string): Promise<AssigneeCandidate | null>;
   /** The client and its team; null if there's no such client. */
   findClient(clientId: string): Promise<TaskClientRef | null>;
   /** Null if there's no such event -- or no events table yet (migration 20261013000004 not applied). */
   findEvent(eventId: string): Promise<TaskEventRef | null>;
-  /** One transaction: insert the task and its "created" timeline entry. Returns the new id. */
+  /** The stage template (any kind) with its stage names, or null. */
+  findTemplate(templateId: string): Promise<TaskTemplate | null>;
+  /** One transaction: insert the task, its stages, its brief links and its "created" timeline entry. Returns the new id. */
   create(record: NewStaffTaskRecord): Promise<string>;
   /** One transaction: lock the task (FOR UPDATE), `decide`, apply, bump the version, append `entry`. */
   update(id: string, decide: StaffTaskChangeDecision): Promise<void>;
@@ -92,5 +149,19 @@ export interface StaffTasksRepositoryPort {
   addComment(id: string, guard: (current: StaffTaskEntity) => void, authorId: string, comment: string): Promise<void>;
   /** Lock, `guard`, delete (the timeline cascades). Returns the deleted row as it was. */
   delete(id: string, guard: (current: StaffTaskEntity) => void): Promise<StaffTaskEntity>;
+  /** Lock the task, `guard` (sees the stages and the link count), insert the link (no version bump). Returns the link id. */
+  addLink(taskId: string, guard: (ctx: LinkWriteContext) => void, link: NewTaskLink): Promise<string>;
+  /** Lock the task, find the link on it (404 STAFF_TASK_LINK_NOT_FOUND), `guard`, delete it. Returns the removed link. */
+  removeLink(taskId: string, linkId: string, guard: (ctx: LinkTargetContext) => void): Promise<StaffTaskLink>;
+  /**
+   * ONE transaction: lock the task and the link, read the event's client (locked FOR SHARE), `guard`,
+   * insert the client-visible asset and set the link's shared_asset_id. Returns the new asset's id.
+   * Cross-module write (assets), Infrastructure-to-Infrastructure (ADR 0003).
+   */
+  shareLink(
+    taskId: string,
+    linkId: string,
+    input: ShareInput,
+    guard: (ctx: LinkTargetContext, event: ShareEventContext | null) => void,
+  ): Promise<{ assetId: string; url: string }>;
 }
-

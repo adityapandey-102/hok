@@ -44,7 +44,7 @@ tags:
   - name: Assets
     description: Asset link library -- links only, never files. Per client, with type, comment, reusable tags and an optional event. Scoped by the client's owner (`assets:read` / `assets:write`). Internal only; never on the portal.
   - name: Staff tasks
-    description: "Tasks assigned down the role ladder (Admin to anyone below; client managers to task-only roles; never sideways or up). One assignee. The Admin, or a task's creator (`assigned_by`) while they hold `staff_tasks:assign`, edits, reassigns, reopens and deletes; the assignee (or the Admin) changes the status with an optional comment. A caller sees the tasks assigned to them, created by them and -- client managers -- their clients' tasks; anything else is a 404. A team manager who only sees a task gets 403 `STAFF_TASK_FORBIDDEN` on any write. Every status change and comment is an append-only timeline entry."
+    description: "Tasks assigned down the role ladder (Admin to anyone below; client managers to task-only roles; never sideways or up). One assignee. The Admin, or a task's creator (`assigned_by`) while they hold `staff_tasks:assign`, edits, reassigns, reopens and deletes; each task moves through the stages of the task template it was created from (task_stages, snapshotted at creation); the assignee, the creator or the Admin moves it to any stage or completes it from the last one, and `status` is derived from the stage (stage 1 todo, 2..N in progress, completed done) plus the blocked flag (assignee or Admin, with a reason). Every task carries brief and delivered links; a delivered link can be shared with the client as a client-visible asset. A caller sees the tasks assigned to them, created by them and -- client managers -- their clients' tasks; anything else is a 404. A team manager who only sees a task gets 403 `STAFF_TASK_FORBIDDEN` on any write. Every stage move, completion, block, unblock, reopen and comment is an append-only timeline entry."
   - name: Client to-dos
     description: A manager's internal to-do list per client (optionally about one of the client's events). Reads need `clients:read`, writes `clients:write`; scoped by the client's owner (others are 404). Read-only on archived clients. Internal only; never on the portal.
   - name: To-dos
@@ -752,11 +752,16 @@ paths:
       tags: [Stage templates]
       summary: List stage templates with their stages
       description: |
-        The Admin sees every template (`active` filters); a Social Media /
-        Marketing Manager sees only ACTIVE ones (to pick one for a new event).
-        Task-only staff 403. Sorted by name.
+        The Admin sees every template (`active` filters); a client manager sees
+        only ACTIVE ones, to pick one for a new event (`kind=event`) or a new task
+        (`kind=task`). Task-only staff 403. Without `kind`, a reader gets the kinds
+        they may read (managers: both). `role` implies `kind=task` and keeps the
+        templates offered for that assignee role (an empty role list = any role).
+        Sorted by name.
       security: [{ bearerAuth: [] }]
       parameters:
+        - { name: kind, in: query, description: "event or task templates.", schema: { type: string, enum: [event, task] } }
+        - { name: role, in: query, description: "Task templates offered for this assignee role (or for any role).", schema: { $ref: "#/components/schemas/Role" } }
         - { name: search, in: query, description: Name contains (case-insensitive)., schema: { type: string, maxLength: 80 } }
         - { name: active, in: query, description: Admin only (ignored for managers)., schema: { type: string, enum: ["true", "false"] } }
         - { name: limit, in: query, description: Default 50; clamped to 1..100., schema: { type: integer, default: 50, minimum: 1, maximum: 100 } }
@@ -780,7 +785,7 @@ paths:
     post:
       tags: [Stage templates]
       summary: Create a stage template (Admin)
-      description: "`stage_templates:manage`. 1-20 stages, each 1-60 characters, no repeats (`400 STAGE_TEMPLATE_STAGES_INVALID`). Names are unique ignoring case (`409 STAGE_TEMPLATE_NAME_TAKEN`)."
+      description: "`stage_templates:manage`. 1-20 stages, each 1-60 characters, no repeats (`400 STAGE_TEMPLATE_STAGES_INVALID`). Names are unique ignoring case, across both kinds (`409 STAGE_TEMPLATE_NAME_TAKEN`). `kind` defaults to `event`; `roles` (assignee roles a TASK template is offered for, empty = any, never `admin`) is only allowed on a task template (`400 STAGE_TEMPLATE_ROLES_INVALID`)."
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -792,6 +797,8 @@ paths:
               properties:
                 name: { type: string, minLength: 1, maxLength: 80 }
                 stages: { type: array, minItems: 1, maxItems: 20, items: { type: string, maxLength: 60 }, example: [Planned, Pre-production, Shoot, Editing, Client Review, Completed] }
+                kind: { type: string, enum: [event, task], default: event }
+                roles: { type: array, items: { $ref: "#/components/schemas/Role" }, description: "Task templates only: the assignee roles it is offered for. Empty = any role." }
       responses:
         "201": { description: Created., content: { application/json: { schema: { $ref: "#/components/schemas/StageTemplateEnvelope" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -816,8 +823,10 @@ paths:
       description: |
         `stage_templates:manage`. `stages` replaces the whole ordered list
         (rename / reorder / add / remove); `active: false` deactivates (no new
-        events from it). `version` required. **Events already created keep
-        their own copy of the stages** (FR-EVT-03).
+        events or tasks from it). `roles` replaces a task template's role list
+        (`400 STAGE_TEMPLATE_ROLES_INVALID` on an event template). The `kind`
+        never changes (sending one is a 400). `version` required. **Events and
+        tasks already created keep their own copy of the stages** (FR-EVT-03).
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -830,6 +839,7 @@ paths:
                 name: { type: string, minLength: 1, maxLength: 80 }
                 stages: { type: array, minItems: 1, maxItems: 20, items: { type: string, maxLength: 60 } }
                 active: { type: boolean }
+                roles: { type: array, items: { $ref: "#/components/schemas/Role" } }
                 version: { type: integer, minimum: 1 }
       responses:
         "200": { description: Saved., content: { application/json: { schema: { $ref: "#/components/schemas/StageTemplateEnvelope" } } } }
@@ -1495,6 +1505,7 @@ paths:
         - { name: search, in: query, description: Title, comment or tag contains (case-insensitive). Max 80 characters., schema: { type: string, maxLength: 80 } }
         - { name: type, in: query, description: Only this type. An unknown type is a 400., schema: { $ref: "#/components/schemas/AssetType" } }
         - { name: tag, in: query, description: Exactly this tag, ignoring case., schema: { type: string, maxLength: 30 } }
+        - { name: visibleToClient, in: query, description: "`true`: only assets the client can see on their portal.", schema: { type: string, enum: ["true", "false"] } }
         - { name: from, in: query, description: "Added at or after this instant (ISO-8601 with offset; the web sends the viewer's day start).", schema: { type: string, format: date-time } }
         - { name: to, in: query, description: Added before this instant. `from` after `to` is `400 ASSET_RANGE_INVALID`., schema: { type: string, format: date-time } }
         - { name: limit, in: query, description: Page size, default 20. Clamped to 1..100. Non-numeric is a 400., schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
@@ -1524,7 +1535,7 @@ paths:
         `assets:write`. The URL must be http(s) (`400 VALIDATION_ERROR` otherwise).
         A client that isn't yours is `404 CLIENT_NOT_FOUND`; an archived one is
         `409 CLIENT_ARCHIVED`. `eventId` must be one of that client's events
-        (`400 ASSET_EVENT_INVALID`). Tags are created per client if new and matched ignoring case.
+        (`400 ASSET_EVENT_INVALID`). `visibleToClient: true` shows it on the client's portal under that event and needs an `eventId` (`400 ASSET_CLIENT_VISIBLE_NEEDS_EVENT`); `eventStageId` ties it to one of the event's stages (`400 ASSET_STAGE_INVALID`). Tags are created per client if new and matched ignoring case.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1781,12 +1792,14 @@ paths:
         (`400 STAFF_TASK_ASSIGNEE_NOT_ALLOWED`, "You can only assign tasks to roles
         below yours"). A manager may link only a client whose team they're on, or
         one of its events; anything else is `400 STAFF_TASK_CLIENT_INVALID`.
-        **Editor tasks** (assignee role `editor`) may carry `rawFilesUrl`,
-        `referenceUrl` and `script`, none required. For any other role the three
-        editor fields must be empty (`400 STAFF_TASK_EDITOR_FIELDS_INVALID`).
+        `templateId` is required: an active **task** template whose `roles` is
+        empty or includes the assignee's role (`400 STAFF_TASK_TEMPLATE_INVALID`);
+        its stages are copied onto the task, which starts at stage 1 (`todo`).
+        `brief` (instructions, a script; up to 20000 characters) is open on every
+        task, and `links` (up to 20) are added as brief links.
         An `eventId` must belong to `clientId` when both are sent; an event
         alone links its client (`400 STAFF_TASK_CLIENT_INVALID` /
-        `STAFF_TASK_EVENT_INVALID`). Starts as `todo`, with a "created"
+        `STAFF_TASK_EVENT_INVALID`). Starts as `todo` at stage 1, with a "created"
         timeline entry.
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -1797,9 +1810,20 @@ paths:
               allOf:
                 - $ref: "#/components/schemas/StaffTaskFields"
                 - type: object
-                  required: [title, assigneeId]
+                  required: [title, assigneeId, templateId]
                   properties:
                     assigneeId: { type: string, format: uuid }
+                    templateId: { type: string, format: uuid, description: "An active task template offered for the assignee's role." }
+                    links:
+                      type: array
+                      maxItems: 20
+                      description: Brief links added at creation.
+                      items:
+                        type: object
+                        required: [url]
+                        properties:
+                          url: { type: string, maxLength: 2000, description: A full http(s) link. }
+                          label: { type: string, maxLength: 120, nullable: true }
       responses:
         "201": { description: Created., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -1810,7 +1834,7 @@ paths:
       - $ref: "#/components/parameters/StaffTaskId"
     get:
       tags: [Staff tasks]
-      summary: One task with its timeline (100 newest entries)
+      summary: One task with its stages, links and timeline (100 newest entries)
       security: [{ bearerAuth: [] }]
       responses:
         "200": { description: The task., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
@@ -1827,10 +1851,12 @@ paths:
         `version` (required). `assigneeId` reassigns (a "reassigned" timeline
         entry), judged against the **caller's** ladder (`400
         STAFF_TASK_ASSIGNEE_NOT_ALLOWED`); keeping the same assignee is not a
-        reassignment. Reassigning to a non-editor **clears** the editor brief.
+        reassignment; the stages are already snapshotted, so a reassignment to a
+        role the template wasn't offered for is fine. There is no `templateId`
+        (stages are fixed once created; an unknown key is a 400).
         A manager keeps to their own clients (`400 STAFF_TASK_CLIENT_INVALID`). Changing `clientId` without
-        an `eventId` unlinks the old client's event. Status moves through
-        `/status` and `/reopen`.
+        an `eventId` unlinks the old client's event. Stages move through
+        `/stage`, `/block`, `/unblock` and `/reopen`.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1861,45 +1887,21 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/StaffTaskNotFound" }
-  /api/v1/staff-tasks/{id}/status:
+  /api/v1/staff-tasks/{id}/stage:
     post:
       tags: [Staff tasks]
-      summary: Change the status (assignee or Admin), with an optional comment
+      summary: Move to a stage, or complete (assignee, creator or Admin)
       description: |
-        `staff_tasks:update`; the assignee or the Admin (a task the caller can't
-        see is `404`; one they can see but may not move, `403 STAFF_TASK_FORBIDDEN`). Any open status to any other, including `done`. The change and
-        its timeline entry are one transaction. Refused: the same status
-        (`409 STAFF_TASK_STATUS_UNCHANGED`), a done task (`409 STAFF_TASK_DONE`;
-        only the Admin reopens), a stale version (`409 STAFF_TASK_MODIFIED`).
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: "#/components/parameters/StaffTaskId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [status, version]
-              properties:
-                status: { $ref: "#/components/schemas/StaffTaskStatus" }
-                comment: { type: string, maxLength: 2000, nullable: true }
-                version: { type: integer, minimum: 1 }
-      responses:
-        "200": { description: The task with its new status., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
-        "409": { $ref: "#/components/responses/StaffTaskConflict" }
-  /api/v1/staff-tasks/{id}/reopen:
-    post:
-      tags: [Staff tasks]
-      summary: Reopen a done task (Admin, or its creator)
-      description: |
-        `staff_tasks:assign`; the Admin or the creator (else 403 `STAFF_TASK_FORBIDDEN` / 404). Back to `todo` (default), `in_progress` or
-        `blocked`, with a "reopened" timeline entry. `409 STAFF_TASK_NOT_DONE`
-        if it isn't done.
+        `staff_tasks:update`; the assignee, the creator or the Admin (a task the
+        caller can't see is `404`; one they can see but may not move, `403
+        STAFF_TASK_FORBIDDEN`). Send **exactly one** of `stageId` (any other stage of
+        this task, forward or back; `400 STAFF_TASK_STAGE_INVALID` for a stage of
+        another task, `409 STAFF_TASK_STAGE_UNCHANGED` for the current one) or
+        `complete: true` (only from the last stage, else `409
+        STAFF_TASK_NOT_AT_LAST_STAGE`). Clears a blocked flag, sets `status` from the
+        stage (stage 1 todo, 2..N in_progress, completed done and `completedAt`) and
+        appends a `stage` or `completed` timeline entry, all in one transaction. A done task
+        is `409 STAFF_TASK_DONE`; a stale version `409 STAFF_TASK_MODIFIED`. Notifies the other side.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/StaffTaskId"
@@ -1911,7 +1913,95 @@ paths:
               type: object
               required: [version]
               properties:
-                status: { type: string, enum: [todo, in_progress, blocked], default: todo }
+                stageId: { type: string, format: uuid }
+                complete: { type: boolean, enum: [true] }
+                comment: { type: string, maxLength: 2000, nullable: true }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: The task at its new stage., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+        "409": { $ref: "#/components/responses/StaffTaskConflict" }
+  /api/v1/staff-tasks/{id}/block:
+    post:
+      tags: [Staff tasks]
+      summary: Mark the task blocked, with a reason (assignee or Admin)
+      description: |
+        `staff_tasks:update`; the assignee or the Admin (the creator gets `403
+        STAFF_TASK_FORBIDDEN`). `status` becomes `blocked` and `blockedReason` is set; the stage
+        stays. `409 STAFF_TASK_ALREADY_BLOCKED`, or `409 STAFF_TASK_DONE` for a done task. A
+        `blocked` timeline entry; notifies the other side.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/StaffTaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, version]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: The blocked task., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+        "409": { $ref: "#/components/responses/StaffTaskConflict" }
+  /api/v1/staff-tasks/{id}/unblock:
+    post:
+      tags: [Staff tasks]
+      summary: Lift the blocked flag (assignee, creator or Admin)
+      description: |
+        `staff_tasks:update`; the assignee, the creator or the Admin. The status comes
+        back from the stage and the reason is cleared; an `unblocked` timeline entry.
+        `409 STAFF_TASK_NOT_BLOCKED` if it isn't blocked.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/StaffTaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                comment: { type: string, maxLength: 2000, nullable: true }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: The unblocked task., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+        "409": { $ref: "#/components/responses/StaffTaskConflict" }
+  /api/v1/staff-tasks/{id}/reopen:
+    post:
+      tags: [Staff tasks]
+      summary: Reopen a done task (Admin, or its creator)
+      description: |
+        `staff_tasks:assign`; the Admin or the creator (else 403 `STAFF_TASK_FORBIDDEN` / 404). Back to
+        `stageId` (default: the last stage; `400 STAFF_TASK_STAGE_INVALID` for another task's), the
+        status from that stage and `completedAt` cleared, with a "reopened" timeline entry.
+        `409 STAFF_TASK_NOT_DONE` if it isn't done.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/StaffTaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                stageId: { type: string, format: uuid, description: "One of the task's stages; default the last." }
                 comment: { type: string, maxLength: 2000, nullable: true }
                 version: { type: integer, minimum: 1 }
       responses:
@@ -1944,6 +2034,94 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+  /api/v1/staff-tasks/{id}/links:
+    post:
+      tags: [Staff tasks]
+      summary: "Add a link to a task (brief: creator or Admin; delivered: assignee or Admin)"
+      description: |
+        `staff_tasks:update`. A **brief** link (an input the assignee works from) is added by whoever
+        manages the task (the Admin or its creator); a **delivered** link (the finished work) by the
+        assignee or the Admin. A task the caller can't see is `404`, then the role rule (`403
+        STAFF_TASK_FORBIDDEN`). The URL must be http(s) (up to 2000 characters). `stageId` must be one of
+        the task's stages (`400 STAFF_TASK_STAGE_INVALID`). At most 50 links (`409 STAFF_TASK_LINKS_LIMIT`).
+        Audited as `staff_task.link_added` (never the URL). Doesn't change the task's `version`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/StaffTaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, url]
+              properties:
+                kind: { type: string, enum: [brief, delivered] }
+                url: { type: string, maxLength: 2000 }
+                label: { type: string, maxLength: 120, nullable: true }
+                stageId: { type: string, format: uuid, nullable: true }
+      responses:
+        "201": { description: The task with the new link., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+        "409": { $ref: "#/components/responses/StaffTaskConflict" }
+  /api/v1/staff-tasks/{id}/links/{linkId}:
+    delete:
+      tags: [Staff tasks]
+      summary: Remove a link (whoever added it, or whoever manages the task)
+      description: "`staff_tasks:update`. 404 `STAFF_TASK_NOT_FOUND` for a task the caller can't see, `404 STAFF_TASK_LINK_NOT_FOUND` for a missing link, `403 STAFF_TASK_FORBIDDEN` for anyone else. Audited as `staff_task.link_removed`."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/StaffTaskId"
+        - { name: linkId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The task without the link., content: { application/json: { schema: { $ref: "#/components/schemas/StaffTaskEnvelope" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+  /api/v1/staff-tasks/{id}/links/{linkId}/share:
+    post:
+      tags: [Staff tasks]
+      summary: Share a delivered link with the client (Admin, or a manager on the client's team)
+      description: |
+        `staff_tasks:update`, and the caller must be able to write assets on the task's client: the Admin,
+        or a client manager on its team (`403 STAFF_TASK_FORBIDDEN` otherwise -- an editor can't; their
+        manager shares). The link must be a **delivered** one (else `404 STAFF_TASK_LINK_NOT_FOUND`) and
+        not already shared (`409 STAFF_TASK_LINK_ALREADY_SHARED`); the task needs an event (`409
+        STAFF_TASK_NO_EVENT`). `stageId` is one of the **event's** stages (`400 ASSET_STAGE_INVALID`);
+        `title` defaults to the link's label, then "Delivered work". In ONE transaction an asset is
+        created (client and event from the task, type `other`, `visibleToClient: true`) and the link is
+        marked with it. Audited as `asset.created` and `staff_task.link_shared`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/StaffTaskId"
+        - { name: linkId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 160, nullable: true }
+                stageId: { type: string, format: uuid, nullable: true }
+      responses:
+        "201":
+          description: The task (the link now carries `sharedAssetId`) and the new asset's id.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [task, assetId]
+                properties:
+                  task: { $ref: "#/components/schemas/StaffTaskDetail" }
+                  assetId: { type: string, format: uuid }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/StaffTaskNotFound" }
+        "409": { $ref: "#/components/responses/StaffTaskConflict" }
   # ------------------------------------------------------ My to-dos (round 1) --
   /api/v1/todos:
     get:
@@ -2255,7 +2433,7 @@ paths:
       - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
     get:
       tags: [Portal]
-      summary: "Public: one of the client's events with its client-visible updates"
+      summary: "Public: one of the client's events with its client-visible updates and shared assets"
       responses:
         "200": { description: The event., content: { application/json: { schema: { type: object, properties: { event: { $ref: "#/components/schemas/PortalEvent" } } } } } }
         "404": { description: PORTAL_LINK_INVALID or PORTAL_EVENT_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
@@ -2516,7 +2694,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     StaffTaskConflict:
-      description: "`STAFF_TASK_MODIFIED` (stale version), `STAFF_TASK_STATUS_UNCHANGED`, `STAFF_TASK_DONE` (reopen first) or `STAFF_TASK_NOT_DONE`."
+      description: "`STAFF_TASK_MODIFIED` (stale version), `STAFF_TASK_STAGE_UNCHANGED`, `STAFF_TASK_NOT_AT_LAST_STAGE`, `STAFF_TASK_ALREADY_BLOCKED`, `STAFF_TASK_NOT_BLOCKED`, `STAFF_TASK_DONE` (reopen first), `STAFF_TASK_NOT_DONE`, `STAFF_TASK_LINKS_LIMIT`, `STAFF_TASK_LINK_ALREADY_SHARED` or `STAFF_TASK_NO_EVENT`."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -2840,6 +3018,7 @@ components:
         currentStagePosition: { type: integer }
         stageCount: { type: integer }
         updates: { type: array, description: Only on the single-event read. Client-visible stage notes., items: { type: object, properties: { stageName: { type: string }, note: { type: string, nullable: true }, createdAt: { type: string, format: date-time } } } }
+        assets: { type: array, maxItems: 100, description: "Only on the single-event read: the links staff chose to share ('Shared with you'), newest first. Client-safe: no comment, tags, preview or creator.", items: { type: object, required: [id, title, url, type, stageName, createdAt], properties: { id: { type: string, format: uuid }, title: { type: string }, url: { type: string }, type: { $ref: "#/components/schemas/AssetType" }, stageName: { type: string, nullable: true }, createdAt: { type: string, format: date-time } } } }
     PortalDashboard:
       type: object
       properties:
@@ -3081,11 +3260,13 @@ components:
         client: { $ref: "#/components/schemas/Client" }
     StageTemplate:
       type: object
-      required: [id, name, active, stages, version, createdAt, updatedAt]
+      required: [id, name, active, kind, roles, stages, version, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         active: { type: boolean }
+        kind: { type: string, enum: [event, task] }
+        roles: { type: array, items: { $ref: "#/components/schemas/Role" }, description: "Task templates: the assignee roles it is offered for; empty = any role. Always empty for event templates." }
         stages:
           type: array
           items:
@@ -3198,7 +3379,7 @@ components:
         personalEvent: { $ref: "#/components/schemas/PersonalEvent" }
     CalendarItem:
       type: object
-      description: "`kind: event` items also carry eventType, state, currentStageName, currentStagePosition, stageCount; `kind: personal` items carry only the common fields (fetch /personal-events/{id} for the description). `kind: task` items sit at the task's due instant (startsAt = endsAt, timeZone UTC: show it in the viewer's zone), ownerId = the assignee, and carry status, priority, assigneeId, assigneeName. `kind: todo` items are the caller's own to-dos at their due instant (no client) and carry urgency and done."
+      description: "`kind: event` items also carry eventType, state, currentStageName, currentStagePosition, stageCount; `kind: personal` items carry only the common fields (fetch /personal-events/{id} for the description). `kind: task` items sit at the task's due instant (startsAt = endsAt, timeZone UTC: show it in the viewer's zone), ownerId = the assignee, and carry status, priority, assigneeId, assigneeName and where the task is in its stages (currentStageName, currentStagePosition, stageCount). `kind: todo` items are the caller's own to-dos at their due instant (no client) and carry urgency and done."
       required: [kind, id, title, startsAt, endsAt, timeZone, clientId, clientName, ownerId]
       properties:
         kind: { type: string, enum: [event, personal, task, todo] }
@@ -3231,7 +3412,7 @@ components:
       enum: [photo, video, document, design, audio, other]
     Asset:
       type: object
-      required: [id, clientId, clientName, clientStatus, eventId, eventTitle, title, url, type, comment, preview, tags, createdBy, createdByName, version, createdAt, updatedAt]
+      required: [id, clientId, clientName, clientStatus, eventId, eventTitle, title, url, type, comment, visibleToClient, eventStageId, eventStageName, preview, tags, createdBy, createdByName, version, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         clientId: { type: string, format: uuid }
@@ -3243,6 +3424,9 @@ components:
         url: { type: string, description: An http(s) link. The platform stores links only, never files. }
         type: { $ref: "#/components/schemas/AssetType" }
         comment: { type: string, nullable: true }
+        visibleToClient: { type: boolean, description: "The client sees this under the event on their portal (needs an event)." }
+        eventStageId: { type: string, format: uuid, nullable: true, description: One of the event's stages. }
+        eventStageName: { type: string, nullable: true }
         preview:
           type: object
           nullable: true
@@ -3269,6 +3453,8 @@ components:
         type: { $ref: "#/components/schemas/AssetType" }
         comment: { type: string, maxLength: 2000, nullable: true }
         eventId: { type: string, format: uuid, nullable: true, description: One of the same client's events. }
+        visibleToClient: { type: boolean, default: false, description: "Show it on the client's portal; needs eventId." }
+        eventStageId: { type: string, format: uuid, nullable: true, description: One of that event's stages. }
         tags: { type: array, maxItems: 10, items: { type: string, maxLength: 30 } }
     UpdateAssetRequest:
       type: object
@@ -3278,7 +3464,9 @@ components:
         url: { type: string, maxLength: 2048 }
         type: { $ref: "#/components/schemas/AssetType" }
         comment: { type: string, maxLength: 2000, nullable: true }
-        eventId: { type: string, format: uuid, nullable: true }
+        eventId: { type: string, format: uuid, nullable: true, description: "Changing or clearing it clears eventStageId (and visibleToClient when the event becomes null)." }
+        visibleToClient: { type: boolean }
+        eventStageId: { type: string, format: uuid, nullable: true }
         tags: { type: array, maxItems: 10, items: { type: string, maxLength: 30 }, description: Replaces the whole set. }
         version: { type: integer, minimum: 1 }
     ClientTodoStatus:
@@ -3328,29 +3516,42 @@ components:
       enum: [low, medium, high, urgent]
     StaffTaskUpdateKind:
       type: string
-      enum: [created, status, comment, reassigned, reopened]
-    ReferenceLink:
+      description: "`status` is the pre-round-2 move between statuses (old rows only)."
+      enum: [created, status, comment, reassigned, reopened, stage, completed, blocked, unblocked]
+    TaskStage:
       type: object
-      required: [url]
+      required: [id, name, position]
       properties:
-        url: { type: string, maxLength: 2048, description: A full http(s) link. }
-        label: { type: string, maxLength: 120, nullable: true }
+        id: { type: string, format: uuid }
+        name: { type: string }
+        position: { type: integer, minimum: 1 }
+    TaskLink:
+      type: object
+      required: [id, kind, url, label, stageId, stageName, addedById, addedByName, createdAt, sharedAssetId]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [brief, delivered] }
+        url: { type: string }
+        label: { type: string, nullable: true }
+        stageId: { type: string, format: uuid, nullable: true }
+        stageName: { type: string, nullable: true }
+        addedById: { type: string, format: uuid, nullable: true }
+        addedByName: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        sharedAssetId: { type: string, format: uuid, nullable: true, description: The client-visible asset a delivered link was shared as. }
     StaffTaskFields:
       type: object
       properties:
         title: { type: string, minLength: 1, maxLength: 160 }
         description: { type: string, maxLength: 5000, nullable: true }
+        brief: { type: string, maxLength: 20000, nullable: true, description: "Instructions or a script for the assignee. Any task." }
         clientId: { type: string, format: uuid, nullable: true }
         eventId: { type: string, format: uuid, nullable: true }
         dueAt: { type: string, format: date-time, nullable: true, description: "With an offset or Z." }
         priority: { $ref: "#/components/schemas/StaffTaskPriority" }
-        rawFilesUrl: { type: string, maxLength: 2048, nullable: true, description: "Editor tasks: the raw files (Google Drive) link. Optional." }
-        referenceUrl: { type: string, maxLength: 2048, nullable: true, description: "Editor tasks: an example of the desired style." }
-        script: { type: string, maxLength: 20000, nullable: true, description: "Editor tasks: the script." }
-        referenceLinks: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/ReferenceLink" } }
     StaffTaskSummary:
       type: object
-      required: [id, title, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedById, assignedByName, clientId, clientName, eventId, hasEditorBrief, completedAt, version, createdAt, canManage]
+      required: [id, title, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedById, assignedByName, clientId, clientName, eventId, templateName, stageCount, currentStage, blockedReason, completedAt, version, createdAt, canManage]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -3365,18 +3566,22 @@ components:
         clientId: { type: string, format: uuid, nullable: true }
         clientName: { type: string, nullable: true }
         eventId: { type: string, format: uuid, nullable: true }
-        hasEditorBrief: { type: boolean }
+        templateName: { type: string, description: "The task template it started from; 'Simple (older task)' for tasks made before stages existed." }
+        stageCount: { type: integer }
+        currentStage: { $ref: "#/components/schemas/TaskStage" }
+        blockedReason: { type: string, nullable: true, description: Set only while status is blocked. }
         completedAt: { type: string, format: date-time, nullable: true }
         version: { type: integer }
         createdAt: { type: string, format: date-time }
         canManage: { type: boolean, description: "The caller may edit, reassign, reopen and delete this task: the Admin, or its creator while they hold staff_tasks:assign." }
     StaffTaskDetail:
       type: object
-      required: [id, title, description, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedBy, assignedById, assignedByName, clientId, clientName, eventId, eventTitle, rawFilesUrl, referenceUrl, script, referenceLinks, completedAt, version, createdAt, updatedAt, canManage, updates]
+      required: [id, title, description, brief, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedBy, assignedById, assignedByName, clientId, clientName, eventId, eventTitle, templateName, stageCount, currentStage, stages, blockedReason, links, completedAt, version, createdAt, updatedAt, canManage, canShare, updates]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
         description: { type: string, nullable: true }
+        brief: { type: string, nullable: true }
         status: { $ref: "#/components/schemas/StaffTaskStatus" }
         priority: { $ref: "#/components/schemas/StaffTaskPriority" }
         dueAt: { type: string, format: date-time, nullable: true }
@@ -3390,21 +3595,24 @@ components:
         clientName: { type: string, nullable: true }
         eventId: { type: string, format: uuid, nullable: true }
         eventTitle: { type: string, nullable: true }
-        rawFilesUrl: { type: string, nullable: true }
-        referenceUrl: { type: string, nullable: true }
-        script: { type: string, nullable: true }
-        referenceLinks: { type: array, items: { $ref: "#/components/schemas/ReferenceLink" } }
+        templateName: { type: string }
+        stageCount: { type: integer }
+        currentStage: { $ref: "#/components/schemas/TaskStage" }
+        stages: { type: array, items: { $ref: "#/components/schemas/TaskStage" }, description: Every stage of the task, in order. }
+        blockedReason: { type: string, nullable: true }
+        links: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/TaskLink" }, description: "Oldest first (newest last)." }
         completedAt: { type: string, format: date-time, nullable: true }
         version: { type: integer }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         canManage: { type: boolean, description: "The caller may edit, reassign, reopen and delete this task: the Admin, or its creator while they hold staff_tasks:assign." }
+        canShare: { type: boolean, description: "The task has an event and the caller may share its delivered links with the client (the Admin, or a client manager on that client's team)." }
         updates:
           type: array
           description: The timeline, newest first, at most 100.
           items:
             type: object
-            required: [id, kind, authorId, authorName, fromStatus, toStatus, fromAssigneeName, toAssigneeName, comment, createdAt]
+            required: [id, kind, authorId, authorName, fromStatus, toStatus, fromAssigneeName, toAssigneeName, fromStageName, toStageName, comment, createdAt]
             properties:
               id: { type: string, format: uuid }
               kind: { $ref: "#/components/schemas/StaffTaskUpdateKind" }
@@ -3414,6 +3622,8 @@ components:
               toStatus: { type: string, enum: [todo, in_progress, blocked, done], nullable: true }
               fromAssigneeName: { type: string, nullable: true }
               toAssigneeName: { type: string, nullable: true }
+              fromStageName: { type: string, nullable: true, description: "The stage a move left; for a completion, block or unblock, the stage it happened at." }
+              toStageName: { type: string, nullable: true, description: The stage a move or reopen landed on. }
               comment: { type: string, nullable: true }
               createdAt: { type: string, format: date-time }
     StaffTaskEnvelope:

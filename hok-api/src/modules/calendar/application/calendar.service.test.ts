@@ -44,6 +44,9 @@ function tk(id: string, startsAt: string): CalendarTaskItem {
     assigneeName: "Meera",
     status: "todo",
     priority: "medium",
+    currentStageName: "To do",
+    currentStagePosition: 1,
+    stageCount: 3,
   };
 }
 function td(id: string, startsAt: string): CalendarTodoItem {

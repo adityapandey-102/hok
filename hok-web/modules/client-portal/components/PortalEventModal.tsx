@@ -5,7 +5,9 @@ import { Loader } from "../../../components/ui/Loader";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { publicPortalApi, type PortalEventDetail } from "../api/publicPortalApi";
-import { formatEventWhen, formatShortDate, stageSummary } from "../portalFormat";
+import { formatEventWhen, formatLongDate, formatShortDate, stageSummary } from "../portalFormat";
+import { portalAssetIcon, portalAssetLabel } from "../portalAssets";
+import { Icon } from "../../../components/ui/Icon";
 import { PortalStageTrack } from "./PortalStageTrack";
 
 /** One event with the updates the manager chose to share (FR-POR-06). Loaded when opened. */
@@ -67,6 +69,32 @@ function EventBody({ token, zone, eventId, onClose }: { token: string; zone: str
                 </li>
               ))}
             </ul>
+          )}
+
+          {event.assets && event.assets.length > 0 && (
+            <section aria-label="Shared with you" className="mt-7">
+              <h3 className="mb-3 font-serif text-[16px] text-text-primary">Shared with you</h3>
+              <ul className="flex flex-col divide-y divide-border-light rounded-app border border-border-light">
+                {event.assets.map((a) => (
+                  <li key={a.id} className="flex items-center gap-3 px-3.5 py-3">
+                    <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-app bg-accent-bg text-text-secondary">
+                      <Icon name={portalAssetIcon(a.type)} size={17} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <a href={a.url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-full items-center gap-1 text-sm font-medium break-words text-primary hover:underline">
+                        {a.title}
+                        <Icon name="external-link" size={13} className="shrink-0" />
+                      </a>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-muted">
+                        <span>{portalAssetLabel(a.type)}</span>
+                        {a.stageName && <span className="rounded-full bg-accent-bg px-2 py-0.5 font-medium text-text-secondary">{a.stageName}</span>}
+                        <span>{formatLongDate(a.createdAt, zone)}</span>
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
         </>
       )}

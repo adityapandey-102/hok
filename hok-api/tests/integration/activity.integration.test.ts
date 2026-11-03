@@ -10,6 +10,7 @@ import {
   deleteFixtureUser,
   deleteStaffTasksFor,
   deleteStageTemplates,
+  createTaskTemplateFixture,
   type FixtureUser,
 } from "./helpers";
 
@@ -39,7 +40,10 @@ async function feed(query = ""): Promise<ActivityPage> {
 }
 const summaries = (p: ActivityPage) => p.items.map((i) => i.summary);
 
+let taskTemplate: Awaited<ReturnType<typeof createTaskTemplateFixture>>;
+
 beforeAll(async () => {
+  taskTemplate = await createTaskTemplateFixture(["Brief received", "Cut", "Review"]);
   [admin, manager, editor] = await Promise.all([
     createFixtureUser("admin", `${tag} Admin`),
     createFixtureUser("social_media_manager", `${tag} Manager`),
@@ -84,17 +88,17 @@ beforeAll(async () => {
   const task = await request(app)
     .post("/api/v1/staff-tasks")
     .set("Authorization", auth.admin)
-    .send({ title: `${tag} Edit the reel`, assigneeId: editor.id, rawFilesUrl: "https://drive.example.com/raw" });
+    .send({ title: `${tag} Edit the reel`, assigneeId: editor.id, templateId: taskTemplate.id, links: [{ url: "https://drive.example.com/raw", label: "Raw files" }] });
   expect(task.status, JSON.stringify(task.body)).toBe(201);
   taskId = idOf(task, "task");
-  const tv = ((task.body as Json).task as { version: number }).version;
-  expect((await request(app).post(`/api/v1/staff-tasks/${taskId}/status`).set("Authorization", auth.editor).send({ status: "in_progress", version: tv })).status).toBe(200);
+  const created = (task.body as Json).task as { version: number; stages: { id: string }[] };
+  expect((await request(app).post(`/api/v1/staff-tasks/${taskId}/stage`).set("Authorization", auth.editor).send({ stageId: created.stages[1]!.id, version: created.version })).status).toBe(200);
 });
 
 afterAll(async () => {
   await deleteStaffTasksFor([editor.id]);
   await deleteClientsOwnedBy([manager.id]);
-  await deleteStageTemplates(templateIds);
+  await deleteStageTemplates([...templateIds, taskTemplate.id]);
   for (const u of [admin, manager, editor]) await deleteFixtureUser(u.id);
   await closeDb();
 });
@@ -119,7 +123,7 @@ describe("GET /api/v1/activity", () => {
     expect(text).toContain(`${tag} Cafe posted a comment`);
     expect(text).toContain(`${tag} Manager marked a comment from ${tag} Cafe as In progress`);
     expect(text).toContain(`${tag} Admin created the task ${tag} Edit the reel`);
-    expect(text).toContain(`${tag} Editor marked ${tag} Edit the reel as In progress`);
+    expect(text).toContain(`${tag} Editor moved ${tag} Edit the reel to the stage Cut`);
     expect(text).toContain(`${tag} Admin created the stage template ${tag} Tpl`);
     // Newest first, and the total counts at least these.
     const times = all.items.map((i) => Date.parse(i.at));
@@ -147,13 +151,14 @@ describe("GET /api/v1/activity", () => {
     }
     const tasks = summaries(await feed("kind=tasks&limit=50"));
     expect(tasks.some((s) => s.includes("Edit the reel"))).toBe(true);
-    expect(tasks.some((s) => s.includes("moved"))).toBe(false);
+    // Event stage moves are not task activity.
+    expect(tasks.some((s) => s.includes("Brand shoot"))).toBe(false);
   });
 
   it("filters by person, and a client's own comment has no person", async () => {
     const p = await feed(`actorId=${editor.id}&limit=50`);
     expect(p.items.every((i) => i.actor?.id === editor.id)).toBe(true);
-    expect(summaries(p)).toContain(`${tag} Editor marked ${tag} Edit the reel as In progress`);
+    expect(summaries(p)).toContain(`${tag} Editor moved ${tag} Edit the reel to the stage Cut`);
     expect(summaries(await feed(`actorId=${manager.id}&limit=50`))).not.toContain(`${tag} Cafe posted a comment`);
   });
 

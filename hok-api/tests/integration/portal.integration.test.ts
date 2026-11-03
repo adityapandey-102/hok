@@ -3,7 +3,7 @@ import request from "supertest";
 import { sql } from "drizzle-orm";
 import { createApp } from "../../src/app";
 import { db } from "../../src/common/database/drizzle-client";
-import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, type FixtureUser } from "./helpers";
+import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, deleteStageTemplates, type FixtureUser } from "./helpers";
 
 /**
  * M8 against the real local stack: the staff side of portal links, the public
@@ -162,6 +162,84 @@ describe("client comments end to end", () => {
   it("refuses a comment about another client's event", async () => {
     const res = await request(app).post(`/api/v1/portal/${token}/comments`).send({ body: "x", eventId: "00000000-0000-4000-8000-000000000000" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("shared assets on the portal event page (round 2)", () => {
+  let templateId: string;
+  let eventId: string;
+  let otherClientId: string;
+  let otherEventId: string;
+  let visibleId: string;
+  const created: string[] = [];
+
+  const makeAsset = async (auth: string, over: Json) => {
+    const r = await request(app).post("/api/v1/assets").set("Authorization", auth).send({ title: "x", url: "https://example.test/a", type: "photo", ...over });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    return (body(r).asset as Json).id as string;
+  };
+  const eventOf = async (t: string, id: string) => {
+    const r = await request(app).get(`/api/v1/portal/${t}/events/${id}`);
+    expect(r.status).toBe(200);
+    return body(r).event as Json & { assets: Json[] };
+  };
+
+  it("lists only assets marked visible on THIS event of THIS client, newest first, with client-safe fields", async () => {
+    const t = await request(app).post("/api/v1/stage-templates").set("Authorization", adminAuth).send({ name: `IT Portal Tpl ${Date.now()}`, stages: ["Plan", "Shoot"] });
+    templateId = ((body(t).template as Json).id as string);
+    created.push(templateId);
+    const mkEvent = async (auth: string, cid: string, title: string) => {
+      const e = await request(app).post("/api/v1/events").set("Authorization", auth).send({ clientId: cid, templateId, title, type: "shoot", startsAt: "2031-03-01T10:00:00Z", endsAt: "2031-03-01T12:00:00Z" });
+      expect(e.status, JSON.stringify(e.body)).toBe(201);
+      return body(e).event as Json & { id: string; stages: { id: string; name: string }[] };
+    };
+    const ev = await mkEvent(ownerAuth, clientId, "Portal Assets Event");
+    eventId = ev.id;
+    const sibling = await mkEvent(ownerAuth, clientId, "Portal Sibling Event");
+    const oc = await request(app).post("/api/v1/clients").set("Authorization", otherAuth).send({ businessName: "Portal Other Client" });
+    otherClientId = (body(oc).client as Json).id as string;
+    otherEventId = (await mkEvent(otherAuth, otherClientId, "Portal Other Event")).id;
+
+    // Visible, with a stage and internal fields that must never reach the client.
+    visibleId = await makeAsset(ownerAuth, {
+      clientId, eventId, title: "Final photos", url: "https://example.test/final", comment: "INTERNAL-NOTE-SECRET", tags: ["internal-tag"],
+      visibleToClient: true, eventStageId: ev.stages[1]!.id,
+    });
+    await makeAsset(ownerAuth, { clientId, eventId, title: "Newer shared", url: "https://example.test/newer", type: "video", visibleToClient: true });
+    // Not marked, on another event, on another client, and deleted: none of these may appear.
+    await makeAsset(ownerAuth, { clientId, eventId, title: "UNMARKED asset", url: "https://example.test/unmarked" });
+    await makeAsset(ownerAuth, { clientId, eventId: sibling.id, title: "SIBLING event asset", url: "https://example.test/sib", visibleToClient: true });
+    await makeAsset(otherAuth, { clientId: otherClientId, eventId: otherEventId, title: "OTHER client asset", url: "https://example.test/other", visibleToClient: true });
+    const gone = await makeAsset(ownerAuth, { clientId, eventId, title: "DELETED asset", url: "https://example.test/gone", visibleToClient: true });
+    expect((await request(app).delete(`/api/v1/assets/${gone}`).set("Authorization", ownerAuth)).status).toBe(204);
+
+    const live = await request(app).post(`/api/v1/portal-links/${clientId}`).set("Authorization", ownerAuth);
+    token = body(live).token as string;
+    const event = await eventOf(token, eventId);
+    expect(event.assets.map((a) => a.title)).toEqual(["Newer shared", "Final photos"]);
+    const final = event.assets[1]!;
+    expect(final).toMatchObject({ id: visibleId, url: "https://example.test/final", type: "photo", stageName: "Shoot" });
+    expect(Object.keys(final).sort()).toEqual(["createdAt", "id", "stageName", "title", "type", "url"]);
+    const text = JSON.stringify(body(await request(app).get(`/api/v1/portal/${token}/events/${eventId}`)));
+    for (const secret of ["INTERNAL-NOTE-SECRET", "internal-tag", "UNMARKED", "SIBLING", "OTHER client", "DELETED"]) expect(text).not.toContain(secret);
+    // The dashboard and the calendar are unchanged: no assets there.
+    expect(JSON.stringify(body(await request(app).get(`/api/v1/portal/${token}`)))).not.toContain("Final photos");
+    // Each event lists only its own shared assets.
+    expect((await eventOf(token, sibling.id)).assets.map((a) => a.title)).toEqual(["SIBLING event asset"]);
+  });
+
+  it("another client's event is a 404, and un-marking removes the asset from the page", async () => {
+    expect((await request(app).get(`/api/v1/portal/${token}/events/${otherEventId}`)).status).toBe(404);
+    const a = await request(app).get(`/api/v1/assets/${visibleId}`).set("Authorization", ownerAuth);
+    const v = (body(a).asset as Json).version as number;
+    expect((await request(app).patch(`/api/v1/assets/${visibleId}`).set("Authorization", ownerAuth).send({ visibleToClient: false, version: v })).status).toBe(200);
+    expect((await eventOf(token, eventId)).assets.map((x) => x.title)).toEqual(["Newer shared"]);
+  });
+
+  afterAll(async () => {
+    // Events and assets go with their clients (deleteClientsOwnedBy in the file's afterAll); the templates are fixtures.
+    await deleteClientsOwnedBy([other.id]);
+    await deleteStageTemplates(created);
   });
 });
 

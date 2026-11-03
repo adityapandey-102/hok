@@ -8,7 +8,7 @@ import { clients } from "../../clients/infrastructure/clients.schema";
 import { isOnTeam } from "../../clients/infrastructure/client-team.sql";
 import { eventStages, events } from "../../events/infrastructure/events.schema";
 import { personalEvents } from "../../personal-events/infrastructure/personal-events.schema";
-import { staffTasks } from "../../staff-tasks/infrastructure/staff-tasks.schema";
+import { staffTasks, taskStages } from "../../staff-tasks/infrastructure/staff-tasks.schema";
 import { todos } from "../../todos/infrastructure/todos.schema";
 // The subscribe link's hash lives on the person's profile (Users' table, ADR 0003).
 import { profiles } from "../../users/infrastructure/profile.schema";
@@ -131,9 +131,13 @@ export class DrizzleCalendarRepository implements CalendarRepositoryPort, Calend
           assigneeName: taskAssignee.fullName,
           status: staffTasks.status,
           priority: staffTasks.priority,
+          stageCount: staffTasks.stageCount,
+          currentStageName: taskStages.name,
+          currentStagePosition: taskStages.position,
         })
         .from(staffTasks)
         .innerJoin(taskAssignee, eq(taskAssignee.id, staffTasks.assigneeId))
+        .innerJoin(taskStages, eq(taskStages.id, staffTasks.currentStageId))
         .leftJoin(clients, eq(clients.id, staffTasks.clientId))
         .where(and(...c))
         .orderBy(asc(staffTasks.dueAt), asc(staffTasks.id))
@@ -154,6 +158,9 @@ export class DrizzleCalendarRepository implements CalendarRepositoryPort, Calend
           assigneeName: r.assigneeName,
           status: r.status,
           priority: r.priority,
+          currentStageName: r.currentStageName,
+          currentStagePosition: r.currentStagePosition,
+          stageCount: r.stageCount,
         }),
       );
     });

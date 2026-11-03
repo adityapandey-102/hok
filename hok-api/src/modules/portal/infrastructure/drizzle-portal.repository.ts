@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql, type SQL } from "drizzle-orm";
 import { db } from "../../../common/database/drizzle-client";
 import { NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
@@ -8,9 +8,10 @@ import { scanLowerBound } from "../../../domain";
 import { clients } from "../../clients/infrastructure/clients.schema";
 import { teamIdsOf } from "../../clients/infrastructure/client-team.sql";
 import { eventStageHistory, eventStages, events } from "../../events/infrastructure/events.schema";
+import { assets } from "../../assets/infrastructure/assets.schema";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { portalLinks } from "./portal.schema";
-import { PORTAL_UPDATES_LIMIT, type PortalEvent, type PortalEventDetail, type PortalLinkEntity } from "../domain/portal.entity";
+import { PORTAL_ASSETS_LIMIT, PORTAL_UPDATES_LIMIT, type PortalEvent, type PortalEventDetail, type PortalLinkEntity } from "../domain/portal.entity";
 import type { PortalClient } from "../domain/portal.rules";
 import type { PortalLinksRepositoryPort, PortalReadRepositoryPort } from "../application/ports/portal-repositories.port";
 import { guarded } from "../../../common/database/guarded";
@@ -166,7 +167,7 @@ export class DrizzlePortalReadRepository implements PortalReadRepositoryPort {
         .limit(1);
       if (!row) return null;
       const toStage = eventStages;
-      const [[event], updates] = await Promise.all([
+      const [[event], updates, sharedAssets] = await Promise.all([
         withStages(db, [row]),
         // FR-POR-06: only moves marked visible to the client; no staff names.
         db
@@ -176,8 +177,21 @@ export class DrizzlePortalReadRepository implements PortalReadRepositoryPort {
           .where(and(eq(eventStageHistory.eventId, eventId), eq(eventStageHistory.visibleToClient, true)))
           .orderBy(desc(eventStageHistory.createdAt), desc(eventStageHistory.id))
           .limit(PORTAL_UPDATES_LIMIT),
+        // "Shared with you": only live assets staff marked visible, on THIS client's event. Client-safe columns
+        // only -- no comment, tags, preview fields or creator. Served by assets_event_client_visible_idx.
+        db
+          .select({ id: assets.id, title: assets.title, url: assets.url, type: assets.type, stageName: eventStages.name, createdAt: assets.createdAt })
+          .from(assets)
+          .leftJoin(eventStages, eq(eventStages.id, assets.eventStageId))
+          .where(and(eq(assets.eventId, eventId), eq(assets.clientId, clientId), eq(assets.visibleToClient, true), isNull(assets.deletedAt)))
+          .orderBy(desc(assets.createdAt), desc(assets.id))
+          .limit(PORTAL_ASSETS_LIMIT),
       ]);
-      return { ...event!, updates: updates.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() })) };
+      return {
+        ...event!,
+        updates: updates.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() })),
+        assets: sharedAssets.map((a) => ({ ...a, createdAt: a.createdAt.toISOString() })),
+      };
     });
   }
 }

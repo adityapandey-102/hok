@@ -2,11 +2,21 @@ import { describe, expect, it } from "vitest";
 import { eventReminderPayload, taskDueReminderPayload, taskStatusChangedPayload, timeUntilWords, todoReminderPayload } from "./notification.messages";
 
 describe("taskStatusChangedPayload", () => {
-  it("names the status in words, not the stored code", () => {
-    const p = taskStatusChangedPayload({ taskId: "t1", title: "Edit the reel", to: "in_progress", actorName: "Meera" });
-    expect(p.title).toBe("Edit the reel: In progress");
-    expect(p.body).toBe("Meera moved this task to In progress.");
-    expect(taskStatusChangedPayload({ taskId: "t1", title: "X", to: "done" }).body).toBe("This task moved to Done.");
+  it("says what happened to the task, in words", () => {
+    const moved = taskStatusChangedPayload({ taskId: "t1", title: "Edit the reel", action: "stage", stageName: "Rough cut", actorName: "Meera" });
+    expect(moved.title).toBe("Moved Edit the reel to Rough cut");
+    expect(moved.body).toBe("Moved to Rough cut by Meera.");
+    expect(moved.data).toEqual({ taskId: "t1", action: "stage", stageName: "Rough cut" });
+    expect(taskStatusChangedPayload({ taskId: "t1", title: "X", action: "completed" }).title).toBe("Completed X");
+    expect(taskStatusChangedPayload({ taskId: "t1", title: "X", action: "unblocked" }).title).toBe("Unblocked X");
+    expect(taskStatusChangedPayload({ taskId: "t1", title: "X", action: "reopened", stageName: "Review" }).body).toBe("Back at Review.");
+  });
+
+  it("carries the block reason in the title, body and data", () => {
+    const p = taskStatusChangedPayload({ taskId: "t1", title: "X", action: "blocked", reason: "Waiting for footage" });
+    expect(p.title).toBe("Blocked X: Waiting for footage");
+    expect(p.body).toBe("Waiting for footage");
+    expect(p.data?.reason).toBe("Waiting for footage");
   });
 });
 

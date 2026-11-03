@@ -13,7 +13,7 @@ function tooltip(item: CalendarItem, zone: string): string {
     if (item.state !== "active") lines.push(item.state);
   } else if (item.kind === "task") {
     lines.push(
-      `Task · ${item.taskStatus ? STAFF_TASK_STATUS_LABELS[item.taskStatus] : ""}${item.taskPriority ? ` · ${STAFF_TASK_PRIORITY_LABELS[item.taskPriority]}` : ""}${item.assigneeName ? ` · ${item.assigneeName}` : ""}`,
+      `Task · ${item.taskStatus ? STAFF_TASK_STATUS_LABELS[item.taskStatus] : ""}${item.stageName ? ` · ${item.stageName}${item.taskStageNumber && item.taskStageCount ? ` ${item.taskStageNumber}/${item.taskStageCount}` : ""}` : ""}${item.taskPriority ? ` · ${STAFF_TASK_PRIORITY_LABELS[item.taskPriority]}` : ""}${item.assigneeName ? ` · ${item.assigneeName}` : ""}`,
     );
   } else {
     lines.push(`To-do${item.urgency ? ` · ${TODO_URGENCY_LABELS[item.urgency]}` : ""}${item.done ? " · done" : ""}`);
@@ -47,6 +47,7 @@ export function CalendarChip({
     <>
       {!compact && <span className="mr-1 font-semibold">{formatTimeInZone(item.startsAt, zone)}</span>}
       <span>{item.title}</span>
+      {item.kind === "task" && item.stageName && <span className="ml-1 text-text-muted" data-testid="chip-stage">· {item.stageName}</span>}
     </>
   );
   if (item.kind === "personal" || item.kind === "todo") {

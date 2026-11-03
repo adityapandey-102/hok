@@ -6,7 +6,8 @@ import { guarded as guardedQuery } from "../../../common/database/guarded";
 import { ConflictError, NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { stageTemplateStages, stageTemplates } from "./stage-templates.schema";
-import type { StageTemplateEntity, TemplateStage } from "../domain/stage-template.entity";
+import type { Role } from "../../../domain";
+import type { StageTemplateEntity, TemplateKind, TemplateStage } from "../domain/stage-template.entity";
 import type {
   StageTemplateDecision,
   StageTemplateListFilters,
@@ -42,6 +43,8 @@ function toEntity(row: TemplateRow, stages: TemplateStage[]): StageTemplateEntit
     id: row.id,
     name: row.name,
     active: row.active,
+    kind: row.kind,
+    roles: row.roles,
     stages,
     version: row.version,
     createdAt: row.createdAt.toISOString(),
@@ -65,6 +68,11 @@ export class DrizzleStageTemplatesRepository implements StageTemplatesRepository
   private conditions(filters: StageTemplateListFilters): SQL | undefined {
     const c: SQL[] = [];
     if (filters.active !== undefined) c.push(eq(stageTemplates.active, filters.active));
+    if (filters.kind) c.push(eq(stageTemplates.kind, filters.kind));
+    // A role filter is about task templates: those offered for the role, or for any role (empty list).
+    if (filters.role) {
+      c.push(eq(stageTemplates.kind, "task"), sql`(${stageTemplates.roles} = '{}' or ${stageTemplates.roles} @> array[${filters.role}]::text[])`);
+    }
     if (filters.search) c.push(ilike(stageTemplates.name, containsPattern(filters.search)));
     return c.length ? and(...c) : undefined;
   }
@@ -94,10 +102,10 @@ export class DrizzleStageTemplatesRepository implements StageTemplatesRepository
     return guarded("load the stage template", () => selectTemplate(db, id));
   }
 
-  create(record: { name: string; stages: string[]; createdBy: string }) {
+  create(record: { name: string; stages: string[]; kind: TemplateKind; roles: Role[]; createdBy: string }) {
     return guarded("create the stage template", async () => {
       const id = await db.transaction(async (tx) => {
-        const [row] = await tx.insert(stageTemplates).values({ name: record.name, createdBy: record.createdBy }).returning({ id: stageTemplates.id });
+        const [row] = await tx.insert(stageTemplates).values({ name: record.name, kind: record.kind, roles: record.roles, createdBy: record.createdBy }).returning({ id: stageTemplates.id });
         await insertStages(tx, row!.id, record.stages);
         return row!.id;
       });
@@ -111,13 +119,14 @@ export class DrizzleStageTemplatesRepository implements StageTemplatesRepository
         const current = await selectTemplate(tx, id, true);
         if (!current) throw new NotFoundError("Stage template not found", ERROR_CODES.STAGE_TEMPLATE_NOT_FOUND);
         const changes = decide(current);
-        if (changes.name === undefined && changes.stages === undefined && changes.active === undefined) return;
+        if (changes.name === undefined && changes.stages === undefined && changes.active === undefined && changes.roles === undefined) return;
 
         await tx
           .update(stageTemplates)
           .set({
             ...(changes.name !== undefined ? { name: changes.name } : {}),
             ...(changes.active !== undefined ? { active: changes.active } : {}),
+            ...(changes.roles !== undefined ? { roles: changes.roles } : {}),
             version: sql`${stageTemplates.version} + 1`,
           })
           .where(eq(stageTemplates.id, id));

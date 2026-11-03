@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../../../common/errors/app-error";
-import { assertAssetVersion, assertAssetVisible, assertClientUsable, assertEventLinkable, assertRange, normalizeTags, tagsWithinLimits } from "./asset.rules";
+import {
+  assertAssetVersion,
+  assertAssetVisible,
+  assertClientUsable,
+  assertEventLinkable,
+  assertRange,
+  normalizeTags,
+  resolveClientVisibility,
+  tagsWithinLimits,
+} from "./asset.rules";
 
 const code = (fn: () => unknown) => {
   try {
@@ -47,12 +56,42 @@ describe("version, event link and range", () => {
     expect(code(() => assertAssetVersion(2, undefined))).toBe("none");
   });
   it("an event must exist and belong to the same client", () => {
-    expect(code(() => assertEventLinkable("c1", { id: "e", clientId: "c1" }))).toBe("none");
-    expect(code(() => assertEventLinkable("c1", { id: "e", clientId: "c2" }))).toBe("400:ASSET_EVENT_INVALID");
+    expect(code(() => assertEventLinkable("c1", { id: "e", clientId: "c1", stageIds: [] }))).toBe("none");
+    expect(code(() => assertEventLinkable("c1", { id: "e", clientId: "c2", stageIds: [] }))).toBe("400:ASSET_EVENT_INVALID");
     expect(code(() => assertEventLinkable("c1", null))).toBe("400:ASSET_EVENT_INVALID");
   });
   it("from after to is 400", () => {
     expect(code(() => assertRange(new Date(2), new Date(1)))).toBe("400:ASSET_RANGE_INVALID");
     expect(code(() => assertRange(new Date(1), new Date(2)))).toBe("none");
+  });
+});
+
+describe("resolveClientVisibility", () => {
+  const none = { eventId: null, visibleToClient: false, eventStageId: null };
+  const onE1 = { eventId: "e1", visibleToClient: true, eventStageId: "s1" };
+  const e1 = { id: "e1", stageIds: ["s1", "s2"] };
+  const e2 = { id: "e2", stageIds: ["t1"] };
+
+  it("visible to the client needs an event (400 ASSET_CLIENT_VISIBLE_NEEDS_EVENT)", () => {
+    expect(code(() => resolveClientVisibility({ before: none, eventId: null, sent: { visibleToClient: true }, event: null }))).toBe("400:ASSET_CLIENT_VISIBLE_NEEDS_EVENT");
+    expect(resolveClientVisibility({ before: none, eventId: "e1", sent: { visibleToClient: true }, event: e1 })).toEqual({ visibleToClient: true, eventStageId: null });
+  });
+
+  it("a stage must belong to the final event (400 ASSET_STAGE_INVALID)", () => {
+    expect(code(() => resolveClientVisibility({ before: none, eventId: "e1", sent: { eventStageId: "t1" }, event: e1 }))).toBe("400:ASSET_STAGE_INVALID");
+    expect(code(() => resolveClientVisibility({ before: none, eventId: null, sent: { eventStageId: "s1" }, event: null }))).toBe("400:ASSET_STAGE_INVALID");
+    expect(resolveClientVisibility({ before: none, eventId: "e1", sent: { eventStageId: "s2" }, event: e1 }).eventStageId).toBe("s2");
+  });
+
+  it("changing the event clears the stage; losing it clears the visibility too", () => {
+    expect(resolveClientVisibility({ before: onE1, eventId: "e2", sent: {}, event: e2 })).toEqual({ visibleToClient: true, eventStageId: null });
+    expect(resolveClientVisibility({ before: onE1, eventId: "e2", sent: { eventStageId: "t1" }, event: e2 })).toEqual({ visibleToClient: true, eventStageId: "t1" });
+    expect(resolveClientVisibility({ before: onE1, eventId: null, sent: {}, event: null })).toEqual({ visibleToClient: false, eventStageId: null });
+  });
+
+  it("keeps what it had when nothing is sent", () => {
+    expect(resolveClientVisibility({ before: onE1, eventId: "e1", sent: {}, event: e1 })).toEqual({ visibleToClient: true, eventStageId: "s1" });
+    // A flag change alone needs no event read: the stage it already had stays.
+    expect(resolveClientVisibility({ before: onE1, eventId: "e1", sent: { visibleToClient: false }, event: null })).toEqual({ visibleToClient: false, eventStageId: "s1" });
   });
 });

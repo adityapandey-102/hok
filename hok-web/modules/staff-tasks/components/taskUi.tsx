@@ -4,6 +4,7 @@ import {
   STAFF_TASK_STATUS_LABELS,
   formatInZone,
   isTaskOverdue,
+  stageProgressLabel,
   type StaffTaskPriority,
   type StaffTaskStatus,
 } from "../../../lib/domain";
@@ -38,6 +39,15 @@ export function PriorityPill({ priority }: { priority: StaffTaskPriority }) {
   return <StatusPill label={STAFF_TASK_PRIORITY_LABELS[priority]} tone={PRIORITY_TONES[priority]} />;
 }
 
+/** Where the task is: "Rough cut · 2/5". Shown next to the status pill on lists and cards. */
+export function StageChip({ stage, count }: { stage: { name: string; position: number }; count: number }) {
+  return (
+    <span title={`Stage ${stage.position} of ${count}`} className="inline-flex max-w-[16rem] items-center rounded-full bg-accent-bg px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-text-secondary ring-1 ring-border ring-inset">
+      <span className="truncate">{stageProgressLabel(stage, count)}</span>
+    </span>
+  );
+}
+
 /** "Due Tue, 20 Oct 2026, 6:00 pm" in the viewer's zone; red with an "Overdue" pill when past due and not done. */
 export function DueLabel({ dueAt, status, zone }: { dueAt: string | null; status: StaffTaskStatus; zone: string }) {
   if (!dueAt) return <span className="text-xs text-text-muted">No due date</span>;
@@ -66,10 +76,26 @@ export function describeTaskError(err: unknown, fallback: string): string {
       return "Someone else changed this task. Reload to see the latest version.";
     case "STAFF_TASK_DONE":
       return "This task is done. Only the person who gave it (or the Admin) can reopen it.";
-    case "STAFF_TASK_STATUS_UNCHANGED":
-      return "The task already has that status.";
-    case "STAFF_TASK_EDITOR_FIELDS_INVALID":
-      return "Raw files link, reference link and script are only for editor tasks.";
+    case "STAFF_TASK_TEMPLATE_INVALID":
+      return "That template isn't available for this person. Pick another.";
+    case "STAFF_TASK_NOT_AT_LAST_STAGE":
+      return "A task can only be completed from its last stage.";
+    case "STAFF_TASK_STAGE_INVALID":
+      return "That stage doesn't belong to this task.";
+    case "STAFF_TASK_STAGE_UNCHANGED":
+      return "The task is already at that stage.";
+    case "STAFF_TASK_ALREADY_BLOCKED":
+      return "The task is already marked blocked.";
+    case "STAFF_TASK_NOT_BLOCKED":
+      return "The task isn't blocked.";
+    case "STAFF_TASK_LINKS_LIMIT":
+      return "A task can hold at most 50 links.";
+    case "STAFF_TASK_LINK_ALREADY_SHARED":
+      return "That link was already shared with the client.";
+    case "STAFF_TASK_NO_EVENT":
+      return "Link the task to an event first: the client sees shared work on its event.";
+    case "STAFF_TASK_LINK_NOT_FOUND":
+      return "That link no longer exists.";
     case "STAFF_TASK_ASSIGNEE_INVALID":
       return "Choose an active staff member.";
     case "STAFF_TASK_EVENT_INVALID":

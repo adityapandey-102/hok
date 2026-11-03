@@ -13,6 +13,8 @@ export interface AssetListFilters {
   search?: string;
   type?: AssetEntity["type"];
   tag?: string;
+  /** Only assets the client can see on the portal. */
+  visibleToClient?: boolean;
   from?: Date;
   to?: Date;
 }

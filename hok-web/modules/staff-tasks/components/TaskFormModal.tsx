@@ -4,15 +4,18 @@ import { useId, useState } from "react";
 import {
   STAFF_TASK_PRIORITIES,
   STAFF_TASK_PRIORITY_LABELS,
+  TASK_BRIEF_LINKS_MAX_ON_CREATE,
   buildStaffTaskPayload,
-  isEditorRole,
   isoToZonedInput,
   type Role,
   staffTaskFormSchema,
+  type StageTemplate,
   type StaffTask,
   type StaffTaskFormValues,
+  type TaskStage,
 } from "../../../lib/domain";
 import { teamMembersApi, type TeamMember } from "../../team-members/api/teamMembersApi";
+import { templatesApi } from "../../stage-templates/api/templatesApi";
 import { eventsApi } from "../../events/api/eventsApi";
 import { clientsApi } from "../../clients/api/clientsApi";
 import { staffTasksApi } from "../api/staffTasksApi";
@@ -28,24 +31,43 @@ function initialValues(task: StaffTask | undefined, zone: string, defaultDue: st
   return {
     title: task?.title ?? "",
     description: task?.description ?? "",
+    brief: task?.brief ?? "",
     assigneeId: task?.assigneeId ?? "",
+    templateId: "",
     priority: task?.priority ?? "medium",
     due: task ? (task.dueAt ? isoToZonedInput(task.dueAt, zone) : "") : defaultDue,
     clientId: task?.clientId ?? "",
     eventId: task?.eventId ?? "",
-    rawFilesUrl: task?.rawFilesUrl ?? "",
-    referenceUrl: task?.referenceUrl ?? "",
-    script: task?.script ?? "",
-    referenceLinks: (task?.referenceLinks ?? []).map((l) => l.url).join("\n"),
+    links: [],
   };
 }
 
+/** The stage names as a numbered chain (a preview of what the task will go through). */
+function StagePreview({ stages, label }: { stages: Pick<TaskStage, "name">[]; label: string }) {
+  return (
+    <ol aria-label={label} className="mt-2 flex flex-wrap items-center gap-1.5">
+      {stages.map((s, i) => (
+        <li key={i} className="flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-bg px-2.5 py-1 text-xs text-text-secondary ring-1 ring-border ring-inset">
+            <span className="figure text-[10.5px] text-text-muted">{i + 1}</span>
+            {s.name}
+          </span>
+          {i < stages.length - 1 && <Icon name="chevron-right" size={12} className="text-border" />}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /**
- * The create/edit form (FR-TSK-01/02/05/10) in a modal, for the Admin and the
+ * The create/edit form (FR-TSK-01/02/05) in a modal, for the Admin and the
  * client managers. The assignee picker lists only the people the caller may
- * assign to (the role ladder, decided by the API). Picking an Editor shows the
- * editor brief (raw files link, reference link and script, all optional);
- * moving a task away from an editor warns that the brief will be cleared. The
+ * assign to (the role ladder, decided by the API). On create the template
+ * comes next, required: it lists the active task templates offered for the
+ * assignee's role and previews its stages. The task copies those stages and
+ * they stay fixed, so an edit shows the template name and stages read-only.
+ * Every task has a brief (script or instructions) and, on create, a short
+ * list of brief links; after that, links are managed on the task page. The
  * due date is typed in the creator's own time zone; `defaultDue` prefills a new
  * task ("YYYY-MM-DDTHH:mm", e.g. 17:00 on the calendar day it was added from).
  * The parent mounts it only while open, so each opening starts from fresh state.
@@ -74,16 +96,17 @@ export function TaskFormModal({
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof StaffTaskFormValues>(k: K, value: StaffTaskFormValues[K]) => setV((s) => ({ ...s, [k]: value }));
 
-  // The assignee picker searches the API; remember the picked person's role (it decides whether the editor brief shows).
+  // The assignee picker searches the API; the picked person's role decides which task templates are offered.
   const [pickedRole, setPickedRole] = useState<Role | null>(task?.assigneeRole ?? null);
   const role = v.assigneeId ? pickedRole : null;
-  const editor = isEditorRole(role);
-  const losingBrief = editing && isEditorRole(task!.assigneeRole) && !!role && !editor;
+  const [pickedTemplate, setPickedTemplate] = useState<StageTemplate | null>(null);
+
+  const setLink = (i: number, patch: Partial<{ url: string; label: string }>) => set("links", v.links.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-    const parsed = staffTaskFormSchema.safeParse(v);
+    const parsed = staffTaskFormSchema(!editing).safeParse(v);
     if (!parsed.success) {
       const next: Record<string, string> = {};
       for (const issue of parsed.error.issues) next[String(issue.path[0])] ??= issue.message;
@@ -93,7 +116,7 @@ export function TaskFormModal({
     setErrors({});
     setSaving(true);
     try {
-      const payload = buildStaffTaskPayload(v, role, zone, editing);
+      const payload = buildStaffTaskPayload(v, zone, editing);
       const { task: saved } = editing
         ? await staffTasksApi.update(task!.id, { ...payload, version: task!.version })
         : await staffTasksApi.create(payload);
@@ -118,14 +141,6 @@ export function TaskFormModal({
         </div>
 
         <div className="grid min-h-0 grid-cols-1 gap-4 overflow-y-auto px-5 py-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <FieldLabel required htmlFor="tf-title">
-              Title
-            </FieldLabel>
-            <Input id="tf-title" value={v.title} onChange={(e) => set("title", e.target.value)} maxLength={160} />
-            <FieldError>{errors.title}</FieldError>
-          </div>
-
           <div>
             <FieldLabel required htmlFor="tf-assignee">
               Assign to
@@ -137,14 +152,85 @@ export function TaskFormModal({
               selectedLabel={task?.assigneeName}
               load={(q) => teamMembersApi.searchOptions(q, { assignable: true })}
               onChange={(id, item) => {
+                const nextRole = item?.data?.role ?? null;
+                // A template offered for the old role may not be offered for the new one: ask again.
+                if (!editing && nextRole !== pickedRole) {
+                  set("templateId", "");
+                  setPickedTemplate(null);
+                }
                 set("assigneeId", id ?? "");
-                setPickedRole(item?.data?.role ?? null);
+                setPickedRole(nextRole);
               }}
             />
             <FieldError>{errors.assigneeId}</FieldError>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {editing ? (
+            <div>
+              <div className="mb-1.5 text-[13px] font-medium text-text-secondary">Template</div>
+              <p className="text-sm text-text-primary">{task!.templateName}</p>
+              <p className="text-xs text-text-muted">The stages are fixed once a task is created.</p>
+            </div>
+          ) : (
+            <div>
+              <FieldLabel required htmlFor="tf-template">
+                Template
+              </FieldLabel>
+              <SearchSelect<StageTemplate>
+                id="tf-template"
+                placeholder={role ? "Search task templates…" : "Pick who it’s for first"}
+                emptyText="No task template for this role"
+                value={v.templateId || null}
+                disabled={!role}
+                loadKey={role ?? ""}
+                load={(q) => (role ? templatesApi.searchTaskOptions(role, q) : Promise.resolve([]))}
+                onChange={(id, item) => {
+                  set("templateId", id ?? "");
+                  setPickedTemplate(item?.data ?? null);
+                }}
+              />
+              <FieldError>{errors.templateId}</FieldError>
+            </div>
+          )}
+
+          {editing ? (
+            <div className="sm:col-span-2">
+              <StagePreview stages={task!.stages} label="Task stages" />
+            </div>
+          ) : (
+            pickedTemplate && (
+              <div className="-mt-2 sm:col-span-2">
+                <StagePreview stages={pickedTemplate.stages} label="Stages of the chosen template" />
+              </div>
+            )
+          )}
+
+          <div className="sm:col-span-2">
+            <FieldLabel required htmlFor="tf-title">
+              Title
+            </FieldLabel>
+            <Input id="tf-title" value={v.title} onChange={(e) => set("title", e.target.value)} maxLength={160} />
+            <FieldError>{errors.title}</FieldError>
+          </div>
+
+          <div className="sm:col-span-2">
+            <FieldLabel htmlFor="tf-description">Description</FieldLabel>
+            <Textarea id="tf-description" rows={3} value={v.description} onChange={(e) => set("description", e.target.value)} />
+            <FieldError>{errors.description}</FieldError>
+          </div>
+
+          <div className="sm:col-span-2">
+            <FieldLabel htmlFor="tf-brief">Brief</FieldLabel>
+            <Textarea id="tf-brief" rows={5} placeholder="The script or instructions" value={v.brief} onChange={(e) => set("brief", e.target.value)} />
+            <FieldError>{errors.brief}</FieldError>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:col-span-2">
+            <div>
+              <FieldLabel htmlFor="tf-due">Due ({zone})</FieldLabel>
+              <Input id="tf-due" type="datetime-local" value={v.due} onChange={(e) => set("due", e.target.value)} />
+              <FieldError>{errors.due}</FieldError>
+            </div>
             <div>
               <FieldLabel htmlFor="tf-priority">Priority</FieldLabel>
               <Select id="tf-priority" value={v.priority} onChange={(e) => set("priority", e.target.value as StaffTaskFormValues["priority"])}>
@@ -155,45 +241,7 @@ export function TaskFormModal({
                 ))}
               </Select>
             </div>
-            <div>
-              <FieldLabel htmlFor="tf-due">Due ({zone})</FieldLabel>
-              <Input id="tf-due" type="datetime-local" value={v.due} onChange={(e) => set("due", e.target.value)} />
-              <FieldError>{errors.due}</FieldError>
-            </div>
           </div>
-
-          <div className="sm:col-span-2">
-            <FieldLabel htmlFor="tf-description">Description</FieldLabel>
-            <Textarea id="tf-description" rows={3} value={v.description} onChange={(e) => set("description", e.target.value)} />
-            <FieldError>{errors.description}</FieldError>
-          </div>
-
-          {losingBrief && (
-            <div role="alert" className="rounded-app border border-warning-text/30 bg-warning-bg p-3 text-sm text-warning-text sm:col-span-2">
-              The new assignee isn&apos;t an editor: the raw files link, reference link and script will be removed when you save.
-            </div>
-          )}
-
-          {editor && (
-            <fieldset className="grid grid-cols-1 gap-4 rounded-app border border-border bg-accent-bg p-4 sm:col-span-2 sm:grid-cols-2">
-              <legend className="px-1 text-xs font-semibold text-text-secondary">Editor brief</legend>
-              <div>
-                <FieldLabel htmlFor="tf-raw">Raw files link (Google Drive)</FieldLabel>
-                <Input id="tf-raw" type="url" placeholder="https://drive.google.com/…" value={v.rawFilesUrl} onChange={(e) => set("rawFilesUrl", e.target.value)} />
-                <FieldError>{errors.rawFilesUrl}</FieldError>
-              </div>
-              <div>
-                <FieldLabel htmlFor="tf-ref">Reference edit link</FieldLabel>
-                <Input id="tf-ref" type="url" placeholder="An example of the style you want" value={v.referenceUrl} onChange={(e) => set("referenceUrl", e.target.value)} />
-                <FieldError>{errors.referenceUrl}</FieldError>
-              </div>
-              <div className="sm:col-span-2">
-                <FieldLabel htmlFor="tf-script">Script</FieldLabel>
-                <Textarea id="tf-script" rows={5} value={v.script} onChange={(e) => set("script", e.target.value)} />
-                <FieldError>{errors.script}</FieldError>
-              </div>
-            </fieldset>
-          )}
 
           <div>
             <FieldLabel htmlFor="tf-client">Client (optional)</FieldLabel>
@@ -227,11 +275,43 @@ export function TaskFormModal({
             />
           </div>
 
-          <div className="sm:col-span-2">
-            <FieldLabel htmlFor="tf-links">Reference links (one per line)</FieldLabel>
-            <Textarea id="tf-links" rows={2} placeholder="https://…" value={v.referenceLinks} onChange={(e) => set("referenceLinks", e.target.value)} />
-            <FieldError>{errors.referenceLinks}</FieldError>
-          </div>
+          {editing ? (
+            <p className="text-xs text-text-muted sm:col-span-2">Add or remove links on the task page.</p>
+          ) : (
+            <fieldset className="sm:col-span-2">
+              <legend className="mb-1.5 text-[13px] font-medium text-text-secondary">Brief links (optional)</legend>
+              <p className="mb-2 text-xs text-text-muted">Raw files, a reference edit, a style guide. Paste the address and, if you like, name it.</p>
+              <ul className="flex flex-col gap-2">
+                {v.links.map((l, i) => (
+                  <li key={i} className="grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1.4fr_1fr_auto]">
+                    <Input
+                      type="url"
+                      inputMode="url"
+                      aria-label={`Link ${i + 1} address`}
+                      placeholder="https://drive.google.com/…"
+                      className="col-span-2 sm:col-span-1"
+                      value={l.url}
+                      onChange={(e) => setLink(i, { url: e.target.value })}
+                    />
+                    <Input aria-label={`Link ${i + 1} label`} placeholder="Label (optional)" maxLength={120} value={l.label} onChange={(e) => setLink(i, { label: e.target.value })} />
+                    <Button type="button" variant="ghost" className="px-2.5" aria-label={`Remove link ${i + 1}`} onClick={() => set("links", v.links.filter((_, j) => j !== i))}>
+                      <Icon name="x" size={14} />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-2"
+                disabled={v.links.length >= TASK_BRIEF_LINKS_MAX_ON_CREATE}
+                onClick={() => set("links", [...v.links, { url: "", label: "" }])}
+              >
+                <Icon name="plus" size={14} /> Add link
+              </Button>
+              <FieldError>{errors.links}</FieldError>
+            </fieldset>
+          )}
         </div>
 
         <div className="flex flex-col-reverse gap-2 border-t border-border-light px-5 py-4 sm:flex-row sm:items-center sm:justify-end">

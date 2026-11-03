@@ -4,7 +4,7 @@
 |---|---|
 | **Version** | 0.4 — team feedback round 1: task ladder, calendar for everyone, day pop-up, My to-dos (0.3: portfolio website + needleye design system) |
 | **Date** | 2026-11-03 (0.3: 2026-10-13) |
-| **Changes from 0.3** | Admin and managers assign tasks down a role ladder (FR-TSK-01/05); everyone sees tasks they're assigned, created, or (managers) on their clients; calendar for every role with tasks and to-dos, counts per day and a day pop-up (FR-CAL-09/10); private My to-dos with urgency reminders (§5.14); editor raw-files link no longer required. Plan: [PLAN-team-feedback-2026-11.md](PLAN-team-feedback-2026-11.md) |
+| **Changes from 0.3** | Admin and managers assign tasks down a role ladder (FR-TSK-01/05); everyone sees tasks they're assigned, created, or (managers) on their clients; calendar for every role with tasks and to-dos, counts per day and a day pop-up (FR-CAL-09/10); private My to-dos with urgency reminders (§5.14); editor raw-files link no longer required. **Round 2 (2026-11-04):** task templates and stages (FR-TSK-03/04/12), Links on every task (FR-TSK-10), "Show to client" assets in the portal (FR-AST-07, FR-POR-10). Plan: [PLAN-team-feedback-2026-11.md](PLAN-team-feedback-2026-11.md) |
 | **Status** | Requirements agreed in principle; architecture draft in [ARCHITECTURE.md](ARCHITECTURE.md) |
 | **Changes from 0.1** | Open questions answered (§10); Marketing Agent → tasks only; stage templates; editor task fields; multiple time zones; plain portal branding; assignee closes own task; client portal moved into Phase 1 |
 
@@ -133,6 +133,7 @@ An **event** is a client-related activity such as a social media shoot, campaign
 | ID | Requirement |
 |---|---|
 | FR-EVT-01 | **Admin** manages **stage templates**: a template has a name (e.g. "Photo Shoot", "Reel Production", "Campaign Launch") and an ordered list of stages (e.g. `Planned → Pre-production → Shoot → Editing → Client Review → Completed`). Admin can create, edit, reorder stages, and deactivate templates. |
+| FR-EVT-01b | *(v0.4)* Templates have a **kind**: Event or Task. Task templates can be limited to assignee roles (empty = any role). Events only use event templates; tasks only task templates. |
 | FR-EVT-02 | When creating an event, the Client Manager **selects a stage template**. The event uses that template's stages **as-is** — managers cannot add/remove/rename stages on an event. |
 | FR-EVT-03 | Editing a template later does **not** change events already created from it (each event keeps the stages it started with). |
 | FR-EVT-04 | Every event can additionally be marked **Cancelled** or **Postponed** regardless of template. |
@@ -168,7 +169,7 @@ Purpose: never forget **where** content lives. The platform stores **links**, no
 | FR-AST-04 | Asset list per client with **search** (title, comment, tag) and **filter** (type, tag, event, date). |
 | FR-AST-05 | Clicking an asset opens the link in a new tab; a "copy link" button is available. |
 | FR-AST-06 | Assets can be edited and deleted (soft-delete). |
-| FR-AST-07 | Assets are **internal only** — never shown on the client portal in v1. |
+| FR-AST-07 | *(v0.4)* Assets are internal by default. An asset linked to an event can be marked **"Show to client"** (optionally tied to one of the event's stages); only marked assets appear in the portal (FR-POR-10). |
 | FR-AST-08 | *(Phase 2)* Show a link preview (thumbnail / page title) when available. |
 
 ### 5.6 Calendars (CAL)
@@ -198,9 +199,10 @@ A read-mostly dashboard for the **client**, opened via a generated link.
 | FR-POR-04 | Portal shows the client's **dashboard**: business name/logo, the **current/active event and its stage** (visual progress tracker), **upcoming events**, and recent completed events. |
 | FR-POR-05 | Portal shows the client's **calendar** (read-only) in the **client's time zone**. |
 | FR-POR-06 | The client sees stage history notes that were marked "visible to client" (FR-EVT-06). |
-| FR-POR-07 | The client **cannot** see internal tasks, internal notes, asset links, other clients, or staff data. |
+| FR-POR-07 | The client **cannot** see internal tasks, internal notes, asset links, other clients, or staff data. *(v0.4: except assets marked "Show to client", FR-POR-10.)* |
 | FR-POR-08 | Plain, neutral design — no firm or per-client branding beyond showing the client's own name/logo. |
 | FR-POR-09 | Portal must be mobile-friendly (clients will mostly open it on phones). |
+| FR-POR-10 | *(v0.4)* The portal's event page lists **"Shared with you"**: that event's assets marked "Show to client" (title, type, stage, date, link). No internal comment, tags or staff names. |
 
 ### 5.8 Client Comments / Feedback (CMT)
 
@@ -223,14 +225,15 @@ Tasks the **Admin** assigns to staff — the **only** module available to Market
 |---|---|
 | FR-TSK-01 | *(v0.4)* The **Admin and the client managers** (SMM, MM, PM) create tasks, each with **exactly one** assignee, **only downwards**: Admin (incl. Owner) → managers and task-only staff; managers → task-only staff. No same-level or upward assignment. A manager can link only clients on their team. *(Before v0.4: Admin only.)* |
 | FR-TSK-02 | Common fields: title, description, assignee, due date, priority, optional related client/event, optional reference links, status. |
-| FR-TSK-03 | Statuses: **To Do → In Progress → Done**, plus **Blocked**. |
-| FR-TSK-04 | The **assignee** updates the status — **including marking it Done** — and can add a comment with each update. All updates form a timeline on the task. |
+| FR-TSK-03 | *(v0.4)* Every task is created from an Admin-made **task template** and moves through its stages (forward or back) like an event. Status follows the stage: first stage = To Do, later stages = In Progress, completed past the last stage = Done. **Blocked** is a flag with a required reason, raised by the assignee or Admin. |
+| FR-TSK-04 | *(v0.4)* The assignee, the creator or the Admin moves the task between stages and completes it, with an optional comment. All moves form a timeline on the task. |
 | FR-TSK-05 | The Admin, or the task's **creator** (v0.4), can reopen a Done task, edit, reassign (down the ladder) or delete it. |
 | FR-TSK-06 | The Admin, the creator and the assignee can comment on the task at any time (discussion thread). Managers who see a task only through their client's team have read-only access. |
 | FR-TSK-07 | Assignee is notified when a task is assigned; the task's creator is notified when the assignee changes the status or comments. |
 | FR-TSK-08 | Assignee sees "My Tasks" (filter: status, priority, due date; overdue highlighted). |
 | FR-TSK-09 | Admin sees all tasks, filterable by assignee, role, status, due date. Board (Kanban) and list views. *(v0.4)* Managers see tasks assigned to them, created by them and linked to their clients, with filters All / Assigned to me / I assigned / My clients. |
-| FR-TSK-10 | **Editor tasks** additionally carry: **Raw files link** (Google Drive), **Reference edit link** (example of the desired style), and **Script** (text). These fields appear when the assignee is an Editor. *(v0.4: none of them is required any more; round 2 replaces them with a Links area on every task.)* |
+| FR-TSK-10 | *(v0.4)* Every task has a **Brief** (text, for every role) and a **Links** area: **Brief and inputs** (added by the creator or Admin) and **Delivered work** (added by the assignee or Admin), each optionally tied to a stage. The old editor-only fields (raw files, reference edit, script) were moved into these. A delivered link can be **shared with the client** in one step (Admin or a manager on the client's team; the task must be linked to an event): it becomes a "Show to client" asset. |
+| FR-TSK-12 | *(v0.4)* A task's stages are fixed when it is created (editing the template later doesn't change them). |
 | FR-TSK-11 | *(Phase 2)* Due-date reminder: notify the assignee **2 hours before** the task is due. |
 
 ### 5.10 Notifications (NTF)

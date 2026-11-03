@@ -16,6 +16,7 @@ import {
   deleteFixtureUser,
   deleteStaffTasksFor,
   deleteStageTemplates,
+  createTaskTemplateFixture,
   type FixtureUser,
 } from "./helpers";
 
@@ -57,7 +58,10 @@ async function createEvent(title: string, startMs: number): Promise<string> {
   return ((res.body as Json).event as Json).id as string;
 }
 
+let taskTemplate: Awaited<ReturnType<typeof createTaskTemplateFixture>>;
+
 beforeAll(async () => {
+  taskTemplate = await createTaskTemplateFixture(["Brief received", "Cut", "Review"]);
   [admin, owner, editor] = await Promise.all([
     createFixtureUser("admin", "Remind Admin"),
     createFixtureUser("social_media_manager", "Remind Owner"),
@@ -79,7 +83,7 @@ beforeAll(async () => {
   const task = await request(app)
     .post("/api/v1/staff-tasks")
     .set("Authorization", adminAuth)
-    .send({ title: "Remind task", assigneeId: editor.id, dueAt: iso(now + 90 * 60_000), rawFilesUrl: "https://drive.example.com/raw" });
+    .send({ title: "Remind task", assigneeId: editor.id, templateId: taskTemplate.id, dueAt: iso(now + 90 * 60_000) });
   expect(task.status).toBe(201);
   ids.task = ((task.body as Json).task as Json).id as string;
 });
@@ -87,7 +91,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await deleteStaffTasksFor([editor.id]);
   await deleteClientsOwnedBy([owner.id]);
-  await deleteStageTemplates([templateId]);
+  await deleteStageTemplates([templateId, taskTemplate.id]);
   for (const u of [admin, owner, editor]) await deleteFixtureUser(u.id);
   await closeDb();
 });

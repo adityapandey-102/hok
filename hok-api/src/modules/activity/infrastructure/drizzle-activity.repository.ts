@@ -55,11 +55,15 @@ function branches(f: ActivityFilter): SQL[] {
       where ${within("h.created_at")}${by("h.changed_by")} and h.from_stage_id is not null`);
   }
   if (wants("tasks")) {
-    // "created" is already an audit row.
+    // "created" is already an audit row. A stage move carries the stage it landed on in the first text column
+    // (the task's stage name is joined below); a completion, block or unblock the stage it happened at.
     out.push(sql`select 't:' || u.id::text, u.created_at, 'tasks'::text, 'task'::text, u.author_id, u.kind,
-        'staff_task'::text, u.task_id::text, null::text, u.to_assignee_id::text, u.from_status, u.to_status
+        'staff_task'::text, u.task_id::text, null::text, u.to_assignee_id::text,
+        case u.kind when 'stage' then u.to_stage_id::text when 'completed' then u.from_stage_id::text when 'blocked' then u.from_stage_id::text
+          when 'unblocked' then u.from_stage_id::text else u.from_status end, u.to_status
       from public.staff_task_updates u
-      where ${within("u.created_at")}${by("u.author_id")} and u.kind in ('status', 'comment', 'reassigned', 'reopened')`);
+      where ${within("u.created_at")}${by("u.author_id")}
+        and u.kind in ('status', 'comment', 'reassigned', 'reopened', 'stage', 'completed', 'blocked', 'unblocked')`);
   }
   if (wants("comments")) {
     // A client's own comment has no staff actor, so an actor filter excludes it.
@@ -132,7 +136,7 @@ export class DrizzleActivityRepository implements ActivityRepositoryPort {
                e.id::text as event_id, e.title as event_title,
                t.id::text as task_id, t.title as task_title,
                su.full_name as subject_name, tu.id::text as target_user_id, tu.full_name as target_user_name,
-               s.title as asset_title, td.title as todo_title, st.name as template_name, es.name as stage_name,
+               s.title as asset_title, td.title as todo_title, st.name as template_name, coalesce(es.name, ts.name) as stage_name,
                r.t1 as from_status, r.t2 as to_status
         from r
         left join public.profiles a on a.id = r.actor_id
@@ -145,6 +149,7 @@ export class DrizzleActivityRepository implements ActivityRepositoryPort {
         left join public.assets s on r.entity_type = 'asset' and s.id = r.eid
         left join public.stage_templates st on r.entity_type = 'stage_template' and st.id = r.eid
         left join public.event_stages es on r.source = 'stage' and es.id = r.t1u
+        left join public.task_stages ts on r.source = 'task' and ts.id = r.t1u
         left join public.clients c on c.id = coalesce(case when r.entity_type = 'client' then r.eid end, r.mcl, cc.client_id, td.client_id, e.client_id, t.client_id)
         order by r.at desc, r.id`);
       return (res.rows as Raw[]).map(toRow);

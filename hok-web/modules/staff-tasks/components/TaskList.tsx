@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { type StaffTaskSummary } from "../../../lib/domain";
 import { staffTasksApi, type StaffTaskListFilters } from "../api/staffTasksApi";
-import { DueChip, PRIORITY_ACCENT, PersonDot, PriorityPill, TaskStatusPill, roleLabel } from "./taskUi";
+import { DueChip, PRIORITY_ACCENT, PersonDot, PriorityPill, StageChip, TaskStatusPill, roleLabel } from "./taskUi";
 import { Pager } from "../../../components/ui/Pager";
 import { Icon } from "../../../components/ui/Icon";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -102,13 +102,14 @@ export function TaskList({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="line-clamp-2 text-[14px] font-semibold text-text-primary sm:truncate">{t.title}</span>
-                    {t.hasEditorBrief && <Icon name="file" size={13} className="shrink-0 text-text-muted" />}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-text-muted">
                     {[showAssignee ? `${t.assigneeName} · ${roleLabel(t.assigneeRole)}` : null, t.clientName].filter(Boolean).join(" · ") || "No client"}
                   </div>
+                  {t.status === "blocked" && t.blockedReason && <div className="mt-0.5 truncate text-xs text-warning-text">Blocked: {t.blockedReason}</div>}
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:hidden">
                     <TaskStatusPill status={t.status} />
+                    <StageChip stage={t.currentStage} count={t.stageCount} />
                     <PriorityPill priority={t.priority} />
                     <DueChip dueAt={t.dueAt} status={t.status} zone={zone} />
                   </div>
@@ -116,7 +117,8 @@ export function TaskList({
                 <div className="hidden shrink-0 items-center gap-2 sm:flex">
                   <DueChip dueAt={t.dueAt} status={t.status} zone={zone} />
                   <PriorityPill priority={t.priority} />
-                  <span className="w-24 text-right">
+                  <span className="flex items-center justify-end gap-1.5">
+                    <StageChip stage={t.currentStage} count={t.stageCount} />
                     <TaskStatusPill status={t.status} />
                   </span>
                 </div>

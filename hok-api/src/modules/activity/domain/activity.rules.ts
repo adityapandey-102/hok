@@ -108,6 +108,12 @@ function describeAudit(r: ActivityRow, who: string): string {
       return `${who} reassigned ${theTask}`;
     case "staff_task.deleted":
       return `${who} deleted a task`;
+    case "staff_task.link_added":
+      return `${who} added a link to ${theTask}`;
+    case "staff_task.link_removed":
+      return `${who} removed a link from ${theTask}`;
+    case "staff_task.link_shared":
+      return `${who} shared work from ${theTask} with the client`;
     case "client_todo.created":
       return r.todoTitle ? `${who} added the to-do ${r.todoTitle} for ${client}` : `${who} added a to-do for ${client}`;
     case "client_todo.updated":
@@ -141,6 +147,10 @@ export function describeActivity(r: ActivityRow): string {
       if (r.action === "comment") return `${who} commented on ${task}`;
       if (r.action === "reassigned") return r.subjectName ? `${who} reassigned ${task} to ${r.subjectName}` : `${who} reassigned ${task}`;
       if (r.action === "reopened") return `${who} reopened ${task}`;
+      if (r.action === "stage") return r.stageName ? `${who} moved ${task} to the stage ${r.stageName}` : `${who} moved ${task} to another stage`;
+      if (r.action === "completed") return `${who} completed ${task}`;
+      if (r.action === "blocked") return `${who} marked ${task} as blocked`;
+      if (r.action === "unblocked") return `${who} unblocked ${task}`;
       return `${who} updated ${task}`;
     }
     case "comment":

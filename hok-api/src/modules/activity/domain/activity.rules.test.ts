@@ -59,6 +59,10 @@ describe("describeActivity", () => {
     expect(describeActivity({ ...t, action: "comment" })).toBe("Meera commented on Edit the reel");
     expect(describeActivity({ ...t, action: "reassigned", subjectName: "Dev" })).toBe("Meera reassigned Edit the reel to Dev");
     expect(describeActivity({ ...t, action: "reopened" })).toBe("Meera reopened Edit the reel");
+    expect(describeActivity({ ...t, action: "stage", stageName: "Rough cut" })).toBe("Meera moved Edit the reel to the stage Rough cut");
+    expect(describeActivity({ ...t, action: "completed" })).toBe("Meera completed Edit the reel");
+    expect(describeActivity({ ...t, action: "blocked" })).toBe("Meera marked Edit the reel as blocked");
+    expect(describeActivity({ ...t, action: "unblocked" })).toBe("Meera unblocked Edit the reel");
   });
 
   it("a client's comment has the client as the subject", () => {

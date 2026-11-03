@@ -1,5 +1,5 @@
 import type { Role } from "../../../../domain";
-import type { ReferenceLink, StaffTaskPriority, StaffTaskStatus, StaffTaskUpdateKind } from "../../domain/staff-task.entity";
+import type { StaffTaskPriority, StaffTaskStatus, StaffTaskUpdateKind, TaskLinkKind, TaskStage } from "../../domain/staff-task.entity";
 
 /** One row of GET /staff-tasks (and a board card). */
 export interface StaffTaskSummaryResponseDto {
@@ -16,7 +16,12 @@ export interface StaffTaskSummaryResponseDto {
   clientId: string | null;
   clientName: string | null;
   eventId: string | null;
-  hasEditorBrief: boolean;
+  /** The task template it started from; "Simple (older task)" for tasks made before stages existed. */
+  templateName: string;
+  stageCount: number;
+  currentStage: TaskStage;
+  /** Why it is blocked; null unless status is "blocked". */
+  blockedReason: string | null;
   completedAt: string | null;
   version: number;
   createdAt: string;
@@ -33,8 +38,25 @@ export interface StaffTaskUpdateResponseDto {
   toStatus: StaffTaskStatus | null;
   fromAssigneeName: string | null;
   toAssigneeName: string | null;
+  /** The stage a move left / reached (stage, reopened); a completion and a block name the stage they happened at as `fromStageName`. */
+  fromStageName: string | null;
+  toStageName: string | null;
   comment: string | null;
   createdAt: string;
+}
+
+export interface StaffTaskLinkResponseDto {
+  id: string;
+  kind: TaskLinkKind;
+  url: string;
+  label: string | null;
+  stageId: string | null;
+  stageName: string | null;
+  addedById: string | null;
+  addedByName: string | null;
+  createdAt: string;
+  /** The client-visible asset a delivered link was shared as; null until shared. */
+  sharedAssetId: string | null;
 }
 
 /** GET /staff-tasks/:id and every write's `{ task }`. */
@@ -42,6 +64,8 @@ export interface StaffTaskDetailResponseDto {
   id: string;
   title: string;
   description: string | null;
+  /** Instructions or a script for the assignee. */
+  brief: string | null;
   status: StaffTaskStatus;
   priority: StaffTaskPriority;
   dueAt: string | null;
@@ -56,16 +80,22 @@ export interface StaffTaskDetailResponseDto {
   clientName: string | null;
   eventId: string | null;
   eventTitle: string | null;
-  rawFilesUrl: string | null;
-  referenceUrl: string | null;
-  script: string | null;
-  referenceLinks: ReferenceLink[];
+  templateName: string;
+  stageCount: number;
+  currentStage: TaskStage;
+  /** Every stage of the task, in order. */
+  stages: TaskStage[];
+  blockedReason: string | null;
+  /** Oldest first, at most 50. */
+  links: StaffTaskLinkResponseDto[];
   completedAt: string | null;
   version: number;
   createdAt: string;
   updatedAt: string;
   /** The caller may edit, reassign, reopen and delete this task (Admin, or its creator with assign rights). */
   canManage: boolean;
+  /** The caller may share this task's delivered links with the client (the task has an event and they can write assets on its client). */
+  canShare: boolean;
   /** Newest first, at most 100. */
   updates: StaffTaskUpdateResponseDto[];
 }

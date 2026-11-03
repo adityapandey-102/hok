@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, timestamp, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, boolean, timestamp, primaryKey } from "drizzle-orm/pg-core";
 import type { AssetType } from "../domain/asset.entity";
 
 /**
@@ -14,6 +14,10 @@ export const assets = pgTable("assets", {
   url: text("url").notNull(),
   type: text("type").notNull().$type<AssetType>(),
   comment: text("comment"),
+  /** Shown on the client's portal under its event (round 2). */
+  visibleToClient: boolean("visible_to_client").notNull().default(false),
+  /** One of the event's stages; the API checks it. */
+  eventStageId: uuid("event_stage_id"),
   // Link preview (FR-AST-08), fetched in the background after a save; all optional.
   previewTitle: text("preview_title"),
   previewDescription: text("preview_description"),

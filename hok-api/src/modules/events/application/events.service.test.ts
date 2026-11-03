@@ -56,8 +56,9 @@ class FakeRepo implements EventsRepositoryPort {
     ["c3", { id: "c3", teamIds: ["rohan"], status: "archived", timeZone: "UTC" }],
   ]);
   templates = new Map<string, EventTemplate>([
-    ["t1", { id: "t1", name: "Photo Shoot", active: true, stageNames: ["Planned", "Shoot", "Editing"] }],
-    ["t2", { id: "t2", name: "Old", active: false, stageNames: ["A"] }],
+    ["t1", { id: "t1", name: "Photo Shoot", active: true, kind: "event", stageNames: ["Planned", "Shoot", "Editing"] }],
+    ["t2", { id: "t2", name: "Old", active: false, kind: "event", stageNames: ["A"] }],
+    ["t3", { id: "t3", name: "Reel edit", active: true, kind: "task", stageNames: ["Cut", "Done"] }],
   ]);
   activeProfiles = new Set(["rohan", "neha"]);
   created: NewEventRecord[] = [];
@@ -173,10 +174,11 @@ describe("EventsService", () => {
       expect(audit[0]).toMatchObject({ action: "event.created", entityId: "new" });
     });
 
-    it("refuses another manager's client (404), an archived client (409), an inactive template, bad times and an unknown team member", async () => {
+    it("refuses another manager's client (404), an archived client (409), an inactive or task template, bad times and an unknown team member", async () => {
       expect(await codeOf(service.create(ROHAN, { ...newEvent, clientId: "c2" }))).toBe("CLIENT_NOT_FOUND");
       expect(await codeOf(service.create(ROHAN, { ...newEvent, clientId: "c3" }))).toBe("CLIENT_ARCHIVED");
       expect(await codeOf(service.create(ROHAN, { ...newEvent, templateId: "t2" }))).toBe("EVENT_TEMPLATE_INVALID");
+      expect(await codeOf(service.create(ROHAN, { ...newEvent, templateId: "t3" }))).toBe("EVENT_TEMPLATE_INVALID"); // a task template
       expect(await codeOf(service.create(ROHAN, { ...newEvent, endsAt: "2026-11-01T08:00:00+05:30" }))).toBe("EVENT_TIMES_INVALID");
       expect(await codeOf(service.create(ROHAN, { ...newEvent, assignedTeam: ["neha", "ghost"] }))).toBe("EVENT_TEAM_INVALID");
     });

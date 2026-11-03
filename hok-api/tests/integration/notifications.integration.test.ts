@@ -9,7 +9,7 @@ import { NotificationDispatcher } from "../../src/modules/notifications/applicat
 import { inArray, or } from "drizzle-orm";
 import { staffTasks } from "../../src/modules/staff-tasks/infrastructure/staff-tasks.schema";
 import type { PushOutcome, PushSender } from "../../src/modules/notifications/application/ports/push-sender.port";
-import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, type FixtureUser } from "./helpers";
+import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, createTaskTemplateFixture, deleteStageTemplates, type FixtureUser } from "./helpers";
 
 /**
  * The Notifications module end to end (REQUIREMENTS §5.10): real app, real
@@ -46,7 +46,10 @@ interface Bell {
   readAt: string | null;
 }
 
+let taskTemplate: Awaited<ReturnType<typeof createTaskTemplateFixture>>;
+
 beforeAll(async () => {
+  taskTemplate = await createTaskTemplateFixture(["Brief received", "Cut", "Review"]);
   admin = await createFixtureUser("admin", "IT Notify Admin");
   smm = await createFixtureUser("social_media_manager", "IT Notify SMM");
   mm = await createFixtureUser("marketing_manager", "IT Notify MM");
@@ -60,6 +63,7 @@ beforeAll(async () => {
 afterAll(async () => {
   const people = [admin, smm, mm, editor].filter(Boolean).map((u) => u.id);
   await deleteClientsOwnedBy(people);
+  await deleteStageTemplates([taskTemplate.id]);
   await db.delete(staffTasks).where(or(inArray(staffTasks.assigneeId, people), inArray(staffTasks.assignedBy, people)));
   // Notifications, devices and preferences cascade with the profiles.
   for (const id of people) await deleteFixtureUser(id);
@@ -117,14 +121,18 @@ describe("client reassigned -> the new owner's bell", () => {
 
 describe("staff tasks -> the other side's bell (M7 + M9)", () => {
   it("assigning notifies the assignee; the assignee's status change notifies the assigning Admin", async () => {
-    const created = await request(app).post("/api/v1/staff-tasks").set("Authorization", auth.admin!).send({ title: "Bell task", assigneeId: editor.id, rawFilesUrl: "https://drive.google.com/drive/folders/bell" });
+    const created = await request(app).post("/api/v1/staff-tasks").set("Authorization", auth.admin!).send({ title: "Bell task", assigneeId: editor.id, templateId: taskTemplate.id, links: [{ url: "https://drive.google.com/drive/folders/bell" }] });
     expect(created.status).toBe(201);
-    const task = (created.body as { task: { id: string; version: number } }).task;
+    const task = (created.body as { task: { id: string; version: number; stages: { id: string; name: string }[] } }).task;
     expect((await bell("editor")).notifications.some((n) => n.type === "task_assigned")).toBe(true);
 
-    const moved = await request(app).post(`/api/v1/staff-tasks/${task.id}/status`).set("Authorization", auth.editor!).send({ status: "in_progress", version: task.version });
+    const cut = task.stages[1]!;
+    const moved = await request(app).post(`/api/v1/staff-tasks/${task.id}/stage`).set("Authorization", auth.editor!).send({ stageId: cut.id, version: task.version });
     expect(moved.status).toBe(200);
-    expect((await bell("admin")).notifications.some((n) => n.type === "task_status_changed")).toBe(true);
+    const told = (await bell("admin")).notifications.filter((n) => n.type === "task_status_changed");
+    expect(told.length).toBeGreaterThan(0);
+    // The message says what happened: moved to which stage.
+    expect(JSON.stringify(told)).toContain(`Moved Bell task to ${cut.name}`);
     // Nobody is told about their own action.
     expect((await bell("editor")).notifications.some((n) => n.type === "task_status_changed")).toBe(false);
     // Leave both bells read for the tests below.

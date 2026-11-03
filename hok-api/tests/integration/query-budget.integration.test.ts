@@ -9,7 +9,7 @@ import { personalEvents } from "../../src/modules/personal-events/infrastructure
 import { assetTags, assets, tags } from "../../src/modules/assets/infrastructure/assets.schema";
 import { clientComments } from "../../src/modules/client-comments/infrastructure/client-comments.schema";
 import { clientTodos } from "../../src/modules/client-todos/infrastructure/client-todos.schema";
-import { staffTasks } from "../../src/modules/staff-tasks/infrastructure/staff-tasks.schema";
+import { staffTaskLinks, staffTasks } from "../../src/modules/staff-tasks/infrastructure/staff-tasks.schema";
 import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, deleteStaffTasksFor, type FixtureUser } from "./helpers";
 
 /**
@@ -220,6 +220,41 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     const month = d.toISOString().slice(0, 7);
     expect(await queriesFor(`/api/v1/reports/staff?userId=${admin.id}&month=${month}`)).toBe(3);
     expect(await queriesFor(`/api/v1/reports/client?clientId=${firstClientId}&month=${month}`)).toBe(7);
+  });
+
+  // Round 2: a task's detail reads the task, its stages, its links and its timeline -- one query each, in parallel --
+  // however many stages, links and updates it has (auth profile + 4 reads).
+  it("task detail: stages, links and timeline are one query each, however many there are", async (ctx) => {
+    if (!staffTasksReady) ctx.skip();
+    const [bare, busy] = await db.select({ id: staffTasks.id }).from(staffTasks).where(eq(staffTasks.assigneeId, admin.id)).orderBy(staffTasks.title).limit(2);
+    const base = await queriesFor(`/api/v1/staff-tasks/${bare!.id}`);
+    await db.insert(staffTaskLinks).values(Array.from({ length: 30 }, (_, i) => ({ taskId: busy!.id, kind: i % 2 === 0 ? ("brief" as const) : ("delivered" as const), url: `https://example.test/qb/${i}`, label: `Link ${i}`, addedBy: admin.id })));
+    for (let i = 0; i < 12; i++) await request(app).post(`/api/v1/staff-tasks/${busy!.id}/comments`).set("Authorization", auth).send({ body: `Comment ${i}` });
+    count = 0;
+    const heavy = await queriesFor(`/api/v1/staff-tasks/${busy!.id}`);
+    expect(heavy, `task detail: ${base} queries bare, ${heavy} with 30 links and 12 comments`).toBe(base);
+    expect(base).toBeLessThanOrEqual(5);
+  });
+
+  // Round 2: the portal's event page adds its shared assets as one capped query, whatever their number.
+  it("portal event page: the shared-assets list is one query, however many assets", async () => {
+    const [ev] = await db.select({ id: events.id, clientId: events.clientId }).from(events).where(eq(events.clientId, firstClientId)).limit(1);
+    const link = await request(app).post(`/api/v1/portal-links/${firstClientId}`).set("Authorization", auth);
+    expect(link.status).toBe(201);
+    const token = (link.body as { token: string }).token;
+    const portalQueries = async () => {
+      count = 0;
+      const res = await request(app).get(`/api/v1/portal/${token}/events/${ev!.id}`);
+      expect(res.status).toBe(200);
+      return { n: count, assets: (res.body as { event: { assets: unknown[] } }).event.assets.length };
+    };
+    await portalQueries(); // warm-up: the first open records "last used"
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const none = await portalQueries();
+    await db.insert(assets).values(Array.from({ length: 12 }, (_, i) => ({ clientId: firstClientId, eventId: ev!.id, title: `QB Shared ${i}`, url: `https://example.test/qb-shared/${i}`, type: "photo" as const, visibleToClient: true, createdBy: admin.id })));
+    const many = await portalQueries();
+    expect(many.assets).toBe(12);
+    expect(many.n, `portal event: ${none.n} queries with no assets, ${many.n} with 12`).toBe(none.n);
   });
 
   it("list page sizes are capped (an over-large limit is clamped, never honoured)", async () => {

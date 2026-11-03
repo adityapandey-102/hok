@@ -45,6 +45,10 @@ export interface CalendarTaskItem extends CalendarItemBase {
   priority: StaffTaskPriority;
   assigneeId: string;
   assigneeName: string;
+  /** Where the task is in its own stages (round 2), e.g. "Rough cut", 2 of 5. */
+  currentStageName: string;
+  currentStagePosition: number;
+  stageCount: number;
 }
 
 /** One of the caller's own to-dos with a due date, placed at its due instant. Never anyone else's. No client. */

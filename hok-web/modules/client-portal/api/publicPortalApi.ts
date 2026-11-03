@@ -27,8 +27,20 @@ export interface PortalEvent {
   stageCount: number;
 }
 
+/** A link the staff chose to share with the client on one event (internal fields never come this way). */
+export interface PortalAsset {
+  id: string;
+  title: string;
+  url: string;
+  type: string;
+  stageName: string | null;
+  createdAt: string;
+}
+
 export interface PortalEventDetail extends PortalEvent {
   updates: { stageName: string; note: string | null; createdAt: string }[];
+  /** Newest first, at most 100. */
+  assets: PortalAsset[];
 }
 
 export interface PortalDashboard {

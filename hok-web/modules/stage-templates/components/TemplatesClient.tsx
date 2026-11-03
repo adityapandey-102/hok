@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { StageTemplate } from "../../../lib/domain";
+import { ROLES, ROLE_LABELS, templateRolesLabel, type Role, type StageTemplate, type TemplateKind } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
 import { templatesApi } from "../api/templatesApi";
@@ -9,6 +9,7 @@ import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
 import { Pager } from "../../../components/ui/Pager";
+import { Segmented } from "../../../components/ui/Segmented";
 import { StatusPill } from "../../../components/ui/StatusPill";
 import { useToast } from "../../../components/ui/Toast";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
@@ -16,14 +17,28 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 
 const PAGE_SIZE = 20;
 const MAX_STAGES = 20;
+/** Task templates can be offered for any role except the Admin (the Admin assigns, never receives). */
+const TASK_ROLES = ROLES.filter((r) => r !== "admin");
 
-/** Admin: stage templates (FR-EVT-01/02). A template is an ordered list of stage names that an event copies when it is created. */
+const KIND_OPTIONS: { id: TemplateKind; label: string }[] = [
+  { id: "event", label: "Events" },
+  { id: "task", label: "Tasks" },
+];
+const KIND_NOUN: Record<TemplateKind, string> = { event: "event", task: "task" };
+
+/**
+ * Admin: stage templates (FR-EVT-01/02, round 2). A template is an ordered list of
+ * stage names that an event (or a staff task) copies when it is created. The
+ * Events | Tasks switch picks which kind the list and "New template" are about;
+ * a task template can be limited to some assignee roles.
+ */
 export function TemplatesClient() {
   const { showToast } = useToast();
   const confirm = useConfirm();
   const [templates, setTemplates] = useState<StageTemplate[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
+  const [kind, setKind] = useState<TemplateKind>("event");
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS);
   const [loading, setLoading] = useState(true);
@@ -37,7 +52,7 @@ export function TemplatesClient() {
     const run = () => {
       setLoading(true);
       templatesApi
-        .list({ search: debouncedSearch || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
+        .list({ kind, search: debouncedSearch || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
         .then((data) => {
           if (cancelled) return;
           setTemplates(data.templates);
@@ -55,13 +70,13 @@ export function TemplatesClient() {
     return () => {
       cancelled = true;
     };
-  }, [debouncedSearch, page, reloadKey]);
+  }, [kind, debouncedSearch, page, reloadKey]);
 
   async function toggleActive(t: StageTemplate) {
     if (t.active) {
       const ok = await confirm({
         title: `Deactivate ${t.name}?`,
-        body: "No new events can use it. Events already created keep their own stages.",
+        body: `No new ${KIND_NOUN[t.kind]}s can use it. ${t.kind === "task" ? "Tasks" : "Events"} already created keep their own stages.`,
         confirmLabel: "Deactivate",
         danger: true,
       });
@@ -82,7 +97,11 @@ export function TemplatesClient() {
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="page-title">Stage templates</h1>
-          <p className="text-sm text-text-muted">The stages an event moves through. Managers pick one when they create an event.</p>
+          <p className="text-sm text-text-muted">
+            {kind === "event"
+              ? "The stages an event moves through. Managers pick one when they create an event."
+              : "The stages a staff task moves through. Managers pick one when they assign a task."}
+          </p>
         </div>
         {!editing && (
           <div className="page-actions">
@@ -93,10 +112,24 @@ export function TemplatesClient() {
         )}
       </header>
 
+      <Segmented
+        label="Template kind"
+        options={KIND_OPTIONS}
+        value={kind}
+        onChange={(next) => {
+          setKind(next);
+          setEditing(null);
+          setPage(0);
+        }}
+        className="mb-4 self-start max-sm:w-full"
+        stretch
+      />
+
       {editing && (
         <TemplateEditor
-          key={editing === "new" ? "new" : editing.id + editing.version}
+          key={editing === "new" ? "new-" + kind : editing.id + editing.version}
           template={editing === "new" ? null : editing}
+          kind={kind}
           onCancel={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -137,7 +170,7 @@ export function TemplatesClient() {
             </button>
           </div>
         ) : templates.length === 0 ? (
-          <EmptyState icon="layers" title={search.trim() ? "No templates match your search." : "No templates yet."} description={search.trim() ? undefined : "Create a template to give events their stages."} />
+          <EmptyState icon="layers" title={search.trim() ? "No templates match your search." : `No ${KIND_NOUN[kind]} templates yet.`} description={search.trim() ? undefined : `Create a template to give ${KIND_NOUN[kind]}s their stages.`} />
         ) : (
           <ul className="divide-y divide-border-light">
             {templates.map((t) => (
@@ -147,6 +180,7 @@ export function TemplatesClient() {
                     <span className="font-serif text-[16px] text-text-primary">{t.name}</span>
                     <StatusPill label={t.active ? "Active" : "Inactive"} tone={t.active ? "green" : "gray"} />
                     <span className="text-xs text-text-muted">{t.stages.length} stages</span>
+                    {t.kind === "task" && <span className="text-xs text-text-muted">· For: {templateRolesLabel(t.roles)}</span>}
                   </div>
                   <ol className="mt-2.5 flex flex-wrap items-center gap-1.5" aria-label={`${t.name} stages`}>
                     {t.stages.map((s, i) => (
@@ -180,19 +214,25 @@ export function TemplatesClient() {
 
 function TemplateEditor({
   template,
+  kind: newKind,
   onCancel,
   onSaved,
 }: {
   template: StageTemplate | null;
+  /** The kind a NEW template gets (the list's switch); an existing one keeps its own. */
+  kind: TemplateKind;
   onCancel: () => void;
   onSaved: () => void;
 }) {
   const { showToast } = useToast();
   const [name, setName] = useState(template?.name ?? "");
   const [stages, setStages] = useState<string[]>(template?.stages.map((s) => s.name) ?? ["Planned", "Completed"]);
+  const [roles, setRoles] = useState<Role[]>(template?.roles ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const kind = template?.kind ?? newKind;
 
+  const toggleRole = (r: Role) => setRoles((cur) => (cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r]));
   const setStage = (i: number, value: string) => setStages((s) => s.map((x, j) => (j === i ? value : x)));
   const move = (i: number, delta: number) =>
     setStages((s) => {
@@ -213,9 +253,9 @@ function TemplateEditor({
     setSaving(true);
     try {
       if (template) {
-        await templatesApi.update(template.id, { name: name.trim(), stages: cleaned, version: template.version });
+        await templatesApi.update(template.id, { name: name.trim(), stages: cleaned, ...(kind === "task" ? { roles } : {}), version: template.version });
       } else {
-        await templatesApi.create({ name: name.trim(), stages: cleaned });
+        await templatesApi.create({ name: name.trim(), stages: cleaned, kind, ...(kind === "task" ? { roles } : {}) });
       }
       showToast("Template saved.", "success");
       onSaved();
@@ -234,7 +274,8 @@ function TemplateEditor({
         <span className="flex h-9 w-9 items-center justify-center rounded-app bg-accent-bg text-text-secondary ring-1 ring-border ring-inset">
           <Icon name="layers" size={17} />
         </span>
-        {template ? `Edit ${template.name}` : "New template"}
+        {template ? `Edit ${template.name}` : `New ${KIND_NOUN[kind]} template`}
+        <StatusPill label={kind === "task" ? "Task template" : "Event template"} tone="gray" />
       </h2>
       <div className="max-w-md">
         <FieldLabel required htmlFor="tpl-name">
@@ -243,8 +284,28 @@ function TemplateEditor({
         <Input id="tpl-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
       </div>
 
+      {kind === "task" && (
+        <fieldset className="mt-4">
+          <legend className="mb-1 text-xs font-medium text-text-secondary">For roles</legend>
+          <p className="mb-2 text-xs text-text-muted">Empty = any role.</p>
+          <div className="flex flex-wrap gap-2">
+            {TASK_ROLES.map((r) => (
+              <label
+                key={r}
+                className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-full has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-ring/25 px-3.5 py-1.5 text-sm ring-1 ring-inset transition-colors ${
+                  roles.includes(r) ? "bg-ink text-on-ink ring-ink" : "bg-accent-bg text-text-secondary ring-border hover:bg-accent-light/70"
+                }`}
+              >
+                <input type="checkbox" className="sr-only" checked={roles.includes(r)} onChange={() => toggleRole(r)} />
+                {ROLE_LABELS[r]}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
       <fieldset className="mt-4">
-        <legend className="mb-2 text-xs font-medium text-text-secondary">Stages, in order (an event starts at the first one)</legend>
+        <legend className="mb-2 text-xs font-medium text-text-secondary">Stages, in order (a{kind === "task" ? " task" : "n event"} starts at the first one)</legend>
         <ol className="flex flex-col gap-2">
           {stages.map((stage, i) => (
             <li key={i} className="flex items-center gap-2">

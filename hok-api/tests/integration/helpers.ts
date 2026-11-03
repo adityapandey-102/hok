@@ -3,7 +3,8 @@ import { db } from "../../src/common/database/drizzle-client";
 import { clients } from "../../src/modules/clients/infrastructure/clients.schema";
 import { events } from "../../src/modules/events/infrastructure/events.schema";
 import { assets, tags } from "../../src/modules/assets/infrastructure/assets.schema";
-import { stageTemplates } from "../../src/modules/stage-templates/infrastructure/stage-templates.schema";
+import request from "supertest";
+import { stageTemplateStages, stageTemplates } from "../../src/modules/stage-templates/infrastructure/stage-templates.schema";
 import { staffTasks } from "../../src/modules/staff-tasks/infrastructure/staff-tasks.schema";
 import { supabaseClient } from "../../src/common/database/supabase-client";
 import { authProvider } from "../../src/common/auth/supabase-auth-provider";
@@ -84,6 +85,37 @@ export async function deleteClientsOwnedBy(ownerIds: string[]): Promise<void> {
 export async function deleteStageTemplates(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   await db.delete(stageTemplates).where(inArray(stageTemplates.id, ids));
+}
+
+/**
+ * A fixture TASK template (round 2: every task starts from one), inserted directly so a test needs no
+ * Admin session for it. Active, offered for the given roles (default: any role). Delete it with
+ * deleteStageTemplates; tasks made from it keep their own copy of the stages.
+ */
+let templateCounter = 0;
+export async function createTaskTemplateFixture(
+  stages: string[] = ["To do", "In progress", "Done"],
+  roles: Role[] = [],
+): Promise<{ id: string; name: string; stages: string[] }> {
+  templateCounter += 1;
+  const name = `IT task tpl ${Date.now()}-${templateCounter}-${Math.random().toString(36).slice(2, 6)}`;
+  const [row] = await db.insert(stageTemplates).values({ name, kind: "task", roles }).returning({ id: stageTemplates.id });
+  await db.insert(stageTemplateStages).values(stages.map((s, i) => ({ templateId: row!.id, position: i + 1, name: s })));
+  return { id: row!.id, name, stages };
+}
+
+type TaskBody = { task: { id: string; version: number; stages: { id: string; position: number }[]; currentStage: { position: number } } };
+
+/** Walks a task to done through the API: to its last stage (if it isn't there), then "complete". Returns the final status. */
+export async function finishTask(app: Parameters<typeof request>[0], bearer: string, taskId: string): Promise<number> {
+  let { task } = (await request(app).get(`/api/v1/staff-tasks/${taskId}`).set("Authorization", bearer)).body as TaskBody;
+  const last = task.stages[task.stages.length - 1]!;
+  if (task.currentStage.position !== last.position) {
+    const moved = await request(app).post(`/api/v1/staff-tasks/${taskId}/stage`).set("Authorization", bearer).send({ stageId: last.id, version: task.version });
+    if (moved.status !== 200) return moved.status;
+    task = (moved.body as TaskBody).task;
+  }
+  return (await request(app).post(`/api/v1/staff-tasks/${taskId}/stage`).set("Authorization", bearer).send({ complete: true, version: task.version })).status;
 }
 
 /**

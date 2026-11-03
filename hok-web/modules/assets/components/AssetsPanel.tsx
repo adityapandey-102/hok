@@ -16,29 +16,20 @@ import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDeb
 import { assetsApi } from "../api/assetsApi";
 import { eventsApi } from "../../events/api/eventsApi";
 import { Button } from "../../../components/ui/Button";
-import { Icon, type IconName } from "../../../components/ui/Icon";
+import { Icon } from "../../../components/ui/Icon";
 import { Input } from "../../../components/ui/Field";
 import { Select } from "../../../components/ui/Select";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { Pager } from "../../../components/ui/Pager";
-import { StatusPill, type PillTone } from "../../../components/ui/StatusPill";
+import { StatusPill } from "../../../components/ui/StatusPill";
 import { useToast } from "../../../components/ui/Toast";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
 import { AssetFormModal } from "./AssetFormModal";
+import { ASSET_TYPE_ICONS as TYPE_ICONS, ASSET_TYPE_TONES as TYPE_TONES, hostOf } from "./assetUi";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { Panel } from "../../../components/ui/Panel";
 
 const PAGE_SIZE = 20;
-const TYPE_TONES: Record<AssetType, PillTone> = { photo: "blue", video: "green", document: "gray", design: "amber", audio: "pink", other: "gray" };
-const TYPE_ICONS: Record<AssetType, IconName> = { photo: "image", video: "eye", document: "file", design: "palette", audio: "bell", other: "external-link" };
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
 
 /**
  * The asset link library (FR-AST-01..06): a server-paged, searchable list of
@@ -66,6 +57,7 @@ export function AssetsPanel({
   const [type, setType] = useState<AssetType | "">("");
   const [tag, setTag] = useState("");
   const [eventId, setEventId] = useState("");
+  const [clientCanSee, setClientCanSee] = useState(false);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [tagOptions, setTagOptions] = useState<TagSuggestion[]>([]);
@@ -101,6 +93,7 @@ export function AssetsPanel({
           type: type || undefined,
           tag: tag || undefined,
           eventId: eventId || undefined,
+          visibleToClient: clientCanSee || undefined,
           from: fromDate ? (dayStartIso(fromDate, viewerTimeZone) ?? undefined) : undefined,
           to: toDate ? (dayStartIso(nextDay(toDate), viewerTimeZone) ?? undefined) : undefined,
           limit: PAGE_SIZE,
@@ -123,9 +116,9 @@ export function AssetsPanel({
     return () => {
       cancelled = true;
     };
-  }, [clientId, debouncedSearch, type, tag, eventId, fromDate, toDate, viewerTimeZone, page, reloadKey]);
+  }, [clientId, debouncedSearch, type, tag, eventId, clientCanSee, fromDate, toDate, viewerTimeZone, page, reloadKey]);
 
-  const filtered = !!(search.trim() || type || tag || eventId || fromDate || toDate);
+  const filtered = !!(search.trim() || type || tag || eventId || clientCanSee || fromDate || toDate);
 
   async function copyLink(a: Asset) {
     try {
@@ -204,6 +197,18 @@ export function AssetsPanel({
                 {t.name} ({t.uses})
               </option>
             ))}
+          </Select>
+          <Select
+            className="max-sm:col-span-2 sm:w-auto"
+            aria-label="Filter by client visibility"
+            value={clientCanSee ? "client" : ""}
+            onChange={(e) => {
+              setClientCanSee(e.target.value === "client");
+              resetPage();
+            }}
+          >
+            <option value="">All links</option>
+            <option value="client">Client can see</option>
           </Select>
         </div>
         {clientId && (
@@ -287,6 +292,7 @@ export function AssetsPanel({
                       {a.title}
                     </a>
                     <StatusPill label={ASSET_TYPE_LABELS[a.type]} tone={TYPE_TONES[a.type]} />
+                    {a.visibleToClient && <StatusPill label="Client can see" tone="green" />}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-text-muted" title={a.preview?.title ?? undefined}>
                     {a.preview?.siteName ?? hostOf(a.url)}
@@ -313,7 +319,7 @@ export function AssetsPanel({
                   )}
                   <p className="mt-2 text-xs text-text-muted">
                     {[
-                      a.eventTitle ? `Event: ${a.eventTitle}` : null,
+                      a.eventTitle ? `Event: ${a.eventTitle}${a.eventStageName ? ` (${a.eventStageName})` : ""}` : null,
                       a.createdByName ? `Added by ${a.createdByName}` : null,
                       new Intl.DateTimeFormat("en-GB", { timeZone: viewerTimeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(a.createdAt)),
                     ]

@@ -40,7 +40,11 @@ arrives in M11; until then the query budget below is the check.)
 | `clients (status, created_at desc, id desc)` | The Admin's all-clients list and the status filter (default list = `status <> 'archived'`) |
 | `clients (lower(industry))` | Industry filter (case-insensitive exact match) |
 | `clients using gin (business_name gin_trgm_ops)` | Client name search (`ILIKE '%term%'`, escaped by `containsPattern`) |
-| `stage_templates (lower(name))` unique, `(active, lower(name))` | Name uniqueness; the managers' active-template picker |
+| `stage_templates (lower(name))` unique, `(active, lower(name))`, `(kind, active, lower(name))` | Name uniqueness (across both kinds); the managers' active-template picker, per kind (events / tasks) |
+| `task_stages (task_id, position)` unique, `(id, task_id)` unique | A task's ordered stages (one query); the target of the composite FK that keeps `current_stage_id` on its own task |
+| `staff_tasks (template_id)`, `(current_stage_id)`, `staff_task_updates (from_stage_id)`, `(to_stage_id)`, `staff_task_links (stage_id)`, `(added_by)`, `(shared_asset_id)` (all partial `where … is not null`) | The new foreign keys (cascade / set-null checks) |
+| `staff_task_links (task_id, kind, created_at)` | A task's links, in one query, oldest first |
+| `assets (event_id, created_at desc) where visible_to_client and deleted_at is null`, `assets (event_stage_id) where … is not null` | The portal's "Shared with you" list for one event (capped at 100); the stage FK |
 | `stage_template_stages (template_id, position)` unique | A template's ordered stages (batched for a whole page) |
 | `events (client_id, starts_at)` | A client's Events tab |
 | `assets (client_id, created_at desc, id desc) where deleted_at is null` (+ `(client_id, type, created_at desc)`, `(created_at desc, id desc)`, `(event_id)`, same predicate) | A client's Assets tab, type filter, the Admin's all-assets list, assets of an event |

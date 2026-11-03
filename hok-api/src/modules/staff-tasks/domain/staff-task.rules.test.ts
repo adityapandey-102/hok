@@ -2,23 +2,36 @@ import { describe, expect, it } from "vitest";
 import { AppError } from "../../../common/errors/app-error";
 import { ROLES } from "../../../domain";
 import {
+  assertBlocked,
+  assertCanAddLink,
   assertCanAssign,
-  assertCanChangeStatus,
+  assertCanBlock,
   assertCanComment,
+  assertCanComplete,
   assertCanManage,
+  assertCanMoveStage,
+  assertCanRaiseBlock,
+  assertCanRemoveLink,
+  assertCanShare,
+  assertLinksRoom,
   assertReopenable,
-  assertStatusChange,
+  assertShareable,
+  assertStageMove,
+  assertTaskTemplateUsable,
   assertTaskVersion,
   assertTaskVisible,
   assertValidAssignee,
   canManageTask,
+  canShareWithClient,
   isOverdue,
-  resolveEditorFields,
+  reopenTarget,
   resolveTaskLinks,
   restrictLinksToTeam,
+  statusForStage,
   type StaffTaskScope,
+  type TaskTemplate,
 } from "./staff-task.rules";
-import { STAFF_TASK_STATUSES } from "./staff-task.entity";
+import { STAFF_TASK_STATUSES, type StaffTaskStatus, type TaskStage } from "./staff-task.entity";
 
 function codeOf(fn: () => unknown): { status: number; code: string } | null {
   try {
@@ -35,7 +48,6 @@ const MEERA: StaffTaskScope = { kind: "own", userId: "meera", viaTeam: false };
 const ROHAN: StaffTaskScope = { kind: "own", userId: "rohan", viaTeam: true };
 /** A task-only person who is (still) listed on a client team. */
 const LISTED_TASK_ONLY: StaffTaskScope = { kind: "own", userId: "rohan", viaTeam: false };
-const EMPTY = { rawFilesUrl: null, referenceUrl: null, script: null };
 
 describe("assertTaskVisible (row scope)", () => {
   const meeras = { id: "t1", assigneeId: "meera", assignedBy: "admin", teamIds: [] as string[] };
@@ -84,51 +96,134 @@ describe("assertValidAssignee (FR-TSK-01: any role, active)", () => {
   });
 });
 
-describe("resolveEditorFields (FR-TSK-10)", () => {
-  const brief = { rawFilesUrl: "https://drive.google.com/x", referenceUrl: "https://youtu.be/y", script: "Hook, then product." };
+describe("assertTaskTemplateUsable (round 2)", () => {
+  const tpl = (o: Partial<TaskTemplate> = {}): TaskTemplate => ({ id: "t1", name: "Reel edit", active: true, kind: "task", roles: ["editor"], stageNames: ["Cut", "Review"], ...o });
 
-  it("an editor task keeps whatever brief it has; none of the three is required", () => {
-    expect(resolveEditorFields("editor", brief, brief)).toEqual(brief);
-    expect(resolveEditorFields("editor", EMPTY, {})).toEqual(EMPTY);
-    expect(resolveEditorFields("editor", { ...EMPTY, script: "Hook." }, { script: "Hook." })).toEqual({ ...EMPTY, script: "Hook." });
+  it("an active task template with stages, offered for the assignee's role", () => {
+    expect(codeOf(() => assertTaskTemplateUsable(tpl(), "editor"))).toBeNull();
   });
 
-  it("sending editor fields for anyone else is 400 STAFF_TASK_EDITOR_FIELDS_INVALID", () => {
-    for (const role of ROLES.filter((r) => r !== "editor")) {
-      expect(codeOf(() => resolveEditorFields(role, brief, { script: "x" }))).toEqual({ status: 400, code: "STAFF_TASK_EDITOR_FIELDS_INVALID" });
-    }
+  it("an empty role list means any role", () => {
+    for (const role of ROLES) expect(codeOf(() => assertTaskTemplateUsable(tpl({ roles: [] }), role))).toBeNull();
   });
 
-  it("reassigning away from an editor clears the stored brief; explicit nulls are fine", () => {
-    expect(resolveEditorFields("developer", brief, {})).toEqual(EMPTY);
-    expect(resolveEditorFields("developer", EMPTY, { rawFilesUrl: null, script: null })).toEqual(EMPTY);
+  it("refuses a missing, inactive, event or stage-less template and a role it isn't offered for (400 STAFF_TASK_TEMPLATE_INVALID)", () => {
+    const bad = { status: 400, code: "STAFF_TASK_TEMPLATE_INVALID" };
+    expect(codeOf(() => assertTaskTemplateUsable(null, "editor"))).toEqual(bad);
+    expect(codeOf(() => assertTaskTemplateUsable(tpl({ active: false }), "editor"))).toEqual(bad);
+    expect(codeOf(() => assertTaskTemplateUsable(tpl({ kind: "event" }), "editor"))).toEqual(bad);
+    expect(codeOf(() => assertTaskTemplateUsable(tpl({ stageNames: [] }), "editor"))).toEqual(bad);
+    expect(codeOf(() => assertTaskTemplateUsable(tpl(), "developer"))).toEqual(bad);
   });
 });
 
-describe("status changes (FR-TSK-03/04/05)", () => {
-  const open = STAFF_TASK_STATUSES.filter((s) => s !== "done");
+describe("stages and the status they imply (round 2)", () => {
+  const stages: TaskStage[] = [
+    { id: "s1", position: 1, name: "Brief" },
+    { id: "s2", position: 2, name: "Cut" },
+    { id: "s3", position: 3, name: "Review" },
+  ];
 
-  it("any open status may move to any other status, including done", () => {
-    for (const from of open) {
-      for (const to of STAFF_TASK_STATUSES.filter((s) => s !== from)) {
-        expect(codeOf(() => assertStatusChange(from, to))).toBeNull();
-      }
+  it("statusForStage: stage 1 todo, 2..N in progress, past the last done", () => {
+    expect(statusForStage(1, 3)).toBe("todo");
+    expect(statusForStage(2, 3)).toBe("in_progress");
+    expect(statusForStage(3, 3)).toBe("in_progress");
+    expect(statusForStage(4, 3)).toBe("done");
+    // A one-stage task is todo until completed.
+    expect(statusForStage(1, 1)).toBe("todo");
+  });
+
+  it("assertStageMove: any other stage, forward or back", () => {
+    expect(assertStageMove({ status: "todo", currentStageId: "s1", stages, targetStageId: "s3" }).id).toBe("s3");
+    expect(assertStageMove({ status: "in_progress", currentStageId: "s3", stages, targetStageId: "s1" }).id).toBe("s1");
+    expect(assertStageMove({ status: "blocked", currentStageId: "s2", stages, targetStageId: "s3" }).id).toBe("s3");
+  });
+
+  it("refuses the current stage (409), another task's stage (400) and a done task (409)", () => {
+    expect(codeOf(() => assertStageMove({ status: "todo", currentStageId: "s1", stages, targetStageId: "s1" }))).toEqual({ status: 409, code: "STAFF_TASK_STAGE_UNCHANGED" });
+    expect(codeOf(() => assertStageMove({ status: "todo", currentStageId: "s1", stages, targetStageId: "other" }))).toEqual({ status: 400, code: "STAFF_TASK_STAGE_INVALID" });
+    expect(codeOf(() => assertStageMove({ status: "done", currentStageId: "s3", stages, targetStageId: "s1" }))).toEqual({ status: 409, code: "STAFF_TASK_DONE" });
+  });
+
+  it("completing is only offered from the last stage (409 STAFF_TASK_NOT_AT_LAST_STAGE); a done task is closed", () => {
+    expect(codeOf(() => assertCanComplete({ status: "in_progress", currentStagePosition: 3, stageCount: 3 }))).toBeNull();
+    expect(codeOf(() => assertCanComplete({ status: "blocked", currentStagePosition: 3, stageCount: 3 }))).toBeNull();
+    expect(codeOf(() => assertCanComplete({ status: "in_progress", currentStagePosition: 2, stageCount: 3 }))).toEqual({ status: 409, code: "STAFF_TASK_NOT_AT_LAST_STAGE" });
+    expect(codeOf(() => assertCanComplete({ status: "done", currentStagePosition: 3, stageCount: 3 }))).toEqual({ status: 409, code: "STAFF_TASK_DONE" });
+  });
+
+  it("blocking: not a done task, not one already blocked; unblocking needs a blocked one", () => {
+    expect(codeOf(() => assertCanRaiseBlock("todo"))).toBeNull();
+    expect(codeOf(() => assertCanRaiseBlock("in_progress"))).toBeNull();
+    expect(codeOf(() => assertCanRaiseBlock("blocked"))).toEqual({ status: 409, code: "STAFF_TASK_ALREADY_BLOCKED" });
+    expect(codeOf(() => assertCanRaiseBlock("done"))).toEqual({ status: 409, code: "STAFF_TASK_DONE" });
+    expect(codeOf(() => assertBlocked("blocked"))).toBeNull();
+    for (const st of STAFF_TASK_STATUSES.filter((x) => x !== "blocked")) {
+      expect(codeOf(() => assertBlocked(st))).toEqual({ status: 409, code: "STAFF_TASK_NOT_BLOCKED" });
     }
   });
 
-  it("the same status is 409 STAFF_TASK_STATUS_UNCHANGED", () => {
-    expect(codeOf(() => assertStatusChange("todo", "todo"))).toEqual({ status: 409, code: "STAFF_TASK_STATUS_UNCHANGED" });
-  });
-
-  it("a done task is closed: 409 STAFF_TASK_DONE until the Admin reopens it", () => {
-    for (const to of STAFF_TASK_STATUSES) {
-      expect(codeOf(() => assertStatusChange("done", to))).toEqual({ status: 409, code: "STAFF_TASK_DONE" });
-    }
-  });
-
-  it("only a done task can be reopened (else 409 STAFF_TASK_NOT_DONE)", () => {
+  it("only a done task can be reopened (else 409 STAFF_TASK_NOT_DONE); it goes to the named stage, default the last", () => {
     expect(codeOf(() => assertReopenable("done"))).toBeNull();
-    for (const s of open) expect(codeOf(() => assertReopenable(s))).toEqual({ status: 409, code: "STAFF_TASK_NOT_DONE" });
+    for (const st of STAFF_TASK_STATUSES.filter((x): x is StaffTaskStatus => x !== "done")) {
+      expect(codeOf(() => assertReopenable(st))).toEqual({ status: 409, code: "STAFF_TASK_NOT_DONE" });
+    }
+    expect(reopenTarget(stages, undefined).id).toBe("s3");
+    expect(reopenTarget(stages, "s2").id).toBe("s2");
+    expect(codeOf(() => reopenTarget(stages, "nope"))).toEqual({ status: 400, code: "STAFF_TASK_STAGE_INVALID" });
+  });
+});
+
+describe("links (round 2)", () => {
+  const assignee = { userId: "meera", role: "editor" } as const;
+  const creator = { userId: "rohan", role: "social_media_manager" } as const;
+  const admin = { userId: "a", role: "admin" } as const;
+  const teamManager = { userId: "pia", role: "marketing_manager" } as const;
+  const t = { assigneeId: "meera", assignedBy: "rohan" };
+  const forbidden = { status: 403, code: "STAFF_TASK_FORBIDDEN" };
+
+  it("brief links: the creator or the Admin; delivered links: the assignee or the Admin", () => {
+    expect(codeOf(() => assertCanAddLink(creator, t, "brief"))).toBeNull();
+    expect(codeOf(() => assertCanAddLink(admin, t, "brief"))).toBeNull();
+    expect(codeOf(() => assertCanAddLink(assignee, t, "brief"))).toEqual(forbidden);
+    expect(codeOf(() => assertCanAddLink(teamManager, t, "brief"))).toEqual(forbidden);
+    expect(codeOf(() => assertCanAddLink(assignee, t, "delivered"))).toBeNull();
+    expect(codeOf(() => assertCanAddLink(admin, t, "delivered"))).toBeNull();
+    expect(codeOf(() => assertCanAddLink(creator, t, "delivered"))).toEqual(forbidden);
+  });
+
+  it("removing: whoever added it, or whoever manages the task", () => {
+    expect(codeOf(() => assertCanRemoveLink(assignee, t, { addedById: "meera" }))).toBeNull();
+    expect(codeOf(() => assertCanRemoveLink(creator, t, { addedById: "meera" }))).toBeNull();
+    expect(codeOf(() => assertCanRemoveLink(admin, t, { addedById: null }))).toBeNull();
+    expect(codeOf(() => assertCanRemoveLink(assignee, t, { addedById: "rohan" }))).toEqual(forbidden);
+    expect(codeOf(() => assertCanRemoveLink(teamManager, t, { addedById: "meera" }))).toEqual(forbidden);
+  });
+
+  it("at most 50 links per task (409 STAFF_TASK_LINKS_LIMIT)", () => {
+    expect(codeOf(() => assertLinksRoom(49))).toBeNull();
+    expect(codeOf(() => assertLinksRoom(50))).toEqual({ status: 409, code: "STAFF_TASK_LINKS_LIMIT" });
+    expect(codeOf(() => assertLinksRoom(45, 6))).toEqual({ status: 409, code: "STAFF_TASK_LINKS_LIMIT" });
+  });
+
+  it("sharing with the client: the Admin or a team manager who can write assets; an editor never", () => {
+    const onTeam = { eventId: "e1", teamIds: ["rohan", "x"] };
+    expect(canShareWithClient(admin, onTeam)).toBe(true);
+    expect(canShareWithClient(creator, onTeam)).toBe(true);
+    expect(canShareWithClient(teamManager, onTeam)).toBe(false);
+    expect(canShareWithClient(assignee, { eventId: "e1", teamIds: ["meera"] })).toBe(false);
+    expect(canShareWithClient(admin, { eventId: null, teamIds: [] })).toBe(false);
+    expect(codeOf(() => assertCanShare(creator, onTeam))).toBeNull();
+    expect(codeOf(() => assertCanShare(assignee, onTeam))).toEqual(forbidden);
+    expect(codeOf(() => assertCanShare(creator, { eventId: null, teamIds: ["rohan"] }))).toEqual({ status: 409, code: "STAFF_TASK_NO_EVENT" });
+    expect(codeOf(() => assertCanShare(teamManager, onTeam))).toEqual(forbidden);
+  });
+
+  it("only a delivered, not-yet-shared link can be shared", () => {
+    expect(codeOf(() => assertShareable({ kind: "delivered", sharedAssetId: null }))).toBeNull();
+    expect(codeOf(() => assertShareable({ kind: "delivered", sharedAssetId: "a1" }))).toEqual({ status: 409, code: "STAFF_TASK_LINK_ALREADY_SHARED" });
+    expect(codeOf(() => assertShareable({ kind: "brief", sharedAssetId: null }))).toEqual({ status: 404, code: "STAFF_TASK_LINK_NOT_FOUND" });
+    expect(codeOf(() => assertShareable(null))).toEqual({ status: 404, code: "STAFF_TASK_LINK_NOT_FOUND" });
   });
 });
 
@@ -182,23 +277,29 @@ describe("canManageTask / assertCanManage (edit, reassign, reopen, delete)", () 
   });
 });
 
-describe("assertCanChangeStatus / assertCanComment", () => {
+describe("assertCanMoveStage / assertCanBlock / assertCanComment", () => {
   const admin = { userId: "a", role: "admin" } as const;
   const assignee = { userId: "meera", role: "editor" } as const;
   const creator = { userId: "rohan", role: "social_media_manager" } as const;
   const teamManager = { userId: "pia", role: "marketing_manager" } as const;
   const t = { assigneeId: "meera", assignedBy: "rohan" };
+  const forbidden = { status: 403, code: "STAFF_TASK_FORBIDDEN" };
 
-  it("status: the assignee or the Admin; the creator and team managers are refused with 403", () => {
-    expect(codeOf(() => assertCanChangeStatus(assignee, t))).toBeNull();
-    expect(codeOf(() => assertCanChangeStatus(admin, t))).toBeNull();
-    expect(codeOf(() => assertCanChangeStatus(creator, t))).toEqual({ status: 403, code: "STAFF_TASK_FORBIDDEN" });
-    expect(codeOf(() => assertCanChangeStatus(teamManager, t))).toEqual({ status: 403, code: "STAFF_TASK_FORBIDDEN" });
+  it("stage moves (and unblocking): the assignee, the creator or the Admin; a team manager is refused with 403", () => {
+    for (const who of [assignee, creator, admin]) expect(codeOf(() => assertCanMoveStage(who, t))).toBeNull();
+    expect(codeOf(() => assertCanMoveStage(teamManager, t))).toEqual(forbidden);
+  });
+
+  it("blocking: the assignee or the Admin; the creator and team managers are refused with 403", () => {
+    expect(codeOf(() => assertCanBlock(assignee, t))).toBeNull();
+    expect(codeOf(() => assertCanBlock(admin, t))).toBeNull();
+    expect(codeOf(() => assertCanBlock(creator, t))).toEqual(forbidden);
+    expect(codeOf(() => assertCanBlock(teamManager, t))).toEqual(forbidden);
   });
 
   it("comment: the assignee, the creator or the Admin; a team manager is refused with 403", () => {
     for (const who of [assignee, creator, admin]) expect(codeOf(() => assertCanComment(who, t))).toBeNull();
-    expect(codeOf(() => assertCanComment(teamManager, t))).toEqual({ status: 403, code: "STAFF_TASK_FORBIDDEN" });
+    expect(codeOf(() => assertCanComment(teamManager, t))).toEqual(forbidden);
   });
 });
 

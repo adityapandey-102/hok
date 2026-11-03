@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../../../common/errors/app-error";
-import { assertTemplateVersion, normalizeStageNames } from "./stage-template.rules";
+import { hasCapability, ROLES } from "../../../domain";
+import { assertTemplateVersion, normalizeStageNames, normalizeTemplateRoles } from "./stage-template.rules";
 
 function codeOf(fn: () => unknown): string | null {
   try {
@@ -31,5 +32,26 @@ describe("assertTemplateVersion", () => {
     expect(codeOf(() => assertTemplateVersion(2, 2))).toBeNull();
     expect(codeOf(() => assertTemplateVersion(2, undefined))).toBeNull();
     expect(codeOf(() => assertTemplateVersion(2, 1))).toBe("STAGE_TEMPLATE_MODIFIED");
+  });
+});
+
+describe("normalizeTemplateRoles", () => {
+  it("keeps a task template's roles, dropping repeats; empty means any role", () => {
+    expect(normalizeTemplateRoles("task", ["editor", "developer", "editor"])).toEqual(["editor", "developer"]);
+    expect(normalizeTemplateRoles("task", [])).toEqual([]);
+    expect(normalizeTemplateRoles("event", [])).toEqual([]);
+  });
+
+  it("refuses roles on an event template and Admin on a task template (400 STAGE_TEMPLATE_ROLES_INVALID)", () => {
+    expect(codeOf(() => normalizeTemplateRoles("event", ["editor"]))).toBe("STAGE_TEMPLATE_ROLES_INVALID");
+    expect(codeOf(() => normalizeTemplateRoles("task", ["admin"]))).toBe("STAGE_TEMPLATE_ROLES_INVALID");
+  });
+});
+
+describe("who reads templates", () => {
+  it("every role that assigns tasks also passes the router's events:read gate, so managers can load task templates", () => {
+    for (const role of ROLES) {
+      if (hasCapability(role, "staff_tasks:assign")) expect(hasCapability(role, "events:read"), role).toBe(true);
+    }
   });
 });

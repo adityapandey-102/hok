@@ -43,6 +43,11 @@ export function stageSummary(e: Pick<PortalEvent, "stages" | "currentStagePositi
   return `Stage ${e.currentStagePosition} of ${e.stageCount}${current ? ` · ${current.name}` : ""}`;
 }
 
+/** "20 Nov 2026" in the client's zone (a shared link's date). */
+export function formatLongDate(iso: string, zone: string): string {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: zone, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+}
+
 /** Short relative date for comment threads, in the client's zone. */
 export function formatShortDate(iso: string, zone: string): string {
   return new Intl.DateTimeFormat("en-GB", { timeZone: zone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));

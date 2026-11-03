@@ -24,8 +24,11 @@ export interface CalendarItem {
   state: EventState;
   clientId: string | null;
   clientName: string | null;
+  /** An event's or a task's current stage. */
   stageName: string | null;
   /** Tasks only. */
+  taskStageNumber: number | null;
+  taskStageCount: number | null;
   taskStatus: StaffTaskStatus | null;
   taskPriority: StaffTaskPriority | null;
   assigneeName: string | null;
@@ -48,6 +51,8 @@ export function fromEvent(e: EventSummary): CalendarItem {
     clientId: e.clientId,
     clientName: e.clientName,
     stageName: e.currentStageName,
+    taskStageNumber: null,
+    taskStageCount: null,
     taskStatus: null,
     taskPriority: null,
     assigneeName: null,
@@ -97,7 +102,9 @@ export interface FeedItem {
   eventType?: EventType;
   state?: EventState;
   currentStageName?: string;
-  /** task */
+  /** task (round 2: the stage it is at, e.g. "Rough cut", 2 of 5) */
+  currentStagePosition?: number;
+  stageCount?: number;
   status?: StaffTaskStatus;
   priority?: StaffTaskPriority;
   assigneeId?: string;
@@ -128,7 +135,9 @@ export function fromFeedItem(f: FeedItem): CalendarItem {
     state: f.state ?? "active",
     clientId: f.clientId,
     clientName: f.clientName,
-    stageName: f.kind === "event" ? (f.currentStageName ?? null) : null,
+    stageName: f.kind === "event" || f.kind === "task" ? (f.currentStageName ?? null) : null,
+    taskStageNumber: f.kind === "task" ? (f.currentStagePosition ?? null) : null,
+    taskStageCount: f.kind === "task" ? (f.stageCount ?? null) : null,
     taskStatus: f.kind === "task" ? (f.status ?? null) : null,
     taskPriority: f.kind === "task" ? (f.priority ?? null) : null,
     assigneeName: f.kind === "task" ? (f.assigneeName ?? null) : null,

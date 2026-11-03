@@ -52,12 +52,16 @@ describe("row scope", () => {
 });
 
 describe("assertTemplateUsable", () => {
-  const t = (active: boolean, stageNames = ["Planned", "Done"]) => ({ id: "t", name: "Photo Shoot", active, stageNames });
+  const t = (active: boolean, stageNames = ["Planned", "Done"], kind: "event" | "task" = "event") => ({ id: "t", name: "Photo Shoot", active, kind, stageNames });
   it("needs an existing, active template with stages (else 400 EVENT_TEMPLATE_INVALID)", () => {
     expect(codeOf(() => assertTemplateUsable(t(true)))).toBeNull();
     expect(codeOf(() => assertTemplateUsable(t(false)))).toBe("EVENT_TEMPLATE_INVALID");
     expect(codeOf(() => assertTemplateUsable(t(true, [])))).toBe("EVENT_TEMPLATE_INVALID");
     expect(codeOf(() => assertTemplateUsable(null))).toBe("EVENT_TEMPLATE_INVALID");
+  });
+
+  it("refuses a task template (400 EVENT_TEMPLATE_INVALID)", () => {
+    expect(codeOf(() => assertTemplateUsable(t(true, ["Draft", "Done"], "task")))).toBe("EVENT_TEMPLATE_INVALID");
   });
 });
 

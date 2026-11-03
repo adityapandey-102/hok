@@ -27,6 +27,9 @@ function asset(o: Partial<AssetEntity> = {}): AssetEntity {
     url: "https://x.test/a",
     type: "video",
     comment: null,
+    visibleToClient: false,
+    eventStageId: null,
+    eventStageName: null,
     preview: null,
     tags: [],
     createdBy: "rohan",
@@ -45,8 +48,8 @@ class FakeRepo implements AssetsRepositoryPort {
     ["c9", { id: "c9", teamIds: ["rohan"], status: "archived" }],
   ]);
   eventsById = new Map<string, AssetEvent>([
-    ["e1", { id: "e1", clientId: "c1" }],
-    ["e2", { id: "e2", clientId: "other" }],
+    ["e1", { id: "e1", clientId: "c1", stageIds: ["s1", "s2"] }],
+    ["e2", { id: "e2", clientId: "other", stageIds: [] }],
   ]);
   lastFilters: AssetListFilters | null = null;
   findMany(f: AssetListFilters) {
@@ -67,7 +70,7 @@ class FakeRepo implements AssetsRepositoryPort {
   }
   create(r: NewAssetRecord, guard: (c: AssetClient) => void) {
     guard(this.clients.get(r.clientId)!);
-    const row = asset({ ...r, id: `a${this.rows.size + 1}`, teamIds: this.clients.get(r.clientId)!.teamIds });
+    const row = asset({ ...r, eventStageName: null, id: `a${this.rows.size + 1}`, teamIds: this.clients.get(r.clientId)!.teamIds });
     this.rows.set(row.id, row);
     return Promise.resolve(row.id);
   }
@@ -156,6 +159,26 @@ describe("AssetsService", () => {
     expect(r.version).toBe(2);
     expect(r.tags).toEqual(["A"]);
     expect(audit.events.at(-1)?.action).toBe(AUDIT_ACTIONS.ASSET_UPDATED);
+  });
+
+  it("client-visible: needs an event; a stage must be the event's; moving or unlinking the event clears them", async () => {
+    expect(await status(svc.create(ROHAN, { ...body, visibleToClient: true }))).toBe(400);
+    expect(await status(svc.create(ROHAN, { ...body, eventId: "e1", visibleToClient: true, eventStageId: "nope" }))).toBe(400);
+    expect(await status(svc.create(ROHAN, { ...body, eventId: "e1", visibleToClient: true, eventStageId: "s2" }))).toBe(200);
+    const made = [...repo.rows.values()].at(-1)!;
+    expect(made).toMatchObject({ visibleToClient: true, eventStageId: "s2", eventId: "e1" });
+
+    // Not visible and no event: switching it on is a 400 until an event is picked, in one request or before.
+    expect(await status(svc.update(ROHAN, "a1", { visibleToClient: true, version: 1 }))).toBe(400);
+    const both = await svc.update(ROHAN, "a1", { eventId: "e1", visibleToClient: true, eventStageId: "s1", version: 1 });
+    expect(both).toMatchObject({ visibleToClient: true, eventStageId: "s1", eventId: "e1" });
+    // A stage alone is checked against the current event.
+    expect(await status(svc.update(ROHAN, "a1", { eventStageId: "zzz", version: 2 }))).toBe(400);
+    expect((await svc.update(ROHAN, "a1", { eventStageId: "s2", version: 2 })).eventStageId).toBe("s2");
+    // Unlinking the event clears the stage and the visibility.
+    const cleared = await svc.update(ROHAN, "a1", { eventId: null, version: 3 });
+    expect(cleared).toMatchObject({ visibleToClient: false, eventStageId: null, eventId: null });
+    expect(await status(svc.update(ROHAN, "a1", { eventId: null, visibleToClient: true, version: 4 }))).toBe(400);
   });
 
   it("soft delete hides the asset, audits, and respects scope and version", async () => {

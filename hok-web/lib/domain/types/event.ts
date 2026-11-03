@@ -1,3 +1,5 @@
+import type { Role } from "../constants/roles";
+
 /** Stage templates and client events (M4). Mirror hok-api's stage-templates and events modules. */
 export const EVENT_TYPES = ["shoot", "campaign", "meeting", "content_posting", "other"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -23,10 +25,17 @@ export interface StageRef {
   name: string;
 }
 
+/** What a stage template is for (round 2): the stages of a client event, or of a staff task. */
+export const TEMPLATE_KINDS = ["event", "task"] as const;
+export type TemplateKind = (typeof TEMPLATE_KINDS)[number];
+
 export interface StageTemplate {
   id: string;
   name: string;
   active: boolean;
+  kind: TemplateKind;
+  /** Task templates: the assignee roles it is offered for. Empty = any role. Always empty for event templates. */
+  roles: Role[];
   stages: StageRef[];
   version: number;
   createdAt: string;

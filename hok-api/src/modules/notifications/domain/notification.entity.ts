@@ -44,8 +44,8 @@ export const NOTIFICATION_TYPE_INFO: Record<NotificationType, NotificationTypeIn
     live: true,
   },
   task_status_changed: {
-    label: "Task status changed",
-    description: "A task you assigned or work on moves to another status.",
+    label: "Task progress",
+    description: "A task you assigned or work on moves to another stage, is completed, blocked or unblocked.",
     live: true,
   },
   task_commented: {

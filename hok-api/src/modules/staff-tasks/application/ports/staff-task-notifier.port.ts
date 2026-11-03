@@ -1,4 +1,5 @@
-import type { StaffTaskStatus } from "../../domain/staff-task.entity";
+/** What happened to the task: a stage move, completion, block, unblock or reopen. */
+export type TaskChangeAction = "stage" | "completed" | "blocked" | "unblocked" | "reopened";
 
 /**
  * HOOK POINT FOR M9 (notifications). FR-TSK-07 / FR-NTF-03:
@@ -24,8 +25,11 @@ export interface StaffTaskNotifier {
     title: string;
     assigneeId: string;
     assignedBy: string | null;
-    from: StaffTaskStatus;
-    to: StaffTaskStatus;
+    action: TaskChangeAction;
+    /** The stage it moved / was reopened to, or sat at when completed, blocked or unblocked. */
+    stageName: string | null;
+    /** The reason, for a block. */
+    reason: string | null;
     actorId: string;
     comment: string | null;
   }): Promise<void>;

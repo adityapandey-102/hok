@@ -22,7 +22,11 @@ export function toPortalEvent(e: PortalEvent): PortalEvent {
 }
 
 export function toPortalEventDetail(e: PortalEventDetail): PortalEventDetail {
-  return { ...toPortalEvent(e), updates: e.updates.map((u) => ({ stageName: u.stageName, note: u.note, createdAt: u.createdAt })) };
+  return {
+    ...toPortalEvent(e),
+    updates: e.updates.map((u) => ({ stageName: u.stageName, note: u.note, createdAt: u.createdAt })),
+    assets: e.assets.map((a) => ({ id: a.id, title: a.title, url: a.url, type: a.type, stageName: a.stageName, createdAt: a.createdAt })),
+  };
 }
 
 export function toPortalDashboard(d: PortalDashboard): PortalDashboard {

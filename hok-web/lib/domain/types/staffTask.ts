@@ -1,6 +1,6 @@
 import type { Role } from "../constants/roles";
 
-/** Staff task types. Mirror hok-api's staff-tasks module responses (REQUIREMENTS §5.9). */
+/** Staff task types. Mirror hok-api's staff-tasks module responses (REQUIREMENTS §5.9, round 2 contract §7). */
 
 /** FR-TSK-03. Order = the board's columns. */
 export const STAFF_TASK_STATUSES = ["todo", "in_progress", "blocked", "done"] as const;
@@ -24,11 +24,38 @@ export const STAFF_TASK_PRIORITY_LABELS: Record<StaffTaskPriority, string> = {
   urgent: "Urgent",
 };
 
-export type StaffTaskUpdateKind = "created" | "status" | "comment" | "reassigned" | "reopened";
+export type StaffTaskUpdateKind = "created" | "status" | "comment" | "reassigned" | "reopened" | "stage" | "completed" | "blocked" | "unblocked";
 
-export interface ReferenceLink {
+/** Most links a task holds, and most the create form takes (the API's limits). */
+export const TASK_LINKS_MAX = 50;
+export const TASK_BRIEF_LINKS_MAX_ON_CREATE = 20;
+
+/** A stage of one task: copied from its template when the task was created, then fixed. */
+export interface TaskStage {
+  id: string;
+  name: string;
+  position: number;
+}
+
+export type TaskLinkKind = "brief" | "delivered";
+
+export const TASK_LINK_KIND_LABELS: Record<TaskLinkKind, string> = {
+  brief: "Brief and inputs",
+  delivered: "Delivered work",
+};
+
+export interface TaskLink {
+  id: string;
+  kind: TaskLinkKind;
   url: string;
   label: string | null;
+  stageId: string | null;
+  stageName: string | null;
+  addedById: string | null;
+  addedByName: string | null;
+  createdAt: string;
+  /** Set once the link was shared with the client (an asset exists for it). */
+  sharedAssetId: string | null;
 }
 
 export interface StaffTaskSummary {
@@ -46,8 +73,13 @@ export interface StaffTaskSummary {
   clientId: string | null;
   clientName: string | null;
   eventId: string | null;
-  hasEditorBrief: boolean;
   completedAt: string | null;
+  /** The template the stages were copied from (a name, kept even if the template is gone). */
+  templateName: string;
+  stageCount: number;
+  currentStage: TaskStage;
+  /** Why the assignee flagged it blocked; null when it is not blocked. */
+  blockedReason: string | null;
   /** The caller is the Admin, or the creator with assign rights: they may edit, reassign, reopen and delete it. Decided by the API. */
   canManage: boolean;
   version: number;
@@ -61,19 +93,23 @@ export interface StaffTaskUpdate {
   authorName: string | null;
   fromStatus: StaffTaskStatus | null;
   toStatus: StaffTaskStatus | null;
+  fromStageName: string | null;
+  toStageName: string | null;
   fromAssigneeName: string | null;
   toAssigneeName: string | null;
   comment: string | null;
   createdAt: string;
 }
 
-export interface StaffTask extends Omit<StaffTaskSummary, "hasEditorBrief"> {
+export interface StaffTask extends StaffTaskSummary {
   description: string | null;
+  /** The instructions or script (every task has one, optional). */
+  brief: string | null;
   eventTitle: string | null;
-  rawFilesUrl: string | null;
-  referenceUrl: string | null;
-  script: string | null;
-  referenceLinks: ReferenceLink[];
+  stages: TaskStage[];
+  links: TaskLink[];
+  /** The caller may share a delivered link with the client: the task has an event and they manage that client (Admin or on its team). Decided by the API. */
+  canShare: boolean;
   updatedAt: string;
   /** Newest first, at most 100. */
   updates: StaffTaskUpdate[];
@@ -84,31 +120,25 @@ export function isTaskOverdue(task: { dueAt: string | null; status: StaffTaskSta
   return task.status !== "done" && task.dueAt !== null && new Date(task.dueAt).getTime() < now;
 }
 
-/**
- * The statuses a task can move to from `current` through the status action
- * (assignee or Admin): any other open status, or done. A done task offers
- * none -- only the Admin's reopen.
- */
-export function nextStatuses(current: StaffTaskStatus): StaffTaskStatus[] {
-  if (current === "done") return [];
-  return STAFF_TASK_STATUSES.filter((s) => s !== current);
-}
-
-/** Editor tasks (FR-TSK-10) carry an optional brief: raw files link, reference link and script. */
-export function isEditorRole(role: Role | null | undefined): boolean {
-  return role === "editor";
-}
-
-/** One line for a timeline entry ("moved In progress → Done", "reassigned Meera → Arjun"). */
+/** One line for a timeline entry ("moved it Edit → Review", "completed it", "blocked it", "reassigned Meera → Arjun"). */
 export function describeTaskUpdate(u: StaffTaskUpdate): string {
   const label = (s: StaffTaskStatus | null) => (s ? STAFF_TASK_STATUS_LABELS[s] : "?");
   switch (u.kind) {
     case "created":
       return `assigned it to ${u.toAssigneeName ?? "someone"}`;
+    case "stage":
+      return `moved it ${u.fromStageName ?? "?"} → ${u.toStageName ?? "?"}`;
+    case "completed":
+      return "completed it";
+    case "blocked":
+      return "marked it blocked";
+    case "unblocked":
+      return "unblocked it";
     case "status":
+      // Older entries (before stages) moved the status directly.
       return `moved it ${label(u.fromStatus)} → ${label(u.toStatus)}`;
     case "reopened":
-      return `reopened it (${label(u.toStatus)})`;
+      return u.toStageName ? `reopened it at ${u.toStageName}` : `reopened it (${label(u.toStatus)})`;
     case "reassigned":
       return `reassigned it ${u.fromAssigneeName ?? "?"} → ${u.toAssigneeName ?? "?"}`;
     case "comment":

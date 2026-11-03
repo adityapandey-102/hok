@@ -27,6 +27,11 @@ export interface Asset {
   /** What the link points to, fetched by the API after a save; null until then or when the page has none. */
   preview: { title: string | null; description: string | null; imageUrl: string | null; siteName: string | null } | null;
   tags: string[];
+  /** The client sees this link on its event page in the portal (round 2). Needs an event. */
+  visibleToClient: boolean;
+  /** The event stage it belongs to, for the client's "Shared with you" list. */
+  eventStageId: string | null;
+  eventStageName: string | null;
   createdBy: string | null;
   createdByName: string | null;
   version: number;

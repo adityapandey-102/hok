@@ -29,18 +29,37 @@ export function taskAssignedPayload(input: { taskId: string; title: string; acto
   };
 }
 
-/** task_status_changed -> the other side of the task (M7). `to` is the new status's label, e.g. "In progress". */
-/** People read "In progress", not the stored `in_progress`. Unknown values pass through. */
-const TASK_STATUS_WORDS: Record<string, string> = { todo: "To do", in_progress: "In progress", blocked: "Blocked", done: "Done" };
-
-export function taskStatusChangedPayload(input: { taskId: string; title: string; to: string; actorName?: string | null }): NotificationPayload {
-  const to = TASK_STATUS_WORDS[input.to] ?? input.to;
-  return {
-    title: `${input.title}: ${to}`,
-    body: input.actorName ? `${input.actorName} moved this task to ${to}.` : `This task moved to ${to}.`,
-    url: `/app/tasks/${input.taskId}`,
-    data: { taskId: input.taskId },
-  };
+/**
+ * task_status_changed -> the other side of the task: a stage move, completion, block, unblock or
+ * reopen (round 2). The bell shows who did it ("by Priya"), so the words here are the action itself:
+ * "Moved X to Rough cut", "Completed X", "Blocked X: waiting for footage".
+ */
+export function taskStatusChangedPayload(input: {
+  taskId: string;
+  title: string;
+  action: "stage" | "completed" | "blocked" | "unblocked" | "reopened";
+  stageName?: string | null;
+  reason?: string | null;
+  actorName?: string | null;
+}): NotificationPayload {
+  const stage = input.stageName ?? null;
+  const by = input.actorName ? ` by ${input.actorName}` : "";
+  const data: Record<string, string> = { taskId: input.taskId, action: input.action };
+  if (stage) data.stageName = stage;
+  if (input.reason) data.reason = input.reason;
+  const url = `/app/tasks/${input.taskId}`;
+  switch (input.action) {
+    case "completed":
+      return { title: `Completed ${input.title}`, body: `Marked complete${by}.`, url, data };
+    case "blocked":
+      return { title: `Blocked ${input.title}${input.reason ? `: ${input.reason}` : ""}`, body: input.reason ?? `Marked blocked${by}.`, url, data };
+    case "unblocked":
+      return { title: `Unblocked ${input.title}`, body: `No longer blocked${by}.`, url, data };
+    case "reopened":
+      return { title: `Reopened ${input.title}`, body: stage ? `Back at ${stage}${by}.` : `Reopened${by}.`, url, data };
+    default:
+      return { title: stage ? `Moved ${input.title} to ${stage}` : `Moved ${input.title}`, body: `Moved${stage ? ` to ${stage}` : ""}${by}.`, url, data };
+  }
 }
 
 /** task_commented -> the other side of the task (M7). */

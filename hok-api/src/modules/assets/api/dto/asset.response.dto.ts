@@ -12,6 +12,10 @@ export interface AssetResponseDto {
   url: string;
   type: AssetType;
   comment: string | null;
+  /** The client sees this under the event on their portal. */
+  visibleToClient: boolean;
+  eventStageId: string | null;
+  eventStageName: string | null;
   /** Link preview (title, description, image, site), or null. */
   preview: { title: string | null; description: string | null; imageUrl: string | null; siteName: string | null } | null;
   tags: string[];

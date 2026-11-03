@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ASSET_TYPES,
   ASSET_TYPE_LABELS,
   assetFormSchema,
   type Asset,
   type AssetType,
+  type StageRef,
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { assetsApi } from "../api/assetsApi";
@@ -17,13 +18,16 @@ import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
 import { Modal } from "../../../components/ui/Modal";
 import { Select, Textarea } from "../../../components/ui/Select";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
+import { Switch } from "../../../components/ui/Switch";
 import { TagInput } from "./TagInput";
 
 /**
  * Add / edit an asset link. With a fixed `clientId` (the client workspace tab)
  * the client is known; on /app/assets the form asks which client (create
  * only; an asset never changes client). The event picker lists that client's
- * events, loaded when the modal opens.
+ * events, loaded when the modal opens. "Show to client" (round 2) puts the link on
+ * the event's page in the client portal; it needs an event, and an optional stage
+ * of that event says where in the work it belongs.
  */
 export function AssetFormModal({
   asset,
@@ -43,11 +47,35 @@ export function AssetFormModal({
   const [comment, setComment] = useState(asset?.comment ?? "");
   const [tags, setTags] = useState<string[]>(asset?.tags ?? []);
   const [eventId, setEventId] = useState(asset?.eventId ?? "");
+  const [visibleToClient, setVisibleToClient] = useState(asset?.visibleToClient ?? false);
+  const [eventStageId, setEventStageId] = useState(asset?.eventStageId ?? "");
+  // The picked event's stages for the stage select (loaded when an event is chosen).
+  const [eventStages, setEventStages] = useState<{ eventId: string; stages: StageRef[] } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const needsClientPicker = !asset && !clientId;
+  const stages = eventStages && eventStages.eventId === eventId ? eventStages.stages : null;
+
+  useEffect(() => {
+    if (!eventId) return;
+    let cancelled = false;
+    eventsApi
+      .get(eventId)
+      .then((r) => !cancelled && setEventStages({ eventId, stages: r.event.stages }))
+      .catch(() => !cancelled && setEventStages({ eventId, stages: [] }));
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
+
+  /** Changing the event drops the stage (it belongs to the old event) and, with no event, the client switch. */
+  function pickEvent(id: string | null) {
+    setEventId(id ?? "");
+    setEventStageId("");
+    if (!id) setVisibleToClient(false);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -72,6 +100,8 @@ export function AssetFormModal({
           comment: v.comment || null,
           eventId: eventId || null,
           tags: v.tags,
+          visibleToClient: eventId ? visibleToClient : false,
+          eventStageId: eventId ? eventStageId || null : null,
           version: asset.version,
         });
         onSaved(saved, false);
@@ -84,6 +114,8 @@ export function AssetFormModal({
           comment: v.comment || null,
           eventId: eventId || null,
           tags: v.tags,
+          visibleToClient: eventId ? visibleToClient : false,
+          eventStageId: eventId ? eventStageId || null : null,
         });
         onSaved(saved, true);
       }
@@ -92,6 +124,8 @@ export function AssetFormModal({
       if (isApiErrorCode(err, "ASSET_MODIFIED")) setFormError("Someone else changed this asset. Close this and reopen it to see the latest.");
       else if (isApiErrorCode(err, "CLIENT_ARCHIVED")) setFormError("This client is archived and read-only.");
       else if (isApiErrorCode(err, "ASSET_EVENT_INVALID")) setFormError("Pick one of this client's events.");
+      else if (isApiErrorCode(err, "ASSET_CLIENT_VISIBLE_NEEDS_EVENT")) setFormError("Pick an event to show this link to the client.");
+      else if (isApiErrorCode(err, "ASSET_STAGE_INVALID")) setFormError("Pick one of this event's stages.");
       else setFormError(err instanceof Error ? err.message : "Failed to save the asset");
     }
   }
@@ -116,7 +150,7 @@ export function AssetFormModal({
               load={async (q) => (await clientsApi.searchOptions(q)).filter((o) => o.data?.status !== "archived")}
               onChange={(id) => {
                 setClient(id ?? "");
-                setEventId("");
+                pickEvent(null);
               }}
             />
             <FieldError>{errors.client}</FieldError>
@@ -158,9 +192,32 @@ export function AssetFormModal({
               disabled={!client}
               loadKey={client}
               load={(q) => eventsApi.searchOptions(client, q)}
-              onChange={(id) => setEventId(id ?? "")}
+              onChange={(id) => pickEvent(id)}
             />
           </div>
+        </div>
+        <div className="flex flex-col gap-3.5 rounded-app bg-accent-bg/50 p-3.5">
+          <Switch
+            id="asset-visible"
+            label="Show to client"
+            hint={eventId ? "The client sees this link on the event's page in their portal." : "Pick an event first: the client sees assets on an event's page."}
+            checked={visibleToClient && !!eventId}
+            disabled={!eventId}
+            onChange={setVisibleToClient}
+          />
+          {eventId && (
+            <div>
+              <FieldLabel htmlFor="asset-stage">Event stage (optional)</FieldLabel>
+              <Select id="asset-stage" value={eventStageId} disabled={!stages} onChange={(e) => setEventStageId(e.target.value)}>
+                <option value="">{stages ? "No stage" : "Loading stages…"}</option>
+                {(stages ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.position}. {s.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
         </div>
         <div>
           <FieldLabel htmlFor="asset-comment">Comment</FieldLabel>

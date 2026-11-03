@@ -11,6 +11,7 @@ import {
   assertClientWritable,
   assertEventLinkable,
   assertRange,
+  resolveClientVisibility,
   type AssetScope,
 } from "../domain/asset.rules";
 import type { AssetFields } from "../domain/asset.entity";
@@ -25,7 +26,7 @@ export interface AssetsCaller {
   role: Role;
 }
 
-const FIELD_KEYS = ["title", "url", "type", "comment", "eventId"] as const satisfies readonly (keyof AssetFields)[];
+const FIELD_KEYS = ["title", "url", "type", "comment", "eventId", "visibleToClient", "eventStageId"] as const satisfies readonly (keyof AssetFields)[];
 
 /**
  * The asset link library (REQUIREMENTS section 5.5). The route has already
@@ -61,6 +62,7 @@ export class AssetsService {
       search: query.search,
       type: query.type,
       tag: query.tag,
+      visibleToClient: query.visibleToClient,
       from,
       to,
     };
@@ -91,7 +93,14 @@ export class AssetsService {
     const scope = this.scopeOf(caller);
     const client = assertClientUsable(scope, await this.repo.findClient(dto.clientId));
     const eventId = dto.eventId ?? null;
-    if (eventId) assertEventLinkable(client.id, await this.repo.findEvent(eventId));
+    const event = eventId ? await this.repo.findEvent(eventId) : null;
+    if (eventId) assertEventLinkable(client.id, event);
+    const visibility = resolveClientVisibility({
+      before: { eventId: null, visibleToClient: false, eventStageId: null },
+      eventId,
+      sent: { visibleToClient: dto.visibleToClient, eventStageId: dto.eventStageId },
+      event,
+    });
 
     const id = await this.repo.create(
       {
@@ -101,6 +110,7 @@ export class AssetsService {
         type: dto.type,
         comment: dto.comment ?? null,
         eventId,
+        ...visibility,
         tags: dto.tags ?? [],
         createdBy: caller.userId,
       },
@@ -127,8 +137,14 @@ export class AssetsService {
 
     const scope = this.scopeOf(caller);
     // The event must belong to the asset's own client; events never change client, so checking before the lock is safe.
+    // A stage sent without a new event belongs to the asset's current event: read that event's stages now
+    // (re-checked on the locked row below, so a concurrent event change is a 400, never a bad write).
     let eventToLink: Awaited<ReturnType<AssetsRepositoryPort["findEvent"]>> | undefined;
     if (fields.eventId) eventToLink = await this.repo.findEvent(fields.eventId);
+    else if (fields.eventStageId && fields.eventId === undefined) {
+      const before = await this.repo.findById(id);
+      if (before?.eventId) eventToLink = await this.repo.findEvent(before.eventId);
+    }
 
     const asset = await this.repo.update(id, (current) => {
       // Visibility before version, so a stale version on someone else's asset is still a 404.
@@ -136,6 +152,18 @@ export class AssetsService {
       assertAssetVersion(current.version, dto.version);
       assertClientWritable(current.clientStatus);
       if (fields.eventId) assertEventLinkable(current.clientId, eventToLink ?? null);
+      // Moving or clearing the event clears the stage (and "visible"); the rest is checked against the final event.
+      const finalEventId = fields.eventId !== undefined ? fields.eventId : current.eventId;
+      const visibility = resolveClientVisibility({
+        before: current,
+        eventId: finalEventId,
+        sent: { visibleToClient: dto.visibleToClient, eventStageId: dto.eventStageId },
+        event: eventToLink ?? null,
+      });
+      delete fields.visibleToClient;
+      delete fields.eventStageId;
+      if (visibility.visibleToClient !== current.visibleToClient) fields.visibleToClient = visibility.visibleToClient;
+      if (visibility.eventStageId !== current.eventStageId) fields.eventStageId = visibility.eventStageId;
       const changes: AssetChanges = { fields };
       if (dto.tags !== undefined) changes.tags = dto.tags;
       return changes;

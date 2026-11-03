@@ -39,6 +39,10 @@ export const createAssetDtoSchema = z.object({
   type: z.enum(ASSET_TYPES),
   comment: optionalText(2000),
   eventId: uuid("eventId").nullable().optional(),
+  /** Show it to the client on their portal; needs `eventId` (400 ASSET_CLIENT_VISIBLE_NEEDS_EVENT). */
+  visibleToClient: z.boolean().optional(),
+  /** One of the event's stages (400 ASSET_STAGE_INVALID otherwise). */
+  eventStageId: uuid("eventStageId").nullable().optional(),
   tags: tags.optional(),
 });
 export type CreateAssetDto = z.infer<typeof createAssetDtoSchema>;
@@ -46,7 +50,7 @@ export type CreateAssetDto = z.infer<typeof createAssetDtoSchema>;
 /**
  * PATCH /assets/:id. Every field optional (at least one, or 400
  * VALIDATION_NO_FIELDS); `version` required (stale = 409 ASSET_MODIFIED).
- * `tags` replaces the whole set; `eventId: null` unlinks. The client never changes.
+ * `tags` replaces the whole set; `eventId: null` unlinks (which also clears the stage and "visible to client"). The client never changes.
  */
 export const updateAssetDtoSchema = z.object({
   title: z.string().trim().min(1).max(160).optional(),
@@ -54,6 +58,8 @@ export const updateAssetDtoSchema = z.object({
   type: z.enum(ASSET_TYPES).optional(),
   comment: optionalText(2000),
   eventId: uuid("eventId").nullable().optional(),
+  visibleToClient: z.boolean().optional(),
+  eventStageId: uuid("eventStageId").nullable().optional(),
   tags: tags.optional(),
   version,
 });
@@ -96,6 +102,11 @@ export const assetQueryDtoSchema = z.object({
   search: z.string().trim().max(80).transform(blankToUndefined).optional(),
   type: z.enum(ASSET_TYPES).optional(),
   tag: z.string().trim().max(ASSET_TAG_MAX_LENGTH).transform(blankToUndefined).optional(),
+  /** `visibleToClient=true`: only assets the client can see on the portal. */
+  visibleToClient: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
   from: instant.optional(),
   to: instant.optional(),
   limit: limit(ASSETS_DEFAULT_LIMIT, ASSETS_MAX_LIMIT),

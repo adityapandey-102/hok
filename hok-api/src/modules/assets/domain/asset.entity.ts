@@ -25,6 +25,11 @@ export interface AssetEntity {
   url: string;
   type: AssetType;
   comment: string | null;
+  /** Shown to the client on the portal under its event (needs an event). */
+  visibleToClient: boolean;
+  /** One of the event's stages, or null. */
+  eventStageId: string | null;
+  eventStageName: string | null;
   /** Tag names, sorted case-insensitively. */
   tags: string[];
   createdBy: string | null;
@@ -44,6 +49,8 @@ export interface AssetFields {
   type: AssetType;
   comment: string | null;
   eventId: string | null;
+  visibleToClient: boolean;
+  eventStageId: string | null;
 }
 
 /** A tag suggestion: the name and how many live assets use it. */

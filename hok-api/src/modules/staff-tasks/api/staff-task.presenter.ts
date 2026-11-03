@@ -1,5 +1,7 @@
-import type { StaffTaskDetailView, StaffTaskSummaryView } from "../domain/staff-task.entity";
+import type { StaffTaskDetailView, StaffTaskSummaryView, TaskStage } from "../domain/staff-task.entity";
 import type { StaffTaskDetailResponseDto, StaffTaskSummaryResponseDto } from "./dto/staff-task.response.dto";
+
+const stageDto = (s: TaskStage): TaskStage => ({ id: s.id, name: s.name, position: s.position });
 
 /** Domain -> response DTO. Explicit field lists so a new column never leaks by accident. */
 export function toStaffTaskDetailResponseDto(t: StaffTaskDetailView): StaffTaskDetailResponseDto {
@@ -7,6 +9,7 @@ export function toStaffTaskDetailResponseDto(t: StaffTaskDetailView): StaffTaskD
     id: t.id,
     title: t.title,
     description: t.description,
+    brief: t.brief,
     status: t.status,
     priority: t.priority,
     dueAt: t.dueAt,
@@ -20,15 +23,29 @@ export function toStaffTaskDetailResponseDto(t: StaffTaskDetailView): StaffTaskD
     clientName: t.clientName,
     eventId: t.eventId,
     eventTitle: t.eventTitle,
-    rawFilesUrl: t.rawFilesUrl,
-    referenceUrl: t.referenceUrl,
-    script: t.script,
-    referenceLinks: t.referenceLinks,
+    templateName: t.templateName,
+    stageCount: t.stageCount,
+    currentStage: stageDto(t.currentStage),
+    stages: t.stages.map(stageDto),
+    blockedReason: t.blockedReason,
+    links: t.links.map((l) => ({
+      id: l.id,
+      kind: l.kind,
+      url: l.url,
+      label: l.label,
+      stageId: l.stageId,
+      stageName: l.stageName,
+      addedById: l.addedById,
+      addedByName: l.addedByName,
+      createdAt: l.createdAt,
+      sharedAssetId: l.sharedAssetId,
+    })),
     completedAt: t.completedAt,
     version: t.version,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
     canManage: t.canManage,
+    canShare: t.canShare,
     updates: t.updates.map((u) => ({
       id: u.id,
       kind: u.kind,
@@ -38,6 +55,8 @@ export function toStaffTaskDetailResponseDto(t: StaffTaskDetailView): StaffTaskD
       toStatus: u.toStatus,
       fromAssigneeName: u.fromAssigneeName,
       toAssigneeName: u.toAssigneeName,
+      fromStageName: u.fromStageName,
+      toStageName: u.toStageName,
       comment: u.comment,
       createdAt: u.createdAt,
     })),
@@ -59,7 +78,10 @@ export function toStaffTaskSummaryResponseDto(t: StaffTaskSummaryView): StaffTas
     clientId: t.clientId,
     clientName: t.clientName,
     eventId: t.eventId,
-    hasEditorBrief: t.hasEditorBrief,
+    templateName: t.templateName,
+    stageCount: t.stageCount,
+    currentStage: stageDto(t.currentStage),
+    blockedReason: t.blockedReason,
     completedAt: t.completedAt,
     version: t.version,
     createdAt: t.createdAt,

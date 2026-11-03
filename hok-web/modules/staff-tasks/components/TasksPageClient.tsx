@@ -50,13 +50,11 @@ const RELATIONS: { id: "all" | TaskRelation; label: string }[] = [
  */
 export function TasksPageClient({
   role,
-  viewerId,
   zone,
   initialFilters = {},
   initialAssigneeName,
 }: {
   role: Role;
-  viewerId: string;
   zone: string;
   /** From the URL (e.g. the dashboard's "View all overdue"). */
   initialFilters?: Partial<TaskFilterState>;
@@ -212,7 +210,7 @@ export function TasksPageClient({
       </div>
 
       {board ? (
-        <TaskBoard filters={apiFilters} filterKey={filterKey} zone={zone} reloadKey={reloadKey} isAdmin={isAdmin} viewerId={viewerId} />
+        <TaskBoard filters={apiFilters} filterKey={filterKey} zone={zone} reloadKey={reloadKey} />
       ) : (
         <TaskList
           filters={apiFilters}

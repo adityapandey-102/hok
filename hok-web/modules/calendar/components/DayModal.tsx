@@ -6,7 +6,7 @@ import { dayRange, formatDayLabel, formatTimeInZone, itemsOnDay, type DayKey, ty
 import { isApiErrorCode } from "../../../lib/api/client";
 import { todosApi } from "../../todos/api/todosApi";
 import { TickBox, UrgencyPill, describeTodoError } from "../../todos/components/todoUi";
-import { PriorityPill, TaskStatusPill } from "../../staff-tasks/components/taskUi";
+import { PriorityPill, StageChip, TaskStatusPill } from "../../staff-tasks/components/taskUi";
 import { TYPE_CHIP_CLASSES, countByKind, type CalendarItem } from "../calendarItems";
 import { Modal } from "../../../components/ui/Modal";
 import { Button, ButtonLink } from "../../../components/ui/Button";
@@ -163,6 +163,8 @@ export function DayModal({
                     </span>
                     <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                       {it.taskStatus && <TaskStatusPill status={it.taskStatus} />}
+                      {it.stageName && it.taskStageNumber && it.taskStageCount && <StageChip stage={{ name: it.stageName, position: it.taskStageNumber }} count={it.taskStageCount} />}
+                      {it.stageName && !(it.taskStageNumber && it.taskStageCount) && <span className="text-xs text-text-muted">{it.stageName}</span>}
                       {it.taskPriority && <PriorityPill priority={it.taskPriority} />}
                       {it.assigneeName && <span className="text-xs text-text-muted">{it.assigneeName}</span>}
                     </span>

@@ -1,5 +1,7 @@
 import { BadRequestError, ConflictError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
+import type { Role } from "../../../domain";
+import type { TemplateKind } from "./stage-template.entity";
 
 /**
  * Template rules (FR-EVT-01). A template's stages are always sent and stored
@@ -23,6 +25,21 @@ export function normalizeStageNames(names: readonly string[]): string[] {
     seen.add(key);
     return name;
   });
+}
+
+/**
+ * The roles a task template is offered for. Only task templates carry roles
+ * (an event template with any is a 400), and "admin" is never one: nobody assigns
+ * tasks to the Admin. Repeats are dropped; empty = offered for any role.
+ */
+export function normalizeTemplateRoles(kind: TemplateKind, roles: readonly Role[]): Role[] {
+  if (roles.length > 0 && kind !== "task") {
+    throw new BadRequestError("Roles can only be set on a task template", ERROR_CODES.STAGE_TEMPLATE_ROLES_INVALID);
+  }
+  if (roles.includes("admin")) {
+    throw new BadRequestError("Tasks aren't assigned to the Admin, so Admin can't be a template role", ERROR_CODES.STAGE_TEMPLATE_ROLES_INVALID);
+  }
+  return [...new Set(roles)];
 }
 
 /** Optimistic lock for template edits (the Admin may edit from two tabs). */

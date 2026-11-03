@@ -4,7 +4,7 @@ import { createApp } from "../../src/app";
 import { db } from "../../src/common/database/drizzle-client";
 import { eq } from "drizzle-orm";
 import { profiles } from "../../src/modules/users/infrastructure/profile.schema";
-import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, deleteStaffTasksFor, deleteStageTemplates, type FixtureUser } from "./helpers";
+import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, deleteStaffTasksFor, deleteStageTemplates, createTaskTemplateFixture, type FixtureUser } from "./helpers";
 
 /**
  * M5 end to end: personal entries (owner-only, client link must be the
@@ -26,7 +26,10 @@ const stamp = Date.now();
 const as = (role: string, r: request.Test) => r.set("Authorization", auth[role]!);
 type Body = Record<string, unknown>;
 
+let taskTemplate: Awaited<ReturnType<typeof createTaskTemplateFixture>>;
+
 beforeAll(async () => {
+  taskTemplate = await createTaskTemplateFixture(["Brief received", "Cut", "Review"]);
   admin = await createFixtureUser("admin", "IT Cal Admin");
   smm = await createFixtureUser("social_media_manager", "IT Cal SMM");
   mm = await createFixtureUser("marketing_manager", "IT Cal MM");
@@ -51,7 +54,7 @@ beforeAll(async () => {
 
   // Round 1: tasks (all assigned to the editor) and to-dos, in March 2032.
   const task = async (role: string, body: Body) => {
-    const r = await as(role, request(app).post("/api/v1/staff-tasks")).send({ assigneeId: editor.id, ...body });
+    const r = await as(role, request(app).post("/api/v1/staff-tasks")).send({ assigneeId: editor.id, templateId: taskTemplate.id, ...body });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
   };
   await task("admin", { title: "IT Cal admin task", dueAt: "2032-03-10T10:00:00Z" });
@@ -72,7 +75,7 @@ afterAll(async () => {
   const owners = [admin, smm, mm, editor].filter(Boolean).map((u) => u.id);
   await deleteStaffTasksFor(owners);
   await deleteClientsOwnedBy(owners);
-  await deleteStageTemplates(templateIds);
+  await deleteStageTemplates([...templateIds, taskTemplate.id]);
   for (const id of owners) await deleteFixtureUser(id); // personal entries cascade
   await closeDb();
 });
@@ -192,6 +195,10 @@ describe("GET /calendar: tasks and to-dos (round 1)", () => {
       assigneeName: "IT Cal Editor",
       ownerId: editor.id,
       clientId: null,
+      // Round 2: where the task is in its stages.
+      currentStageName: "Brief received",
+      currentStagePosition: 1,
+      stageCount: 3,
     });
     expect(items.find((i) => i.title === "IT Cal SMM task")).toMatchObject({ clientId: smmClient, clientName: `IT Cal SMM Client ${stamp}` });
     expect(items.find((i) => i.kind === "todo")).toMatchObject({ urgency: "high", done: false, clientId: null, clientName: null, ownerId: editor.id });

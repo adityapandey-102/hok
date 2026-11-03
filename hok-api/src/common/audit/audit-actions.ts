@@ -69,7 +69,7 @@ export const AUDIT_ACTIONS = {
   /** Soft delete. */
   ASSET_DELETED: "asset.deleted",
 
-  // Staff tasks (Admin's actions). Status changes, comments and reopens are NOT
+  // Staff tasks (Admin's actions). Stage moves, blocks, comments and reopens are NOT
   // audited here: staff_task_updates is their typed, append-only timeline.
   STAFF_TASK_CREATED: "staff_task.created",
   /** Fields edited; metadata lists the field names (never their values). */
@@ -78,6 +78,11 @@ export const AUDIT_ACTIONS = {
   STAFF_TASK_REASSIGNED: "staff_task.reassigned",
   /** Hard delete (its timeline goes with it); this entry is the trace. */
   STAFF_TASK_DELETED: "staff_task.deleted",
+  /** A link added to a task; metadata { linkId, kind } (never the URL). */
+  STAFF_TASK_LINK_ADDED: "staff_task.link_added",
+  STAFF_TASK_LINK_REMOVED: "staff_task.link_removed",
+  /** A delivered link shared with the client as a client-visible asset; metadata { linkId, assetId }. */
+  STAFF_TASK_LINK_SHARED: "staff_task.link_shared",
 
   // Client to-dos (Phase 2). Metadata carries ids / field names, never the text.
   CLIENT_TODO_CREATED: "client_todo.created",

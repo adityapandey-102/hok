@@ -14,6 +14,9 @@ export interface AssetRow {
   url: string;
   type: AssetType;
   comment: string | null;
+  visibleToClient: boolean;
+  eventStageId: string | null;
+  eventStageName: string | null;
   previewTitle: string | null;
   previewDescription: string | null;
   previewImageUrl: string | null;

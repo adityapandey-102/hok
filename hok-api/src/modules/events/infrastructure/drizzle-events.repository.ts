@@ -215,7 +215,7 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
   findTemplate(templateId: string) {
     return guarded("load the stage template", async (): Promise<EventTemplate | null> => {
       const [row] = await db
-        .select({ id: stageTemplates.id, name: stageTemplates.name, active: stageTemplates.active })
+        .select({ id: stageTemplates.id, name: stageTemplates.name, active: stageTemplates.active, kind: stageTemplates.kind })
         .from(stageTemplates)
         .where(eq(stageTemplates.id, templateId))
         .limit(1);

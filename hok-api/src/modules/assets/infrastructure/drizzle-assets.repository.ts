@@ -7,7 +7,7 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 // belongs to, its optional event, and staff names.
 import { clients } from "../../clients/infrastructure/clients.schema";
 import { isOnTeam, teamIdsOf } from "../../clients/infrastructure/client-team.sql";
-import { events } from "../../events/infrastructure/events.schema";
+import { eventStages, events } from "../../events/infrastructure/events.schema";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { assetTags, assets, tags } from "./assets.schema";
 import { AssetMapper, type AssetRow } from "./asset.mapper";
@@ -37,6 +37,9 @@ const ASSET_SELECT = {
   url: assets.url,
   type: assets.type,
   comment: assets.comment,
+  visibleToClient: assets.visibleToClient,
+  eventStageId: assets.eventStageId,
+  eventStageName: eventStages.name,
   previewTitle: assets.previewTitle,
   previewDescription: assets.previewDescription,
   previewImageUrl: assets.previewImageUrl,
@@ -72,6 +75,7 @@ function baseSelect(ex: Executor) {
     .from(assets)
     .innerJoin(clients, eq(clients.id, assets.clientId))
     .leftJoin(events, eq(events.id, assets.eventId))
+    .leftJoin(eventStages, eq(eventStages.id, assets.eventStageId))
     .leftJoin(profiles, eq(profiles.id, assets.createdBy));
 }
 
@@ -129,6 +133,7 @@ export class DrizzleAssetsRepository implements AssetsRepositoryPort {
     if (filters.clientId) conditions.push(eq(assets.clientId, filters.clientId));
     if (filters.eventId) conditions.push(eq(assets.eventId, filters.eventId));
     if (filters.type) conditions.push(eq(assets.type, filters.type));
+    if (filters.visibleToClient) conditions.push(eq(assets.visibleToClient, true));
     if (filters.from) conditions.push(gte(assets.createdAt, filters.from));
     if (filters.to) conditions.push(lt(assets.createdAt, filters.to));
     if (filters.tag) {
@@ -191,7 +196,9 @@ export class DrizzleAssetsRepository implements AssetsRepositoryPort {
   findEvent(id: string) {
     return guarded("load the event", async (): Promise<AssetEvent | null> => {
       const [row] = await db.select({ id: events.id, clientId: events.clientId }).from(events).where(eq(events.id, id)).limit(1);
-      return row ?? null;
+      if (!row) return null;
+      const stages = await db.select({ id: eventStages.id }).from(eventStages).where(eq(eventStages.eventId, id));
+      return { ...row, stageIds: stages.map((s) => s.id) };
     });
   }
 
@@ -215,6 +222,8 @@ export class DrizzleAssetsRepository implements AssetsRepositoryPort {
             url: record.url,
             type: record.type,
             comment: record.comment,
+            visibleToClient: record.visibleToClient,
+            eventStageId: record.eventStageId,
             createdBy: record.createdBy,
           })
           .returning({ id: assets.id });

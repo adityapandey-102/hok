@@ -8,6 +8,8 @@ import {
   deleteClientsOwnedBy,
   deleteFixtureUser,
   deleteStaffTasksFor,
+  createTaskTemplateFixture,
+  deleteStageTemplates,
   type FixtureUser,
 } from "./helpers";
 
@@ -32,7 +34,10 @@ const search = async (who: keyof typeof auth, q: string) => {
 };
 const titles = (r: request.Response, g: string) => ((r.body as Result).groups[g] ?? []).map((h) => h.title);
 
+let taskTemplate: Awaited<ReturnType<typeof createTaskTemplateFixture>>;
+
 beforeAll(async () => {
+  taskTemplate = await createTaskTemplateFixture(["Brief received", "Cut", "Review"]);
   [admin, owner, other, editor] = await Promise.all([
     createFixtureUser("admin", "Search Admin"),
     createFixtureUser("social_media_manager", "Search Owner"),
@@ -47,13 +52,14 @@ beforeAll(async () => {
   const task = await request(app)
     .post("/api/v1/staff-tasks")
     .set("Authorization", auth.admin)
-    .send({ title: `${TAG} 50% edit`, assigneeId: editor.id, rawFilesUrl: "https://drive.example.com/raw" });
+    .send({ title: `${TAG} 50% edit`, assigneeId: editor.id, templateId: taskTemplate.id });
   expect(task.status).toBe(201);
 });
 
 afterAll(async () => {
   await deleteStaffTasksFor([editor.id]);
   await deleteClientsOwnedBy([owner.id, other.id]);
+  await deleteStageTemplates([taskTemplate.id]);
   for (const u of [admin, owner, other, editor]) await deleteFixtureUser(u.id);
   await closeDb();
 });

@@ -7,7 +7,9 @@
  * brief; some overdue, blocked or done) with matching timelines, reused by
  * (assignee, title). Round 1 (2026-11-02) adds a task an SMM created for the
  * editor, tasks due on fixed days of the current month, and 3 private to-dos per
- * person. Later milestones add assets, tasks and comments here.
+ * person. Round 2 (2026-11-03) adds task templates (two for roles, one for any role),
+ * gives every task a template and its stages, brief links on the editor tasks, one
+ * delivered link, and one asset the client can see on the portal.
  *
  * Deliberately calls the AuthProvider directly, not an Application service --
  * seeding is an administrative bypass of RBAC (the same way migrations and the
@@ -21,6 +23,7 @@
  * LOCAL ONLY. The password is a well-known dev value; never run this against a
  * shared or production database.
  */
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../common/database/drizzle-client";
 import { authProvider } from "../common/auth/supabase-auth-provider";
@@ -35,7 +38,7 @@ import type { EventState, EventType } from "../modules/events/domain/event.entit
 import { personalEvents } from "../modules/personal-events/infrastructure/personal-events.schema";
 import { assetTags, assets, tags } from "../modules/assets/infrastructure/assets.schema";
 import type { AssetType } from "../modules/assets/domain/asset.entity";
-import { staffTaskUpdates, staffTasks } from "../modules/staff-tasks/infrastructure/staff-tasks.schema";
+import { staffTaskLinks, staffTaskUpdates, staffTasks, taskStages } from "../modules/staff-tasks/infrastructure/staff-tasks.schema";
 import type { StaffTaskPriority, StaffTaskStatus } from "../modules/staff-tasks/domain/staff-task.entity";
 import { todos } from "../modules/todos/infrastructure/todos.schema";
 import type { TodoUrgency } from "../modules/todos/domain/todo.entity";
@@ -158,11 +161,20 @@ async function seedClients(): Promise<void> {
 /** Extra team members (besides the lead) for some sample clients. */
 const EXTRA_TEAM: Record<string, string[]> = { "Chai Point Cafe": ["kiran.pm@hok.test"] };
 
-const TEMPLATES: { name: string; stages: string[] }[] = [
-  { name: "Photo Shoot", stages: ["Planned", "Pre-production", "Shoot", "Editing", "Client Review", "Completed"] },
-  { name: "Reel Production", stages: ["Brief", "Script", "Shoot", "Edit", "Client Review", "Published"] },
-  { name: "Campaign Launch", stages: ["Strategy", "Creatives", "Approval", "Live", "Report"] },
+const TEMPLATES: { name: string; stages: string[]; kind: "event" | "task"; roles: Role[] }[] = [
+  { name: "Photo Shoot", kind: "event", roles: [], stages: ["Planned", "Pre-production", "Shoot", "Editing", "Client Review", "Completed"] },
+  { name: "Reel Production", kind: "event", roles: [], stages: ["Brief", "Script", "Shoot", "Edit", "Client Review", "Published"] },
+  { name: "Campaign Launch", kind: "event", roles: [], stages: ["Strategy", "Creatives", "Approval", "Live", "Report"] },
+  // Task templates (round 2): the stages a staff task moves through. Offered for the listed roles; empty = any role.
+  { name: "Reel edit", kind: "task", roles: ["editor"], stages: ["Brief received", "Rough cut", "Review", "Final cut"] },
+  { name: "Caption writing", kind: "task", roles: ["content_writer"], stages: ["Draft", "Review", "Final"] },
+  { name: "General task", kind: "task", roles: [], stages: ["To do", "In progress", "Done"] },
 ];
+
+/** The task template each seeded task uses, by its assignee's role. */
+function taskTemplateFor(role: Role): string {
+  return role === "editor" ? "Reel edit" : role === "content_writer" ? "Caption writing" : "General task";
+}
 
 async function seedTemplates(adminId: string | undefined): Promise<Map<string, { id: string; stages: string[] }>> {
   const byName = new Map<string, { id: string; stages: string[] }>();
@@ -175,7 +187,7 @@ async function seedTemplates(adminId: string | undefined): Promise<Map<string, {
       continue;
     }
     const id = await db.transaction(async (tx) => {
-      const [row] = await tx.insert(stageTemplates).values({ name: t.name, createdBy: adminId ?? null }).returning({ id: stageTemplates.id });
+      const [row] = await tx.insert(stageTemplates).values({ name: t.name, kind: t.kind, roles: t.roles, createdBy: adminId ?? null }).returning({ id: stageTemplates.id });
       await tx.insert(stageTemplateStages).values(t.stages.map((name, i) => ({ templateId: row!.id, position: i + 1, name })));
       return row!.id;
     });
@@ -297,10 +309,12 @@ async function seedEvents(templates: Map<string, { id: string; stages: string[] 
 }
 
 /** Per client: a few reference links (Drive, Canva, ...), each with tags; the first is linked to the client's first event. */
-const ASSET_PLAN: { title: string; url: string; type: AssetType; comment: string; tags: string[]; linkEvent?: boolean }[] = [
+const ASSET_PLAN: { title: string; url: string; type: AssetType; comment: string; tags: string[]; linkEvent?: boolean; sharedWithClientFor?: string }[] = [
   { title: "Raw footage: brand shoot", url: "https://drive.google.com/drive/folders/hok-seed-raw", type: "video", comment: "Unedited clips from the shoot day.", tags: ["Raw", "Shoot"], linkEvent: true },
   { title: "Brand kit (logos, colours)", url: "https://www.canva.com/design/hok-seed-brand-kit", type: "design", comment: "Latest approved brand kit.", tags: ["Brand", "Design"] },
   { title: "Monthly content plan", url: "https://docs.google.com/document/d/hok-seed-plan", type: "document", comment: "Posting plan shared with the client.", tags: ["Plan", "Reels"] },
+  // Round 2: the one asset the client sees on their portal (under the first event, tied to its third stage). Only for this client.
+  { title: "Final photos: brand shoot", url: "https://drive.google.com/drive/folders/hok-seed-final-photos", type: "photo", comment: "Edited photos, ready to use.", tags: ["Final"], linkEvent: true, sharedWithClientFor: "Chai Point Cafe" },
 ];
 
 async function seedAssets(): Promise<void> {
@@ -311,13 +325,22 @@ async function seedAssets(): Promise<void> {
   for (const client of rows) {
     const [first] = await db.select({ id: events.id }).from(events).where(eq(events.clientId, client.id)).orderBy(events.startsAt).limit(1);
     for (const plan of ASSET_PLAN) {
+      if (plan.sharedWithClientFor && plan.sharedWithClientFor !== client.name) continue;
       const title = `${client.name}: ${plan.title}`;
       const [existing] = await db.select({ id: assets.id }).from(assets).where(and(eq(assets.clientId, client.id), eq(assets.title, title))).limit(1);
       if (existing) continue;
+      const eventId = plan.linkEvent ? (first?.id ?? null) : null;
+      // The client-visible asset needs its event; its stage is the event's third one.
+      let eventStageId: string | null = null;
+      if (plan.sharedWithClientFor && eventId) {
+        const [st] = await db.select({ id: eventStages.id }).from(eventStages).where(and(eq(eventStages.eventId, eventId), eq(eventStages.position, 3))).limit(1);
+        eventStageId = st?.id ?? null;
+      }
+      const visibleToClient = Boolean(plan.sharedWithClientFor && eventId);
       await db.transaction(async (tx) => {
         const [asset] = await tx
           .insert(assets)
-          .values({ clientId: client.id, eventId: plan.linkEvent ? (first?.id ?? null) : null, title, url: plan.url, type: plan.type, comment: plan.comment, createdBy: client.ownerId })
+          .values({ clientId: client.id, eventId, title, url: plan.url, type: plan.type, comment: plan.comment, visibleToClient, eventStageId, createdBy: client.ownerId })
           .returning({ id: assets.id });
         await tx.insert(tags).values(plan.tags.map((name) => ({ clientId: client.id, name }))).onConflictDoNothing();
         const tagRows = await tx.select({ id: tags.id, name: tags.name }).from(tags).where(eq(tags.clientId, client.id));
@@ -348,12 +371,17 @@ interface SeedTask {
   client?: string;
   /** Seeded event title suffix under `client` (see EVENT_PLAN). */
   event?: string;
+  /** Becomes the task's brief (script) and its "Raw files" / "Reference edit" brief links. */
   editor?: { rawFilesUrl: string; referenceUrl?: string; script?: string };
+  /** Why it is blocked, when the path ends in "blocked". */
+  blockedReason?: string;
+  /** A delivered link the assignee added (finished work). Added once, also to a task that already exists. */
+  delivered?: { url: string; label: string };
 }
 
 const TASKS: SeedTask[] = [
-  { assigneeEmail: "meera.editor@hok.test", title: "Edit the Chai Point monthly reel", priority: "high", dueInDays: 2, path: ["in_progress"], client: "Chai Point Cafe", event: "Monthly reels", comments: [{ byAdmin: false, text: "First cut by tomorrow evening." }], editor: { rawFilesUrl: "https://drive.google.com/drive/folders/chai-point-raw", referenceUrl: "https://www.instagram.com/reel/example-style", script: "0-3s: steam rising from a fresh cup.\n3-8s: barista pouring, slow motion.\n8-15s: customers laughing, logo end card." } },
-  { assigneeEmail: "meera.editor@hok.test", title: "Colour-grade the Desert Rose spa shoot", priority: "medium", dueInDays: -1, path: ["in_progress", "blocked"], client: "Desert Rose Spa", comments: [{ byAdmin: false, text: "Blocked: half the RAW files are missing from the folder." }, { byAdmin: true, text: "Asked Sara to re-upload them today." }], editor: { rawFilesUrl: "https://drive.google.com/drive/folders/desert-rose-raw" } },
+  { assigneeEmail: "meera.editor@hok.test", title: "Edit the Chai Point monthly reel", priority: "high", dueInDays: 2, path: ["in_progress"], client: "Chai Point Cafe", event: "Monthly reels", comments: [{ byAdmin: false, text: "First cut by tomorrow evening." }], delivered: { url: "https://drive.google.com/file/d/chai-point-first-cut", label: "First cut" }, editor: { rawFilesUrl: "https://drive.google.com/drive/folders/chai-point-raw", referenceUrl: "https://www.instagram.com/reel/example-style", script: "0-3s: steam rising from a fresh cup.\n3-8s: barista pouring, slow motion.\n8-15s: customers laughing, logo end card." } },
+  { assigneeEmail: "meera.editor@hok.test", title: "Colour-grade the Desert Rose spa shoot", priority: "medium", dueInDays: -1, path: ["in_progress", "blocked"], blockedReason: "Half the RAW files are missing from the folder.", client: "Desert Rose Spa", comments: [{ byAdmin: false, text: "Blocked: half the RAW files are missing from the folder." }, { byAdmin: true, text: "Asked Sara to re-upload them today." }], editor: { rawFilesUrl: "https://drive.google.com/drive/folders/desert-rose-raw" } },
   { assigneeEmail: "isha.writer@hok.test", title: "Write 5 captions for the Chai Point monthly reels", priority: "medium", dueInDays: 3, path: ["in_progress"], client: "Chai Point Cafe", comments: [{ byAdmin: true, text: "Tone: warm and playful. Use the brand hashtags from the folder." }] },
   { assigneeEmail: "meera.editor@hok.test", title: "Cut a 15s teaser for Urban Threads", priority: "low", dueInDays: -5, path: ["in_progress", "done"], client: "Urban Threads", editor: { rawFilesUrl: "https://drive.google.com/drive/folders/urban-threads-raw", referenceUrl: "https://youtu.be/example-teaser", script: "Fast cuts on the beat; end on the new collection logo." } },
   { assigneeEmail: "meera.editor@hok.test", title: "Subtitle the Thames Coffee interview", priority: "medium", dueInDays: 6, path: [], client: "Thames Coffee Roasters", editor: { rawFilesUrl: "https://drive.google.com/drive/folders/thames-interview" } },
@@ -378,19 +406,28 @@ function dayOfThisMonth(day: number): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), day, 18));
 }
 
-/** Tasks across every role (four editor tasks with a brief), each with a timeline matching its status. Reused by (assignee, title). */
-async function seedStaffTasks(adminId: string | undefined): Promise<void> {
+/**
+ * Tasks across every role (four editor tasks with a brief), each on a task template, at the stage its
+ * status implies, with a matching timeline. Reused by (assignee, title).
+ */
+async function seedStaffTasks(adminId: string | undefined, templates: Map<string, { id: string; stages: string[] }>): Promise<void> {
   if (!adminId) return;
   const probe = await db.execute(sql`select to_regclass('public.staff_tasks') is not null as ok`);
   if ((probe.rows[0] as { ok: boolean } | undefined)?.ok !== true) {
     logger.warn("seed: staff_tasks table missing (migration 20261014200001 not applied yet) -- staff tasks skipped");
     return;
   }
+  const probeStages = await db.execute(sql`select to_regclass('public.task_stages') is not null as ok`);
+  if ((probeStages.rows[0] as { ok: boolean } | undefined)?.ok !== true) {
+    logger.warn("seed: task_stages table missing (migration 20261103000001 not applied yet) -- staff tasks skipped");
+    return;
+  }
   const people = await db
-    .select({ id: profiles.id, email: profiles.email })
+    .select({ id: profiles.id, email: profiles.email, role: profiles.role })
     .from(profiles)
     .where(inArray(profiles.email, [...new Set(TASKS.flatMap((t) => (t.assignedByEmail ? [t.assigneeEmail, t.assignedByEmail] : [t.assigneeEmail])))]));
   const idByEmail = new Map(people.map((p) => [p.email, p.id]));
+  const roleByEmail = new Map(people.map((p) => [p.email, p.role]));
   const clientRows = await db
     .select({ id: clients.id, name: clients.businessName })
     .from(clients)
@@ -401,6 +438,7 @@ async function seedStaffTasks(adminId: string | undefined): Promise<void> {
   for (const t of TASKS) {
     const assigneeId = idByEmail.get(t.assigneeEmail);
     if (!assigneeId) continue;
+    const creatorId = t.assignedByEmail ? (idByEmail.get(t.assignedByEmail) ?? adminId) : adminId;
     const [existing] = await db
       .select({ id: staffTasks.id })
       .from(staffTasks)
@@ -408,9 +446,12 @@ async function seedStaffTasks(adminId: string | undefined): Promise<void> {
       .limit(1);
     if (existing) {
       logger.info({ title: t.title }, "seed: staff task already exists -- reused");
+      if (t.delivered) await ensureDeliveredLink(existing.id, assigneeId, t.delivered);
       continue;
     }
-    const creatorId = t.assignedByEmail ? (idByEmail.get(t.assignedByEmail) ?? adminId) : adminId;
+    const templateName = taskTemplateFor(roleByEmail.get(t.assigneeEmail) ?? "developer");
+    const template = templates.get(templateName);
+    if (!template) continue;
     const clientId = t.client ? (clientIdByName.get(t.client) ?? null) : null;
     let eventId: string | null = null;
     if (clientId && t.event) {
@@ -418,11 +459,16 @@ async function seedStaffTasks(adminId: string | undefined): Promise<void> {
       eventId = ev?.id ?? null;
     }
     const status: StaffTaskStatus = t.path.at(-1) ?? "todo";
+    const stageCount = template.stages.length;
+    // Where the status puts it: todo = stage 1, in progress / blocked = stage 2, done = completed at the last stage.
+    const position = status === "todo" ? 1 : status === "done" ? stageCount : 2;
     // The timeline is spread over the last few hours so it reads in order.
-    const steps = 1 + t.path.length + (t.comments?.length ?? 0);
+    const moves = t.path.length + (status === "done" && stageCount > 2 ? 1 : 0);
+    const steps = 1 + moves + (t.comments?.length ?? 0);
     const at = (i: number) => new Date(Date.now() - (steps - i) * 3600_000);
 
     await db.transaction(async (tx) => {
+      const stageIds = template.stages.map(() => randomUUID());
       const [row] = await tx
         .insert(staffTasks)
         .values({
@@ -440,34 +486,73 @@ async function seedStaffTasks(adminId: string | undefined): Promise<void> {
                 : new Date(today + t.dueInDays * DAY + 18 * 3600_000),
           priority: t.priority,
           status,
-          completedAt: status === "done" ? at(t.path.length) : null,
-          rawFilesUrl: t.editor?.rawFilesUrl ?? null,
-          referenceUrl: t.editor?.referenceUrl ?? null,
+          completedAt: status === "done" ? at(moves) : null,
           script: t.editor?.script ?? null,
-          version: 1 + t.path.length,
+          templateId: template.id,
+          templateName,
+          stageCount,
+          currentStageId: stageIds[position - 1],
+          blockedReason: status === "blocked" ? (t.blockedReason ?? "Waiting on something") : null,
+          version: 1 + moves,
         })
         .returning({ id: staffTasks.id });
       const taskId = row!.id;
+      await tx.insert(taskStages).values(template.stages.map((name, i) => ({ id: stageIds[i]!, taskId, position: i + 1, name })));
+
+      // Brief links: the editor's raw files and reference edit.
+      const briefLinks = [
+        ...(t.editor?.rawFilesUrl ? [{ url: t.editor.rawFilesUrl, label: "Raw files" }] : []),
+        ...(t.editor?.referenceUrl ? [{ url: t.editor.referenceUrl, label: "Reference edit" }] : []),
+      ];
+      if (briefLinks.length > 0) {
+        await tx
+          .insert(staffTaskLinks)
+          .values(briefLinks.map((l, i) => ({ taskId, kind: "brief" as const, url: l.url, label: l.label, addedBy: creatorId, createdAt: new Date(Date.now() - 1000 * (briefLinks.length - i)) })));
+      }
+      if (t.delivered) {
+        await tx.insert(staffTaskLinks).values({ taskId, kind: "delivered", url: t.delivered.url, label: t.delivered.label, stageId: stageIds[Math.min(1, stageCount - 1)]!, addedBy: assigneeId });
+      }
+
+      // The timeline: created, then one entry per step of the status path, then the comments.
+      type Entry = typeof staffTaskUpdates.$inferInsert;
+      const entries: Entry[] = [{ taskId, authorId: creatorId, kind: "created", toStatus: "todo", toAssigneeId: assigneeId, toStageId: stageIds[0]!, createdAt: at(0) }];
       let from: StaffTaskStatus = "todo";
-      await tx.insert(staffTaskUpdates).values([
-        { taskId, authorId: creatorId, kind: "created" as const, toStatus: "todo" as const, toAssigneeId: assigneeId, createdAt: at(0) },
-        ...t.path.map((to, i) => {
-          const entry = { taskId, authorId: assigneeId, kind: "status" as const, fromStatus: from, toStatus: to, createdAt: at(i + 1) };
-          from = to;
-          return entry;
-        }),
-        ...(t.comments ?? []).map((c, i) => ({
-          taskId,
-          authorId: c.byAdmin ? adminId : assigneeId,
-          kind: "comment" as const,
-          comment: c.text,
-          createdAt: at(1 + t.path.length + i),
-        })),
-      ]);
+      let stageAt = 0;
+      let n = 1;
+      for (const to of t.path) {
+        if (to === "in_progress") {
+          entries.push({ taskId, authorId: assigneeId, kind: "stage", fromStatus: from, toStatus: to, fromStageId: stageIds[stageAt]!, toStageId: stageIds[1]!, createdAt: at(n++) });
+          stageAt = 1;
+        } else if (to === "blocked") {
+          entries.push({ taskId, authorId: assigneeId, kind: "blocked", fromStatus: from, toStatus: to, fromStageId: stageIds[stageAt]!, comment: t.blockedReason ?? "Waiting on something", createdAt: at(n++) });
+        } else if (to === "done") {
+          if (stageCount > 2) {
+            entries.push({ taskId, authorId: assigneeId, kind: "stage", fromStatus: from, toStatus: "in_progress", fromStageId: stageIds[stageAt]!, toStageId: stageIds[stageCount - 1]!, createdAt: at(n++) });
+            from = "in_progress";
+            stageAt = stageCount - 1;
+          }
+          entries.push({ taskId, authorId: assigneeId, kind: "completed", fromStatus: from, toStatus: "done", fromStageId: stageIds[stageAt]!, createdAt: at(n++) });
+        }
+        from = to;
+      }
+      for (const [i, c] of (t.comments ?? []).entries()) {
+        entries.push({ taskId, authorId: c.byAdmin ? adminId : assigneeId, kind: "comment", comment: c.text, createdAt: at(1 + moves + i) });
+      }
+      await tx.insert(staffTaskUpdates).values(entries);
     });
     logger.info({ title: t.title, assignee: t.assigneeEmail, status }, "seed: staff task created");
   }
 }
+
+/** A delivered link on a task that already exists (an older seed run made it without one); added once. */
+async function ensureDeliveredLink(taskId: string, assigneeId: string, link: { url: string; label: string }): Promise<void> {
+  const [have] = await db.select({ id: staffTaskLinks.id }).from(staffTaskLinks).where(and(eq(staffTaskLinks.taskId, taskId), eq(staffTaskLinks.kind, "delivered"))).limit(1);
+  if (have) return;
+  const [stage] = await db.select({ id: taskStages.id }).from(taskStages).where(and(eq(taskStages.taskId, taskId), eq(taskStages.position, 2))).limit(1);
+  await db.insert(staffTaskLinks).values({ taskId, kind: "delivered", url: link.url, label: link.label, stageId: stage?.id ?? null, addedBy: assigneeId });
+  logger.info({ label: link.label }, "seed: delivered link added to an existing task");
+}
+
 
 /**
  * M5: two personal calendar entries per client manager (a weekly planning
@@ -568,10 +653,11 @@ async function main(): Promise<void> {
   await seedStaff();
   await seedClients();
   const [adminRow] = await db.select({ id: profiles.id }).from(profiles).where(eq(profiles.email, "admin@hok.test")).limit(1);
-  await seedEvents(await seedTemplates(adminRow?.id));
+  const templates = await seedTemplates(adminRow?.id);
+  await seedEvents(templates);
   await seedPersonalEvents();
   await seedAssets();
-  await seedStaffTasks(adminRow?.id);
+  await seedStaffTasks(adminRow?.id, templates);
   await seedTodos();
   logger.info(`seed: done. Every seeded account uses the password ${SEED_PASSWORD}`);
 }

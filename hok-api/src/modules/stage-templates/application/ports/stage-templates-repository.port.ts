@@ -1,8 +1,12 @@
-import type { StageTemplateEntity } from "../../domain/stage-template.entity";
+import type { Role } from "../../../../domain";
+import type { StageTemplateEntity, TemplateKind } from "../../domain/stage-template.entity";
 
 export interface StageTemplateListFilters {
   search?: string;
   active?: boolean;
+  kind?: TemplateKind;
+  /** Task templates offered for this assignee role (empty role list = any role). Implies kind "task". */
+  role?: Role;
 }
 
 export interface StageTemplatePage {
@@ -15,6 +19,8 @@ export interface StageTemplateChanges {
   /** Replaces the whole ordered list. */
   stages?: string[];
   active?: boolean;
+  /** Replaces the role list (task templates). */
+  roles?: Role[];
 }
 
 /** Guard callback: given the locked template, throw or return the changes (empty = write nothing). */
@@ -26,7 +32,7 @@ export interface StageTemplatesRepositoryPort {
   findMany(filters: StageTemplateListFilters, page: StageTemplatePage): Promise<StageTemplateEntity[]>;
   countMany(filters: StageTemplateListFilters): Promise<number>;
   findById(id: string): Promise<StageTemplateEntity | null>;
-  create(record: { name: string; stages: string[]; createdBy: string }): Promise<StageTemplateEntity>;
+  create(record: { name: string; stages: string[]; kind: TemplateKind; roles: Role[]; createdBy: string }): Promise<StageTemplateEntity>;
   /** Locks the template (FOR UPDATE), applies `decide`'s changes and bumps the version, in one transaction. 404 if missing. */
   update(id: string, decide: StageTemplateDecision): Promise<StageTemplateEntity>;
 }

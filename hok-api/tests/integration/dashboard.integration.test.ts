@@ -10,6 +10,8 @@ import {
   deleteFixtureUser,
   deleteStaffTasksFor,
   deleteStageTemplates,
+  createTaskTemplateFixture,
+  finishTask,
   type FixtureUser,
 } from "./helpers";
 
@@ -38,7 +40,10 @@ const idOf = (res: request.Response, key: string) => (res.body as Record<string,
 const HOUR = 60 * 60 * 1000;
 const iso = (ms: number) => new Date(ms).toISOString();
 
+let taskTemplate: Awaited<ReturnType<typeof createTaskTemplateFixture>>;
+
 beforeAll(async () => {
+  taskTemplate = await createTaskTemplateFixture(["Brief received", "Cut", "Review"]);
   [admin, manager, otherManager, editor] = await Promise.all([
     createFixtureUser("admin", "Dash Admin"),
     createFixtureUser("social_media_manager", "Dash Manager"),
@@ -76,15 +81,11 @@ beforeAll(async () => {
     const r = await request(app)
       .post("/api/v1/staff-tasks")
       .set("Authorization", auth.admin)
-      .send({ ...task, assigneeId: editor.id, rawFilesUrl: "https://drive.example.com/raw" });
+      .send({ ...task, assigneeId: editor.id, templateId: taskTemplate.id, links: [{ url: "https://drive.example.com/raw" }] });
     expect(r.status).toBe(201);
     ids.push(idOf(r, "task"));
   }
-  const done = await request(app).get(`/api/v1/staff-tasks/${ids[2]}`).set("Authorization", auth.editor);
-  expect(
-    (await request(app).post(`/api/v1/staff-tasks/${ids[2]}/status`).set("Authorization", auth.editor).send({ status: "done", version: (done.body as { task: { version: number } }).task.version }))
-      .status,
-  ).toBe(200);
+  expect(await finishTask(app, auth.editor, ids[2]!)).toBe(200);
   expect((await request(app).post(`/api/v1/staff-tasks/${ids[0]}/comments`).set("Authorization", auth.admin).send({ body: "Please hurry" })).status).toBe(201);
   expect((await request(app).post(`/api/v1/staff-tasks/${ids[0]}/comments`).set("Authorization", auth.editor).send({ body: "On it" })).status).toBe(201);
 });
@@ -92,7 +93,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await deleteStaffTasksFor([editor.id]);
   await deleteClientsOwnedBy([manager.id, otherManager.id]);
-  await deleteStageTemplates(templateIds);
+  await deleteStageTemplates([...templateIds, taskTemplate.id]);
   for (const u of [admin, manager, otherManager, editor]) await deleteFixtureUser(u.id);
   await closeDb();
 });

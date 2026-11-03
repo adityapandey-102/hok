@@ -26,6 +26,8 @@ export interface EventTemplate {
   id: string;
   name: string;
   active: boolean;
+  /** Templates are for events or for staff tasks (round 2); an event can only start from an event template. */
+  kind: "event" | "task";
   stageNames: string[];
 }
 
@@ -52,9 +54,9 @@ export function assertClientWritable(clientStatus: EventClient["status"]): void 
   }
 }
 
-/** FR-EVT-02: only an existing, ACTIVE template with stages can start an event. */
+/** FR-EVT-02: only an existing, ACTIVE event template with stages can start an event (a task template is refused). */
 export function assertTemplateUsable(template: EventTemplate | null): EventTemplate {
-  if (!template || !template.active || template.stageNames.length === 0) {
+  if (!template || template.kind !== "event" || !template.active || template.stageNames.length === 0) {
     throw new BadRequestError("Pick an active stage template", ERROR_CODES.EVENT_TEMPLATE_INVALID);
   }
   return template;

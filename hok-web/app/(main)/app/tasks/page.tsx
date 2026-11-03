@@ -25,7 +25,6 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   return (
     <TasksPageClient
       role={profile.role}
-      viewerId={profile.id}
       zone={profile.timeZone}
       initialFilters={{ ...(due ? { due } : {}), ...(status ? { status } : {}), ...(assigneeId ? { assigneeId } : {}) }}
       initialAssigneeName={assigneeId ? one("assignee") : undefined}

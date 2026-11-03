@@ -4,45 +4,31 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  STAFF_TASK_STATUS_LABELS,
   describeTaskUpdate,
   formatInZone,
   hasCapability,
   isTaskOverdue,
-  nextStatuses,
+  nextStageOf,
+  otherStages,
   type Role,
   type StaffTask,
-  type StaffTaskStatus,
+  type TaskLink,
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { staffTasksApi } from "../api/staffTasksApi";
 import { DueLabel, PersonDot, PriorityPill, TaskStatusPill, describeTaskError, roleLabel } from "./taskUi";
 import { TaskFormModal } from "./TaskFormModal";
+import { TaskLinksPanel } from "./TaskLinksPanel";
+import { ShareLinkModal } from "./ShareLinkModal";
+import { StageTracker } from "../../events/components/StageTracker";
 import { Button } from "../../../components/ui/Button";
+import { Card } from "../../../components/ui/Card";
 import { Panel } from "../../../components/ui/Panel";
 import { FieldLabel } from "../../../components/ui/Field";
-import { Textarea } from "../../../components/ui/Select";
+import { Select, Textarea } from "../../../components/ui/Select";
 import { Icon } from "../../../components/ui/Icon";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
 import { useToast } from "../../../components/ui/Toast";
-
-/** Button wording for a status the task can move to. */
-const ACTION_LABELS: Record<StaffTaskStatus, string> = {
-  todo: "Back to To do",
-  in_progress: "Start / In progress",
-  blocked: "Mark blocked",
-  done: "Mark done",
-};
-
-/** A link the staff opens in a new tab (never the app's own window). */
-function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-full items-center gap-1 break-all text-primary underline">
-      {children}
-      <Icon name="external-link" size={13} className="shrink-0" />
-    </a>
-  );
-}
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -54,11 +40,14 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 /**
- * One task (FR-TSK-04/05/06/10): details, the editor brief, the status
- * actions with an optional comment, a comment box and the timeline. The
- * assignee and the Admin change its status; they and the creator comment;
- * only the Admin or the creator (`task.canManage`) edits, reassigns, reopens or
- * deletes. A client manager who is none of those sees it read-only.
+ * One task (FR-TSK-04/05/06, round 2): the stage tracker, the actions that move
+ * it along, blocked / unblocked, the links, the brief and the timeline. The
+ * assignee, the person who gave it and the Admin move it between stages (any
+ * stage, forward or back) and complete it from the last one; the assignee and
+ * the Admin raise a "blocked" flag with a reason. Only the Admin or the creator
+ * (`task.canManage`) edits, reassigns, reopens, deletes or adds brief links. A
+ * client manager who is none of those sees it read-only. Status is derived by the
+ * API from the stage; this screen never sets it.
  */
 export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initialTask: StaffTask; role: Role; viewerId: string; zone: string }) {
   const router = useRouter();
@@ -69,25 +58,42 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [jumpTo, setJumpTo] = useState("");
+  const [reopenTo, setReopenTo] = useState("");
+  const [blocking, setBlocking] = useState(false);
+  const [blockReason, setBlockReason] = useState("");
+  const [sharing, setSharing] = useState<TaskLink | null>(null);
 
   const isAdmin = role === "admin";
-  const canStatus = isAdmin || task.assigneeId === viewerId;
-  const canComment = canStatus || task.assignedById === viewerId;
+  const isAssignee = task.assigneeId === viewerId;
+  const canWork = isAdmin || isAssignee || task.assignedById === viewerId;
+  const canBlock = isAdmin || isAssignee;
   const canManage = task.canManage;
   const overdue = isTaskOverdue(task);
-  const hasBrief = !!(task.rawFilesUrl || task.referenceUrl || task.script);
+  const done = task.status === "done";
+  const blocked = task.status === "blocked";
+  const next = nextStageOf(task.stages, task.currentStage.id);
+  const others = otherStages(task.stages, task.currentStage.id);
+  const lastStage = task.stages[task.stages.length - 1];
+  const share = done ? 100 : task.stageCount > 0 ? Math.round((task.currentStage.position / task.stageCount) * 100) : 0;
 
-  async function run(action: () => Promise<{ task: StaffTask }>, success: string, fallback: string) {
+  async function run(action: () => Promise<{ task: StaffTask }>, success: string, fallback: string): Promise<boolean> {
     setBusy(true);
     try {
       const { task: saved } = await action();
       setTask(saved);
       setComment("");
+      setJumpTo("");
+      setReopenTo("");
+      setBlocking(false);
+      setBlockReason("");
       setConflict(false);
       showToast(success, "success");
+      return true;
     } catch (err) {
       if (isApiErrorCode(err, "STAFF_TASK_MODIFIED")) setConflict(true);
       showToast(describeTaskError(err, fallback), "error");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -103,13 +109,17 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
     }
   }
 
-  function changeStatus(status: StaffTaskStatus) {
-    void run(() => staffTasksApi.changeStatus(task.id, status, task.version, comment.trim()), `Moved to ${STAFF_TASK_STATUS_LABELS[status]}.`, "Failed to change the status");
-  }
+  const moveTo = (stageId: string, name: string) => void run(() => staffTasksApi.moveStage(task.id, stageId, task.version, comment.trim()), `Moved to ${name}.`, "Failed to move the task");
+  const complete = () => void run(() => staffTasksApi.complete(task.id, task.version, comment.trim()), "Task completed.", "Failed to complete the task");
+  const unblock = () => void run(() => staffTasksApi.unblock(task.id, task.version, comment.trim()), "Task unblocked.", "Failed to unblock the task");
+  const markBlocked = () => void run(() => staffTasksApi.block(task.id, blockReason.trim(), task.version), "Marked as blocked.", "Failed to mark the task blocked");
 
-  async function reopen(status: Exclude<StaffTaskStatus, "done">) {
-    const ok = await confirm({ title: "Reopen this task?", body: `It goes back to ${STAFF_TASK_STATUS_LABELS[status]} and ${task.assigneeName} can work on it again.`, confirmLabel: "Reopen" });
-    if (ok) void run(() => staffTasksApi.reopen(task.id, status, task.version, comment.trim()), "Task reopened.", "Failed to reopen the task");
+  async function reopen() {
+    const stageId = reopenTo || lastStage?.id;
+    const target = task.stages.find((s) => s.id === stageId);
+    if (!stageId || !target) return;
+    const ok = await confirm({ title: "Reopen this task?", body: `It goes back to ${target.name} and ${task.assigneeName} can work on it again.`, confirmLabel: "Reopen" });
+    if (ok) void run(() => staffTasksApi.reopen(task.id, task.version, stageId, comment.trim()), "Task reopened.", "Failed to reopen the task");
   }
 
   function postComment() {
@@ -162,7 +172,7 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
         </div>
       </header>
 
-      {!canComment && (
+      {!canWork && (
         <div className="mb-4 flex items-center gap-2 rounded-app-lg bg-accent-bg p-3.5 text-sm text-text-secondary">
           <Icon name="eye" size={16} className="shrink-0" /> View only: you&apos;re on this client&apos;s team.
         </div>
@@ -175,13 +185,50 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
           </Button>
         </div>
       )}
+      {blocked && (
+        <div role="status" data-testid="blocked-banner" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-app-lg border border-warning-text/30 bg-warning-bg p-3.5 text-sm text-warning-text">
+          <span className="flex min-w-0 items-start gap-2">
+            <Icon name="ban" size={16} className="mt-0.5 shrink-0" />
+            <span className="min-w-0">
+              <span className="font-semibold">Blocked.</span> <span className="break-words whitespace-pre-wrap">{task.blockedReason}</span>
+            </span>
+          </span>
+          {canWork && (
+            <Button variant="outline" disabled={busy} onClick={unblock}>
+              Unblock
+            </Button>
+          )}
+        </div>
+      )}
       {overdue && (
         <div className="mb-4 flex items-center gap-2 rounded-app-lg border border-error/30 bg-error-bg p-3.5 text-sm font-medium text-error">
           <Icon name="alert" size={16} /> This task is overdue.
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+      <Card accent className="mb-5 overflow-hidden">
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 px-5 pt-5 pb-4 sm:px-6">
+          <div className="min-w-0">
+            <p className="text-xs text-text-muted">{done ? "Complete" : `Stage ${task.currentStage.position} of ${task.stageCount}`}</p>
+            <h2 className="mt-1 font-serif text-2xl leading-tight break-words text-text-primary sm:text-[28px]">{done ? "All stages done" : task.currentStage.name}</h2>
+            <p className="mt-0.5 text-xs text-text-muted">{task.templateName}</p>
+          </div>
+          <div className="w-full sm:w-56">
+            <div className="mb-1.5 flex justify-between text-xs text-text-muted">
+              <span>Progress</span>
+              <span className="figure text-text-primary">{share}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-border-light">
+              <div className="grow-x h-full rounded-full bg-primary" style={{ width: `${Math.max(share, 3)}%` }} />
+            </div>
+          </div>
+        </div>
+        <div className="border-t border-border-light bg-accent-bg/40 px-5 py-5 sm:px-6 sm:py-6">
+          <StageTracker stages={task.stages} currentStageId={task.currentStage.id} label="Task stages" done={done} />
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-12">
         <div className="flex min-w-0 flex-col gap-5 lg:col-span-7">
           <Panel icon="clipboard" title="The brief" subtitle={`Created ${formatInZone(task.createdAt, zone)}`}>
             <div className="flex flex-col gap-3.5 p-5">
@@ -194,74 +241,113 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
               <Row label="Description">
                 <span className="whitespace-pre-wrap">{task.description || <span className="text-text-muted">No description.</span>}</span>
               </Row>
-              {task.referenceLinks.length > 0 && (
-                <Row label="References">
-                  <span className="flex flex-col gap-1">
-                    {task.referenceLinks.map((l) => (
-                      <ExternalLink key={l.url} href={l.url}>
-                        {l.label ?? l.url}
-                      </ExternalLink>
-                    ))}
-                  </span>
-                </Row>
+              {task.brief && (
+                <div>
+                  <div className="mb-1.5 text-sm text-text-muted">Brief</div>
+                  <p className="max-h-96 overflow-y-auto rounded-app border border-border-light bg-accent-bg p-3.5 text-sm leading-relaxed whitespace-pre-wrap text-text-primary">{task.brief}</p>
+                </div>
               )}
             </div>
           </Panel>
 
-          {hasBrief && (
-            <Panel icon="palette" title="Editor brief" subtitle="Raw files, reference and script">
-              <div className="flex flex-col gap-3.5 p-5">
-                {task.rawFilesUrl && (
-                  <Row label="Raw files">
-                    <ExternalLink href={task.rawFilesUrl}>Open the Drive folder</ExternalLink>
-                  </Row>
-                )}
-                {task.referenceUrl && (
-                  <Row label="Reference edit">
-                    <ExternalLink href={task.referenceUrl}>Open the reference</ExternalLink>
-                  </Row>
-                )}
-                {task.script && (
-                  <div>
-                    <div className="mb-1.5 text-sm text-text-muted">Script</div>
-                    <p className="max-h-96 overflow-y-auto rounded-app border border-border-light bg-accent-bg p-3.5 text-sm leading-relaxed whitespace-pre-wrap text-text-primary">{task.script}</p>
-                  </div>
-                )}
-              </div>
-            </Panel>
-          )}
+          <TaskLinksPanel task={task} viewerId={viewerId} isAdmin={isAdmin} zone={zone} onTask={setTask} onShare={setSharing} />
         </div>
 
         <div className="flex min-w-0 flex-col gap-5 lg:col-span-5">
-          {canComment && (
-            <Panel icon="check-circle" title="Update" subtitle={canStatus ? "Change the status or add a comment" : "Add a comment"}>
+          {canWork && (
+            <Panel icon="check-circle" title="Update" subtitle={done ? "This task is complete" : "Move it along, or add a comment"}>
               <div className="flex flex-col gap-3 p-5">
                 <div>
-                  <FieldLabel htmlFor="task-comment">{canStatus ? "Comment (optional with a status change)" : "Comment"}</FieldLabel>
+                  <FieldLabel htmlFor="task-comment">{done ? "Comment" : "Comment (optional with a stage change)"}</FieldLabel>
                   <Textarea id="task-comment" rows={3} maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="What's the update?" />
                 </div>
-                {task.status === "done" ? (
+
+                {done ? (
                   canManage ? (
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                      <Button variant="outline" disabled={busy} onClick={() => reopen("todo")}>
-                        <Icon name="refresh" size={15} /> Reopen (To do)
-                      </Button>
-                      <Button variant="outline" disabled={busy} onClick={() => reopen("in_progress")}>
-                        Reopen (In progress)
+                    <div className="flex flex-col gap-2">
+                      <FieldLabel htmlFor="task-reopen-stage">Reopen at</FieldLabel>
+                      <Select id="task-reopen-stage" value={reopenTo || lastStage?.id || ""} onChange={(e) => setReopenTo(e.target.value)}>
+                        {task.stages.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.position}. {s.name}
+                          </option>
+                        ))}
+                      </Select>
+                      <Button variant="outline" disabled={busy} onClick={reopen}>
+                        <Icon name="refresh" size={15} /> Reopen
                       </Button>
                     </div>
-                  ) : canStatus ? (
+                  ) : (
                     <p className="text-sm text-text-muted">This task is done. Only the person who gave it (or the Admin) can reopen it.</p>
-                  ) : null
-                ) : canStatus ? (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                    {nextStatuses(task.status).map((s) => (
-                      <Button key={s} variant={s === "done" ? "primary" : "outline"} disabled={busy} onClick={() => changeStatus(s)}>
-                        {ACTION_LABELS[s]}
+                  )
+                ) : (
+                  <>
+                    {next ? (
+                      <Button disabled={busy} onClick={() => moveTo(next.id, next.name)}>
+                        Move to {next.name}
                       </Button>
-                    ))}
-                  </div>
-                ) : null}
+                    ) : (
+                      <Button disabled={busy} onClick={complete}>
+                        <Icon name="check" size={15} strokeWidth={3} /> Mark complete
+                      </Button>
+                    )}
+
+                    {others.length > 0 && (
+                      <div className="flex items-end gap-2">
+                        <div className="min-w-0 flex-1">
+                          <FieldLabel htmlFor="task-jump">Jump to a stage</FieldLabel>
+                          <Select id="task-jump" value={jumpTo} onChange={(e) => setJumpTo(e.target.value)}>
+                            <option value="">Choose a stage</option>
+                            {others.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.position}. {s.name}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                        <Button
+                          variant="outline"
+                          disabled={busy || !jumpTo}
+                          onClick={() => {
+                            const target = task.stages.find((s) => s.id === jumpTo);
+                            if (target) moveTo(target.id, target.name);
+                          }}
+                        >
+                          Move
+                        </Button>
+                      </div>
+                    )}
+
+                    {canBlock && !blocked && !blocking && (
+                      <Button variant="outline" disabled={busy} onClick={() => setBlocking(true)}>
+                        <Icon name="ban" size={15} /> Mark blocked
+                      </Button>
+                    )}
+                    {canBlock && !blocked && blocking && (
+                      <div className="flex flex-col gap-2 rounded-app border border-warning-text/30 bg-warning-bg p-3">
+                        <FieldLabel htmlFor="task-block-reason" required>
+                          What&apos;s blocking it?
+                        </FieldLabel>
+                        <Textarea id="task-block-reason" rows={2} maxLength={1000} value={blockReason} onChange={(e) => setBlockReason(e.target.value)} placeholder="Waiting for the raw files, the client hasn't approved…" />
+                        <div className="flex gap-2">
+                          <Button disabled={busy || !blockReason.trim()} onClick={markBlocked}>
+                            Mark blocked
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setBlocking(false);
+                              setBlockReason("");
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
                 <Button variant="ghost" disabled={busy || !comment.trim()} onClick={postComment} className="self-start">
                   <Icon name="send" size={15} /> Post comment only
                 </Button>
@@ -270,7 +356,7 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
           )}
 
           <Panel icon="history" title="Timeline" subtitle="Newest first">
-            <ol className="mx-5 mb-5 ml-6 flex flex-col gap-5 border-l border-border">
+            <ol className="mx-5 mb-5 ml-6 flex flex-col gap-5 border-l border-border" aria-label="Task timeline">
               {task.updates.map((u, i) => (
                 <li key={u.id} className="relative pl-5">
                   <span aria-hidden className={`absolute top-1.5 -left-[5px] h-2.5 w-2.5 rounded-full ring-4 ring-card ${i === 0 ? "bg-primary" : "bg-ink"}`} />
@@ -298,6 +384,19 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
             setTask(saved);
             setConflict(false);
             showToast("Task saved.", "success");
+          }}
+        />
+      )}
+
+      {sharing && (
+        <ShareLinkModal
+          task={task}
+          link={sharing}
+          onClose={() => setSharing(null)}
+          onShared={(saved) => {
+            setSharing(null);
+            setTask(saved);
+            showToast("Shared with the client.", "success");
           }}
         />
       )}

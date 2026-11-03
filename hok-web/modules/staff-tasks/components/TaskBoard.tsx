@@ -2,22 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  TouchSensor,
-  useDraggable,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
 import { STAFF_TASK_STATUSES, STAFF_TASK_STATUS_LABELS, isTaskOverdue, type StaffTaskStatus, type StaffTaskSummary } from "../../../lib/domain";
 import { staffTasksApi, type StaffTaskListFilters } from "../api/staffTasksApi";
-import { DueChip, PRIORITY_ACCENT, PersonDot, PriorityPill, describeTaskError } from "./taskUi";
-import { useConfirm } from "../../../components/ui/ConfirmDialog";
-import { useToast } from "../../../components/ui/Toast";
+import { DueChip, PRIORITY_ACCENT, PersonDot, PriorityPill, StageChip } from "./taskUi";
 
 /** Cards per column. Each column is its own server query (`status=X`), capped. */
 const COLUMN_LIMIT = 50;
@@ -28,42 +15,26 @@ interface Column {
 }
 
 /**
- * The Kanban for the Admin and the client managers (FR-TSK-09): one column per status, each loaded from the
- * server with the active filters. Dragging a card to another column changes
- * its status after a confirm, with the card's version (a stale one reloads the
- * board); dragging out of Done reopens it. A card is draggable only when the
- * viewer may move it (the assignee or the Admin; out of Done: `canManage`);
- * the API still decides. Columns scroll sideways on phones; touch drags start
- * after a short press so the page still scrolls.
+ * The board for the Admin and the client managers (FR-TSK-09): one column per
+ * status, each loaded from the server with the active filters. Since round 2 a
+ * task's status follows its stage, so cards are no longer dragged between
+ * columns: open the card and move the task through its stages there. Each card
+ * shows the current stage ("Rough cut · 2/5"). Columns scroll sideways on phones.
  */
 export function TaskBoard({
   filters,
   filterKey,
   zone,
   reloadKey,
-  isAdmin,
-  viewerId,
 }: {
   filters: StaffTaskListFilters;
   filterKey: string;
   zone: string;
   reloadKey: number;
-  isAdmin: boolean;
-  viewerId: string;
 }) {
-  const canMove = (t: StaffTaskSummary) => (t.status === "done" ? t.canManage : isAdmin || t.assigneeId === viewerId);
-  const confirm = useConfirm();
-  const { showToast } = useToast();
   const [columns, setColumns] = useState<Record<StaffTaskStatus, Column> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
-  const [busy, setBusy] = useState(false);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
-    useSensor(KeyboardSensor),
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -82,32 +53,6 @@ export function TaskBoard({
     // filterKey stands for `filters`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey, reloadKey, refresh]);
-
-  async function handleDragEnd(event: DragEndEvent) {
-    const task = event.active.data.current?.task as StaffTaskSummary | undefined;
-    const target = event.over?.id as StaffTaskStatus | undefined;
-    if (!task || !target || target === task.status || busy || !canMove(task)) return;
-    const reopening = task.status === "done";
-    const ok = await confirm({
-      title: reopening ? `Reopen "${task.title}"?` : `Move "${task.title}" to ${STAFF_TASK_STATUS_LABELS[target]}?`,
-      body: reopening
-        ? `It goes back to ${STAFF_TASK_STATUS_LABELS[target]} and ${task.assigneeName} can work on it again.`
-        : `${task.assigneeName} will see the new status in the task's timeline.`,
-      confirmLabel: reopening ? "Reopen" : "Move",
-    });
-    if (!ok) return;
-    setBusy(true);
-    try {
-      if (reopening) await staffTasksApi.reopen(task.id, target as Exclude<StaffTaskStatus, "done">, task.version);
-      else await staffTasksApi.changeStatus(task.id, target, task.version);
-      showToast(reopening ? "Task reopened." : `Moved to ${STAFF_TASK_STATUS_LABELS[target]}.`, "success");
-    } catch (err) {
-      showToast(describeTaskError(err, "Failed to move the task"), "error");
-    } finally {
-      setBusy(false);
-      setRefresh((k) => k + 1);
-    }
-  }
 
   if (error) {
     return (
@@ -129,13 +74,11 @@ export function TaskBoard({
     );
 
   return (
-    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0">
-        {STAFF_TASK_STATUSES.map((status) => (
-          <BoardColumn key={status} status={status} column={columns[status]} zone={zone} canMove={canMove} />
-        ))}
-      </div>
-    </DndContext>
+    <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0">
+      {STAFF_TASK_STATUSES.map((status) => (
+        <BoardColumn key={status} status={status} column={columns[status]} zone={zone} />
+      ))}
+    </div>
   );
 }
 
@@ -146,15 +89,11 @@ const COLUMN_DOT: Record<StaffTaskStatus, string> = {
   done: "bg-success",
 };
 
-function BoardColumn({ status, column, zone, canMove }: { status: StaffTaskStatus; column: Column; zone: string; canMove: (t: StaffTaskSummary) => boolean }) {
-  const { setNodeRef, isOver } = useDroppable({ id: status });
+function BoardColumn({ status, column, zone }: { status: StaffTaskStatus; column: Column; zone: string }) {
   return (
     <section
-      ref={setNodeRef}
       aria-label={`${STAFF_TASK_STATUS_LABELS[status]} column`}
-      className={`flex w-[82%] shrink-0 snap-start flex-col rounded-app-lg border p-2.5 transition-colors sm:w-[45%] lg:w-auto ${
-        isOver ? "border-primary bg-primary-bg" : "border-border-light bg-accent-bg"
-      }`}
+      className="flex w-[82%] shrink-0 snap-start flex-col rounded-app-lg border border-border-light bg-accent-bg p-2.5 sm:w-[45%] lg:w-auto"
     >
       <header className="mb-2.5 flex items-center gap-2 px-1.5 pt-1">
         <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${COLUMN_DOT[status]}`} />
@@ -163,7 +102,7 @@ function BoardColumn({ status, column, zone, canMove }: { status: StaffTaskStatu
       </header>
       <ul className="flex min-h-24 flex-col gap-2.5">
         {column.tasks.map((t) => (
-          <BoardCard key={t.id} task={t} zone={zone} movable={canMove(t)} />
+          <BoardCard key={t.id} task={t} zone={zone} />
         ))}
         {column.tasks.length === 0 && <li className="rounded-app border border-dashed border-accent-light p-4 text-center text-xs text-text-muted">Nothing here</li>}
       </ul>
@@ -176,26 +115,18 @@ function BoardColumn({ status, column, zone, canMove }: { status: StaffTaskStatu
   );
 }
 
-function BoardCard({ task, zone, movable }: { task: StaffTaskSummary; zone: string; movable: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id, data: { task }, disabled: !movable });
+function BoardCard({ task, zone }: { task: StaffTaskSummary; zone: string }) {
   const overdue = isTaskOverdue(task);
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
   return (
-    <li
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className={`lift relative touch-manipulation overflow-hidden rounded-app border bg-card py-3 pr-3 pl-4 shadow-app ${overdue ? "border-error/40" : "border-border"} ${
-        isDragging ? "z-50 cursor-grabbing opacity-90 shadow-app-lg" : movable ? "cursor-grab" : ""
-      }`}
-    >
+    <li className={`lift relative overflow-hidden rounded-app border bg-card py-3 pr-3 pl-4 shadow-app ${overdue ? "border-error/40" : "border-border"}`}>
       <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${PRIORITY_ACCENT[task.priority]}`} />
       <Link href={`/app/tasks/${task.id}`} className="block text-[13.5px] leading-snug font-semibold text-text-primary hover:underline">
         {task.title}
       </Link>
       {task.clientName && <div className="mt-1 truncate text-xs text-text-muted">{task.clientName}</div>}
+      {task.status === "blocked" && task.blockedReason && <div className="mt-1 line-clamp-2 text-xs text-warning-text">Blocked: {task.blockedReason}</div>}
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        <StageChip stage={task.currentStage} count={task.stageCount} />
         <PriorityPill priority={task.priority} />
         <DueChip dueAt={task.dueAt} status={task.status} zone={zone} />
         <span className="ml-auto">

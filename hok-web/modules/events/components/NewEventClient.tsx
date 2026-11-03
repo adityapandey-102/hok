@@ -30,7 +30,7 @@ function NewEventForClient({ clientId, isAdmin, date }: { clientId: string; isAd
     let cancelled = false;
     Promise.all([
       clientsApi.get(clientId),
-      templatesApi.list({ active: true, limit: 1 }),
+      templatesApi.list({ kind: "event", active: true, limit: 1 }),
     ])
       .then(([c, t]) => {
         if (cancelled) return;

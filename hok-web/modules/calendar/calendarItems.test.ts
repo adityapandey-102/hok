@@ -16,6 +16,11 @@ describe("fromFeedItem", () => {
     const item = fromFeedItem({ ...base, kind: "task", status: "in_progress", priority: "high", assigneeId: "a", assigneeName: "Meera", clientId: "c", clientName: "Chai Point" } as FeedItem);
     expect(item).toMatchObject({ kind: "task", href: "/app/tasks/1", type: "task", taskStatus: "in_progress", taskPriority: "high", assigneeName: "Meera", clientName: "Chai Point", stageName: null });
   });
+  it("maps a task's stage (round 2): its name, position and the stage count", () => {
+    const item = fromFeedItem({ ...base, kind: "task", status: "in_progress", priority: "low", assigneeId: "a", assigneeName: "Meera", currentStageName: "Rough cut", currentStagePosition: 2, stageCount: 5 } as FeedItem);
+    expect(item).toMatchObject({ kind: "task", stageName: "Rough cut", taskStageNumber: 2, taskStageCount: 5 });
+    expect(fromFeedItem({ ...base, kind: "todo", currentStageName: "x" } as FeedItem)).toMatchObject({ stageName: null, taskStageNumber: null });
+  });
   it("maps a to-do to the to-dos page, with urgency and done", () => {
     const item = fromFeedItem({ ...base, kind: "todo", urgency: "urgent", done: true } as FeedItem);
     expect(item).toMatchObject({ kind: "todo", href: "/app/todos", type: "todo", urgency: "urgent", done: true, taskStatus: null, clientName: null });

@@ -30,6 +30,12 @@
  *       Its fixture tasks are deleted at the end.
  *   Round 1: /todos (private per person, the Admin included), /calendar for every
  *       role, /team-members?assignable=true. Needs migration 20261102000001.
+ *   Round 2: task templates (/stage-templates?kind=task: managers read, task-only 403,
+ *       Admin manages), tasks moving through stages (/stage, /block, /unblock, /reopen;
+ *       the removed /status is 404 for everyone), /links (brief: creator or Admin;
+ *       delivered: assignee or Admin; delete: whoever added it or manages the task) and
+ *       /links/:id/share (the Admin or a manager on the client's team). Needs migration
+ *       20261103000001.
  *
  * Creates its own fixtures (one fresh account per non-admin role) every run,
  * so it never depends on `npm run seed` beyond the admin account it signs in
@@ -240,6 +246,28 @@ async function main() {
   for (const [role, token] of everyone.filter(([r]) => r !== "admin")) {
     check(`PATCH /stage-templates/:id as ${role} -> 403`, (await req(`/stage-templates/${tplId}`, { method: "PATCH", body: JSON.stringify({ name: "Hacked", version: 1 }) }, token)).status, 403);
   }
+  // Round 2: task templates (kind=task). Managers read the ACTIVE ones for the task picker; task-only roles never; the Admin manages.
+  for (const [role, token] of everyone) {
+    const expected = TASK_ONLY.includes(role) ? 403 : 200;
+    check(`GET /stage-templates?kind=task&role=editor as ${role} -> ${expected}`, (await req("/stage-templates?kind=task&role=editor", {}, token)).status, expected);
+  }
+  for (const [role, token] of everyone.filter(([r]) => r !== "admin")) {
+    check(
+      `POST /stage-templates (a task template) as ${role} -> 403`,
+      (await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC no ${role} ${stamp}`, stages: ["A", "B"], kind: "task" }) }, token)).status,
+      403,
+    );
+  }
+  const taskTpl = await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC task tpl ${stamp}`, stages: ["To do", "In progress", "Done"], kind: "task" }) }, admin.token);
+  check("POST /stage-templates (a task template) as admin -> 201", taskTpl.status, 201);
+  const taskTplId = taskTpl.body?.template?.id;
+  const editorTpl = await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC editor tpl ${stamp}`, stages: ["Cut", "Done"], kind: "task", roles: ["editor"] }) }, admin.token);
+  check("POST /stage-templates (a task template for editors) as admin -> 201", editorTpl.status, 201);
+  check("POST /stage-templates (roles on an event template) as admin -> 400", (await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC bad roles ${stamp}`, stages: ["A"], roles: ["editor"] }) }, admin.token)).status, 400);
+  for (const [role, token] of everyone.filter(([r]) => r !== "admin")) {
+    check(`PATCH /stage-templates/:id (a task template) as ${role} -> 403`, (await req(`/stage-templates/${taskTplId}`, { method: "PATCH", body: JSON.stringify({ name: "Hacked", version: 1 }) }, token)).status, 403);
+  }
+  check("PATCH /stage-templates/:id (changing kind) as admin -> 400", (await req(`/stage-templates/${taskTplId}`, { method: "PATCH", body: JSON.stringify({ kind: "event", version: 1 }) }, admin.token)).status, 400);
 
   console.log("\n--- events (admin: all; SMM / MM: their clients' events, others' are 404; task-only: 403) ---");
   const evClient = (await req("/clients", { method: "POST", body: newClient("events-client") }, smm.token)).body?.client;
@@ -461,7 +489,7 @@ async function main() {
   // Runs before the users section: that section regenerates the editor's password, revoking its token.
   const NON_ADMIN = everyone.filter(([r]) => r !== "admin");
   const MANAGERS = ["social_media_manager", "marketing_manager", "project_manager"];
-  const taskBody = (extra = {}) => JSON.stringify({ title: `RBAC task ${stamp}`, assigneeId: target.id, rawFilesUrl: "https://drive.google.com/drive/folders/rbac", ...extra });
+  const taskBody = (extra = {}) => JSON.stringify({ title: `RBAC task ${stamp}`, assigneeId: target.id, templateId: taskTplId, brief: "RBAC brief", links: [{ url: "https://drive.google.com/drive/folders/rbac", label: "Raw files" }], ...extra });
   const extraTasks = []; // every fixture task, deleted at the end
   const track = (r) => (r.body?.task?.id && extraTasks.push(r.body.task.id), r);
   for (const [role, token] of everyone) {
@@ -473,31 +501,32 @@ async function main() {
     check(`POST /staff-tasks (to the editor) as ${role} -> ${expected}`, track(await req("/staff-tasks", { method: "POST", body: taskBody() }, token)).status, expected);
   }
   // Create, to a manager (the SMM): only the Admin; a manager is refused by the ladder.
-  const toManager = JSON.stringify({ title: `RBAC to-manager ${stamp}`, assigneeId: smm.id });
+  const toManager = JSON.stringify({ title: `RBAC to-manager ${stamp}`, assigneeId: smm.id, templateId: taskTplId });
   for (const [role, token] of everyone) {
     const expected = TASK_ONLY.includes(role) ? 403 : role === "admin" ? 201 : 400;
     check(`POST /staff-tasks (to the SMM) as ${role} -> ${expected}`, track(await req("/staff-tasks", { method: "POST", body: toManager }, token)).status, expected);
   }
   check(
     "POST /staff-tasks (to the admin) as admin -> 400 (the ladder is strictly downwards)",
-    (await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: admin.profile.id }) }, admin.token)).status,
+    (await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: admin.profile.id, templateId: taskTplId }) }, admin.token)).status,
     400,
   );
   check(
     "POST /staff-tasks (to the admin) as SMM -> 400",
-    (await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: admin.profile.id }) }, smm.token)).status,
+    (await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: admin.profile.id, templateId: taskTplId }) }, smm.token)).status,
     400,
   );
-  const ladder = await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: mm.id }) }, smm.token);
+  const ladder = await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: mm.id, templateId: taskTplId }) }, smm.token);
   check("... the refusal is STAFF_TASK_ASSIGNEE_NOT_ALLOWED", ladder.body?.code, "STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
-  check(
-    "POST /staff-tasks (editor task without the raw files link) as admin -> 201 (the brief is optional now)",
-    track(await req("/staff-tasks", { method: "POST", body: taskBody({ rawFilesUrl: null }) }, admin.token)).status,
-    201,
-  );
+  check("POST /staff-tasks (no templateId) as admin -> 400", (await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: target.id }) }, admin.token)).status, 400);
+  check("POST /staff-tasks (an event template) as admin -> 400", (await req("/staff-tasks", { method: "POST", body: taskBody({ templateId: tplId }) }, admin.token)).status, 400);
+  check("POST /staff-tasks (a template for editors, to the developer) as admin -> 400", (await req("/staff-tasks", { method: "POST", body: taskBody({ templateId: editorTpl.body?.template?.id, assigneeId: staff.developer.id }) }, admin.token)).status, 400);
+  check("POST /staff-tasks (a template for editors, to the editor) as admin -> 201", track(await req("/staff-tasks", { method: "POST", body: taskBody({ templateId: editorTpl.body?.template?.id }) }, admin.token)).status, 201);
   const taskRes = track(await req("/staff-tasks", { method: "POST", body: taskBody() }, admin.token));
   check("POST /staff-tasks (to the editor) as admin -> 201", taskRes.status, 201);
   const tid = taskRes.body?.task?.id;
+  const tStages = taskRes.body?.task?.stages ?? []; // To do / In progress / Done
+  check("... the task starts at stage 1 as todo", [taskRes.body?.task?.currentStage?.position, taskRes.body?.task?.status].join(","), "1,todo");
 
   // The Admin's task has no client: only the Admin and the editor (assignee) can see it.
   const taskReadExpect = { admin: 200, social_media_manager: 404, marketing_manager: 404, project_manager: 404, marketing_agent: 404, developer: 404, editor: 200, content_writer: 404 };
@@ -511,31 +540,48 @@ async function main() {
   check("GET /staff-tasks?relation=team as developer -> 400 (managers only)", (await req("/staff-tasks?relation=team", {}, staff.developer.token)).status, 400);
   check("GET /staff-tasks?relation=bogus -> 400", (await req("/staff-tasks?relation=bogus", {}, admin.token)).status, 400);
 
+  // The old /status endpoint is gone for everyone.
+  for (const [role, token] of everyone) {
+    check(`POST /staff-tasks/:id/status (removed) as ${role} -> 404`, (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "done", version: 1 }) }, token)).status, 404);
+  }
+  // Stage moves: the assignee, the creator and the Admin; a stranger 404.
   for (const [role, token] of NON_ADMIN.filter(([r]) => r !== "editor")) {
-    const body = JSON.stringify({ status: "in_progress", version: 1 });
-    check(`POST /staff-tasks/:id/status (editor's) as ${role} -> 404`, (await req(`/staff-tasks/${tid}/status`, { method: "POST", body }, token)).status, 404);
+    check(`POST /staff-tasks/:id/stage (editor's) as ${role} -> 404`, (await req(`/staff-tasks/${tid}/stage`, { method: "POST", body: JSON.stringify({ stageId: tStages[1]?.id, version: 1 }) }, token)).status, 404);
+    check(`POST /staff-tasks/:id/block (editor's) as ${role} -> 404`, (await req(`/staff-tasks/${tid}/block`, { method: "POST", body: JSON.stringify({ reason: "x", version: 1 }) }, token)).status, 404);
+    check(`POST /staff-tasks/:id/unblock (editor's) as ${role} -> 404`, (await req(`/staff-tasks/${tid}/unblock`, { method: "POST", body: JSON.stringify({ version: 1 }) }, token)).status, 404);
+    check(`POST /staff-tasks/:id/links (editor's) as ${role} -> 404`, (await req(`/staff-tasks/${tid}/links`, { method: "POST", body: JSON.stringify({ kind: "delivered", url: "https://example.test/a" }) }, token)).status, 404);
     check(`POST /staff-tasks/:id/comments (editor's) as ${role} -> 404`, (await req(`/staff-tasks/${tid}/comments`, { method: "POST", body: JSON.stringify({ body: "hi" }) }, token)).status, 404);
   }
-  check("POST /staff-tasks/:id/status (own) as editor -> 200", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "in_progress", comment: "Starting", version: 1 }) }, target.token)).status, 200);
-  check("POST /staff-tasks/:id/status with the stale version -> 409", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "blocked", version: 1 }) }, target.token)).status, 409);
+  check("POST /staff-tasks/:id/stage (own) as editor -> 200", (await req(`/staff-tasks/${tid}/stage`, { method: "POST", body: JSON.stringify({ stageId: tStages[1]?.id, comment: "Starting", version: 1 }) }, target.token)).status, 200);
+  check("POST /staff-tasks/:id/stage with the stale version -> 409", (await req(`/staff-tasks/${tid}/stage`, { method: "POST", body: JSON.stringify({ stageId: tStages[0]?.id, version: 1 }) }, target.token)).status, 409);
+  check("POST /staff-tasks/:id/stage to the current stage -> 409", (await req(`/staff-tasks/${tid}/stage`, { method: "POST", body: JSON.stringify({ stageId: tStages[1]?.id, version: 2 }) }, target.token)).status, 409);
+  check("POST /staff-tasks/:id/stage complete from the middle -> 409", (await req(`/staff-tasks/${tid}/stage`, { method: "POST", body: JSON.stringify({ complete: true, version: 2 }) }, target.token)).status, 409);
+  check("POST /staff-tasks/:id/stage with neither stageId nor complete -> 400", (await req(`/staff-tasks/${tid}/stage`, { method: "POST", body: JSON.stringify({ version: 2 }) }, target.token)).status, 400);
+  check("POST /staff-tasks/:id/block (own) as editor -> 200", (await req(`/staff-tasks/${tid}/block`, { method: "POST", body: JSON.stringify({ reason: "Waiting for music", version: 2 }) }, target.token)).status, 200);
+  check("POST /staff-tasks/:id/block when already blocked -> 409", (await req(`/staff-tasks/${tid}/block`, { method: "POST", body: JSON.stringify({ reason: "again", version: 3 }) }, target.token)).status, 409);
+  check("POST /staff-tasks/:id/unblock (own) as editor -> 200", (await req(`/staff-tasks/${tid}/unblock`, { method: "POST", body: JSON.stringify({ comment: "Music arrived", version: 3 }) }, target.token)).status, 200);
+  check("POST /staff-tasks/:id/unblock when not blocked -> 409", (await req(`/staff-tasks/${tid}/unblock`, { method: "POST", body: JSON.stringify({ version: 4 }) }, target.token)).status, 409);
   check("POST /staff-tasks/:id/comments (own) as editor -> 201", (await req(`/staff-tasks/${tid}/comments`, { method: "POST", body: JSON.stringify({ body: "Cut is up" }) }, target.token)).status, 201);
   check("POST /staff-tasks/:id/comments as admin -> 201", (await req(`/staff-tasks/${tid}/comments`, { method: "POST", body: JSON.stringify({ body: "Thanks" }) }, admin.token)).status, 201);
 
   // Edit / reopen / delete on the Admin's task: managers can't see it (404); task-only roles lack staff_tasks:assign (403).
   const manageExpect = (role) => (role === "admin" ? null : MANAGERS.includes(role) ? 404 : 403);
   for (const [role, token] of NON_ADMIN) {
-    check(`PATCH /staff-tasks/:id (admin's task) as ${role} -> ${manageExpect(role)}`, (await req(`/staff-tasks/${tid}`, { method: "PATCH", body: JSON.stringify({ priority: "urgent", version: 2 }) }, token)).status, manageExpect(role));
+    check(`PATCH /staff-tasks/:id (admin's task) as ${role} -> ${manageExpect(role)}`, (await req(`/staff-tasks/${tid}`, { method: "PATCH", body: JSON.stringify({ priority: "urgent", version: 4 }) }, token)).status, manageExpect(role));
   }
-  check("PATCH /staff-tasks/:id as admin -> 200", (await req(`/staff-tasks/${tid}`, { method: "PATCH", body: JSON.stringify({ priority: "urgent", version: 2 }) }, admin.token)).status, 200);
-  check("POST /staff-tasks/:id/status done (own) as editor -> 200", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "done", version: 3 }) }, target.token)).status, 200);
-  check("POST /staff-tasks/:id/status on a done task as editor -> 409", (await req(`/staff-tasks/${tid}/status`, { method: "POST", body: JSON.stringify({ status: "todo", version: 4 }) }, target.token)).status, 409);
+  check("PATCH /staff-tasks/:id as admin -> 200", (await req(`/staff-tasks/${tid}`, { method: "PATCH", body: JSON.stringify({ priority: "urgent", brief: "New brief", version: 4 }) }, admin.token)).status, 200);
+  check("PATCH /staff-tasks/:id with a templateId as admin -> 400 (stages are fixed)", (await req(`/staff-tasks/${tid}`, { method: "PATCH", body: JSON.stringify({ templateId: taskTplId, version: 5 }) }, admin.token)).status, 400);
+  check("POST /staff-tasks/:id/stage to the last stage (own) as editor -> 200", (await req(`/staff-tasks/${tid}/stage`, { method: "POST", body: JSON.stringify({ stageId: tStages[2]?.id, version: 5 }) }, target.token)).status, 200);
+  check("POST /staff-tasks/:id/stage complete (own) as editor -> 200", (await req(`/staff-tasks/${tid}/stage`, { method: "POST", body: JSON.stringify({ complete: true, version: 6 }) }, target.token)).status, 200);
+  check("POST /staff-tasks/:id/stage on a done task as editor -> 409", (await req(`/staff-tasks/${tid}/stage`, { method: "POST", body: JSON.stringify({ stageId: tStages[0]?.id, version: 7 }) }, target.token)).status, 409);
+  check("POST /staff-tasks/:id/block on a done task as editor -> 409", (await req(`/staff-tasks/${tid}/block`, { method: "POST", body: JSON.stringify({ reason: "x", version: 7 }) }, target.token)).status, 409);
   for (const [role, token] of NON_ADMIN) {
-    check(`POST /staff-tasks/:id/reopen (admin's task) as ${role} -> ${manageExpect(role)}`, (await req(`/staff-tasks/${tid}/reopen`, { method: "POST", body: JSON.stringify({ version: 4 }) }, token)).status, manageExpect(role));
+    check(`POST /staff-tasks/:id/reopen (admin's task) as ${role} -> ${manageExpect(role)}`, (await req(`/staff-tasks/${tid}/reopen`, { method: "POST", body: JSON.stringify({ version: 7 }) }, token)).status, manageExpect(role));
   }
-  check("POST /staff-tasks/:id/reopen as admin -> 200", (await req(`/staff-tasks/${tid}/reopen`, { method: "POST", body: JSON.stringify({ version: 4 }) }, admin.token)).status, 200);
+  check("POST /staff-tasks/:id/reopen to a stage as admin -> 200", (await req(`/staff-tasks/${tid}/reopen`, { method: "POST", body: JSON.stringify({ stageId: tStages[1]?.id, version: 7 }) }, admin.token)).status, 200);
 
   // A manager receives tasks too (from the Admin), and sees only their own.
-  const smmTask = track(await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: `RBAC smm task ${stamp}`, assigneeId: smm.id }) }, admin.token));
+  const smmTask = track(await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: `RBAC smm task ${stamp}`, assigneeId: smm.id, templateId: taskTplId }) }, admin.token));
   check("POST /staff-tasks (to the SMM) as admin -> 201", smmTask.status, 201);
   check("GET /staff-tasks/:id (SMM's) as SMM -> 200", (await req(`/staff-tasks/${smmTask.body?.task?.id}`, {}, smm.token)).status, 200);
   check("GET /staff-tasks/:id (SMM's) as MM -> 404", (await req(`/staff-tasks/${smmTask.body?.task?.id}`, {}, mm.token)).status, 404);
@@ -552,7 +598,32 @@ async function main() {
   check("PATCH /staff-tasks/:id reassigning sideways (to the MM) as SMM -> 400", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ assigneeId: mm.id, version: 2 }) }, smm.token)).status, 400);
   check("PATCH /staff-tasks/:id (SMM-created) as admin -> 200", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ title: `RBAC smm-made ${stamp} c`, version: 2 }) }, admin.token)).status, 200);
   check("POST /staff-tasks/:id/comments (SMM-created) as SMM (creator) -> 201", (await req(`/staff-tasks/${mid}/comments`, { method: "POST", body: JSON.stringify({ body: "Please hurry" }) }, smm.token)).status, 201);
-  check("POST /staff-tasks/:id/status (SMM-created) as SMM (not the assignee) -> 403", (await req(`/staff-tasks/${mid}/status`, { method: "POST", body: JSON.stringify({ status: "in_progress", version: 3 }) }, smm.token)).status, 403);
+  const mStages = smmMade.body?.task?.stages ?? [];
+  check("POST /staff-tasks/:id/stage (SMM-created) as SMM (the creator) -> 200", (await req(`/staff-tasks/${mid}/stage`, { method: "POST", body: JSON.stringify({ stageId: mStages[1]?.id, version: 3 }) }, smm.token)).status, 200);
+  check("POST /staff-tasks/:id/block (SMM-created) as SMM (the creator, not the assignee) -> 403", (await req(`/staff-tasks/${mid}/block`, { method: "POST", body: JSON.stringify({ reason: "x", version: 5 }) }, smm.token)).status, 403);
+  check("POST /staff-tasks/:id/stage (SMM-created) as MM -> 404", (await req(`/staff-tasks/${mid}/stage`, { method: "POST", body: JSON.stringify({ stageId: mStages[2]?.id, version: 5 }) }, mm.token)).status, 404);
+  check("POST /staff-tasks/:id/block (SMM-created) as editor (the assignee) -> 200", (await req(`/staff-tasks/${mid}/block`, { method: "POST", body: JSON.stringify({ reason: "Waiting", version: 4 }) }, target.token)).status, 200);
+  check("POST /staff-tasks/:id/unblock (SMM-created) as SMM (the creator) -> 200", (await req(`/staff-tasks/${mid}/unblock`, { method: "POST", body: JSON.stringify({ version: 5 }) }, smm.token)).status, 200);
+
+  // Links: brief = the creator or Admin; delivered = the assignee or Admin; delete = whoever added it or manages the task.
+  const addLink = (id, body, token) => req(`/staff-tasks/${id}/links`, { method: "POST", body: JSON.stringify(body) }, token);
+  check("POST /staff-tasks/:id/links (brief) as SMM (the creator) -> 201", (await addLink(mid, { kind: "brief", url: "https://example.test/brief", label: "Inputs" }, smm.token)).status, 201);
+  check("POST /staff-tasks/:id/links (brief) as editor (the assignee) -> 403", (await addLink(mid, { kind: "brief", url: "https://example.test/brief2" }, target.token)).status, 403);
+  check("POST /staff-tasks/:id/links (brief) as admin -> 201", (await addLink(mid, { kind: "brief", url: "https://example.test/brief3" }, admin.token)).status, 201);
+  const dlv = await addLink(mid, { kind: "delivered", url: "https://example.test/final", label: "Final" }, target.token);
+  check("POST /staff-tasks/:id/links (delivered) as editor (the assignee) -> 201", dlv.status, 201);
+  check("POST /staff-tasks/:id/links (delivered) as SMM (the creator) -> 403", (await addLink(mid, { kind: "delivered", url: "https://example.test/x" }, smm.token)).status, 403);
+  check("POST /staff-tasks/:id/links (delivered) as admin -> 201", (await addLink(mid, { kind: "delivered", url: "https://example.test/y" }, admin.token)).status, 201);
+  check("POST /staff-tasks/:id/links (not http) as editor -> 400", (await addLink(mid, { kind: "delivered", url: "javascript:alert(1)" }, target.token)).status, 400);
+  check("POST /staff-tasks/:id/links (SMM-created) as MM -> 404", (await addLink(mid, { kind: "brief", url: "https://example.test/z" }, mm.token)).status, 404);
+  const mLinks = dlv.body?.task?.links ?? [];
+  const deliveredLink = mLinks.find((l) => l.kind === "delivered");
+  const briefLink = mLinks.find((l) => l.kind === "brief");
+  check("DELETE /staff-tasks/:id/links/:linkId (SMM's brief link) as editor -> 403", (await req(`/staff-tasks/${mid}/links/${briefLink?.id}`, { method: "DELETE" }, target.token)).status, 403);
+  check("DELETE /staff-tasks/:id/links/:linkId as MM -> 404", (await req(`/staff-tasks/${mid}/links/${briefLink?.id}`, { method: "DELETE" }, mm.token)).status, 404);
+  check("DELETE /staff-tasks/:id/links/:linkId (SMM's brief link) as SMM (who added it) -> 200", (await req(`/staff-tasks/${mid}/links/${briefLink?.id}`, { method: "DELETE" }, smm.token)).status, 200);
+  check("DELETE /staff-tasks/:id/links/:linkId (a missing link) as SMM -> 404", (await req(`/staff-tasks/${mid}/links/${briefLink?.id}`, { method: "DELETE" }, smm.token)).status, 404);
+  check("DELETE /staff-tasks/:id/links/:linkId (the editor's delivered link) as SMM (manages the task) -> 200", (await req(`/staff-tasks/${mid}/links/${deliveredLink?.id}`, { method: "DELETE" }, smm.token)).status, 200);
 
   // A client's team sees its tasks read-only (403 on writes); a manager off the team gets 404.
   const teamClient = (await req("/clients", { method: "POST", body: newClient("task-team-client") }, smm.token)).body?.client;
@@ -570,6 +641,34 @@ async function main() {
   check("... the refusal is STAFF_TASK_FORBIDDEN", forbidden.body?.code, "STAFF_TASK_FORBIDDEN");
   check("POST /staff-tasks/:id/reopen (client's task) as SMM on the team -> 403", (await req(`/staff-tasks/${ttid}/reopen`, { method: "POST", body: JSON.stringify({ version: 1 }) }, smm.token)).status, 403);
   check("POST /staff-tasks/:id/comments (client's task) as SMM on the team -> 403", (await req(`/staff-tasks/${ttid}/comments`, { method: "POST", body: JSON.stringify({ body: "hi" }) }, smm.token)).status, 403);
+  const ttStages = teamTask.body?.task?.stages ?? [];
+  check("POST /staff-tasks/:id/stage (client's task) as SMM on the team -> 403", (await req(`/staff-tasks/${ttid}/stage`, { method: "POST", body: JSON.stringify({ stageId: ttStages[1]?.id, version: 1 }) }, smm.token)).status, 403);
+  check("POST /staff-tasks/:id/block (client's task) as SMM on the team -> 403", (await req(`/staff-tasks/${ttid}/block`, { method: "POST", body: JSON.stringify({ reason: "x", version: 1 }) }, smm.token)).status, 403);
+  check("POST /staff-tasks/:id/unblock (client's task) as SMM on the team -> 403", (await req(`/staff-tasks/${ttid}/unblock`, { method: "POST", body: JSON.stringify({ version: 1 }) }, smm.token)).status, 403);
+  check("POST /staff-tasks/:id/links (client's task) as SMM on the team -> 403", (await addLink(ttid, { kind: "brief", url: "https://example.test/t" }, smm.token)).status, 403);
+  check("POST /staff-tasks/:id/stage (client's task) as MM off the team -> 404", (await req(`/staff-tasks/${ttid}/stage`, { method: "POST", body: JSON.stringify({ stageId: ttStages[1]?.id, version: 1 }) }, mm.token)).status, 404);
+
+  // Share with the client: the Admin or a manager on the client's team; never the assignee; the task needs an event.
+  const shareTpl = await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC share tpl ${stamp}`, stages: ["Plan", "Shoot"] }) }, admin.token);
+  const shareEvent = await req("/events", { method: "POST", body: JSON.stringify({ clientId: teamClient?.id, templateId: shareTpl.body?.template?.id, title: `RBAC share event ${stamp}`, type: "shoot", startsAt: "2026-12-01T10:00:00Z", endsAt: "2026-12-01T12:00:00Z" }) }, smm.token);
+  check("POST /events (for the share checks) as SMM -> 201", shareEvent.status, 201);
+  const shareTask = track(await req("/staff-tasks", { method: "POST", body: taskBody({ title: `RBAC share task ${stamp}`, clientId: teamClient?.id, eventId: shareEvent.body?.event?.id }) }, smm.token));
+  const shid = shareTask.body?.task?.id;
+  const shLink = (await addLink(shid, { kind: "delivered", url: "https://example.test/share-me", label: "Final reel" }, target.token)).body?.task?.links?.find((l) => l.kind === "delivered");
+  const doShare = (id, linkId, token, body = {}) => req(`/staff-tasks/${id}/links/${linkId}/share`, { method: "POST", body: JSON.stringify(body) }, token);
+  check("POST /staff-tasks/:id/links/:linkId/share as editor (the assignee) -> 403", (await doShare(shid, shLink?.id, target.token)).status, 403);
+  check("POST /staff-tasks/:id/links/:linkId/share as MM (off the team) -> 404", (await doShare(shid, shLink?.id, mm.token)).status, 404);
+  check("POST /staff-tasks/:id/links/:linkId/share as developer (a stranger) -> 404", (await doShare(shid, shLink?.id, staff.developer.token)).status, 404);
+  const shared = await doShare(shid, shLink?.id, smm.token, { title: "Final reel" });
+  check("POST /staff-tasks/:id/links/:linkId/share as SMM (creator, on the team) -> 201", shared.status, 201);
+  check("... and the response names the new asset", typeof shared.body?.assetId, "string");
+  check("POST /staff-tasks/:id/links/:linkId/share again -> 409", (await doShare(shid, shLink?.id, smm.token)).status, 409);
+  const noEventTask = track(await req("/staff-tasks", { method: "POST", body: taskBody({ title: `RBAC no-event task ${stamp}` }) }, admin.token));
+  const neid = noEventTask.body?.task?.id;
+  const neLink = (await addLink(neid, { kind: "delivered", url: "https://example.test/no-event" }, target.token)).body?.task?.links?.find((l) => l.kind === "delivered");
+  check("POST /staff-tasks/:id/links/:linkId/share (a task with no event) as admin -> 409", (await doShare(neid, neLink?.id, admin.token)).status, 409);
+  check("POST /staff-tasks/:id/links/:linkId/share (a missing link) as admin -> 404", (await doShare(neid, "00000000-0000-4000-8000-000000000000", admin.token)).status, 404);
+  if (shareTpl.body?.template?.id) await req(`/stage-templates/${shareTpl.body.template.id}`, { method: "PATCH", body: JSON.stringify({ active: false, version: 1 }) }, admin.token);
   check("DELETE /staff-tasks/:id (client's task) as SMM on the team -> 403", (await req(`/staff-tasks/${ttid}`, { method: "DELETE" }, smm.token)).status, 403);
   check(
     "POST /staff-tasks linking another team's client as SMM -> 400",
@@ -588,6 +687,7 @@ async function main() {
   check("... a deleted task is 404 for the admin", (await req(`/staff-tasks/${tid}`, {}, admin.token)).status, 404);
   for (const id of extraTasks) await req(`/staff-tasks/${id}`, { method: "DELETE" }, admin.token);
   for (const c of [teamClient, mmClient]) if (c) await req(`/clients/${c.id}/archive`, { method: "POST", body: "{}" }, admin.token);
+  for (const t of [taskTpl, editorTpl]) if (t.body?.template?.id) await req(`/stage-templates/${t.body.template.id}`, { method: "PATCH", body: JSON.stringify({ active: false, version: t.body.template.version }) }, admin.token);
 
   console.log("\n--- my to-dos (round 1: todos:manage is own for every role; nobody, the Admin included, reaches another person's) ---");
   check("GET /todos without a token -> 401", (await req("/todos")).status, 401);

@@ -54,6 +54,9 @@ test("an SMM creates a task for an editor from the day pop-up; the editor sees i
   await expect(smm.locator("#tf-due")).toHaveValue(`${day}T17:00`);
   await smm.locator("#tf-assignee").fill("Meera");
   await smm.getByRole("option", { name: /Meera Nair/ }).click();
+  // Round 2: a template is required; take the first one offered for editors.
+  await smm.locator("#tf-template").click();
+  await smm.locator('[role="listbox"] [role="option"]').first().click();
   await smm.getByRole("button", { name: "Create task" }).click();
   // The calendar stays put and now counts the task on that day; the pop-up links to it.
   await expect(smm.locator(`[data-day="${day}"]`)).toContainText("1 task", { timeout: 15_000 });

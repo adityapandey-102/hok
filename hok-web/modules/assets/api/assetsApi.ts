@@ -7,6 +7,8 @@ export interface AssetListFilters {
   search?: string;
   type?: AssetType;
   tag?: string;
+  /** Only the links the client can see in the portal. */
+  visibleToClient?: boolean;
   from?: string;
   to?: string;
   limit?: number;
@@ -28,6 +30,8 @@ export interface CreateAssetPayload {
   comment?: string | null;
   eventId?: string | null;
   tags?: string[];
+  visibleToClient?: boolean;
+  eventStageId?: string | null;
 }
 
 export interface UpdateAssetPayload {
@@ -37,6 +41,8 @@ export interface UpdateAssetPayload {
   comment?: string | null;
   eventId?: string | null;
   tags?: string[];
+  visibleToClient?: boolean;
+  eventStageId?: string | null;
   version: number;
 }
 
@@ -48,6 +54,7 @@ export const assetsApi = {
       const value = filters[key];
       if (value) q.set(key, value);
     }
+    if (filters.visibleToClient) q.set("visibleToClient", "true");
     if (filters.limit !== undefined) q.set("limit", String(filters.limit));
     if (filters.offset !== undefined) q.set("offset", String(filters.offset));
     return apiFetch(`/assets?${q.toString()}`);
