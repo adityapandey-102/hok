@@ -8,7 +8,7 @@ export interface NavItem {
   tab?: string;
   requires?: Capability;
   /** A live count next to the label (see Sidebar). */
-  badge?: "comments";
+  badge?: "comments" | "approvals";
 }
 
 export interface NavSection {
@@ -33,6 +33,8 @@ export const NAV_SECTIONS: NavSection[] = [
       // Calendar is for every role now: tasks and to-dos land on it too (round 1).
       { label: "Calendar", href: "/app/calendar", icon: "calendar", requires: "staff_tasks:read", tab: "Calendar" },
       { label: "Tasks", href: "/app/tasks", icon: "clipboard", requires: "staff_tasks:read", tab: "Tasks" },
+      // Approvals (round 3): every staff role; not a phone tab, so it sits in More.
+      { label: "Approvals", href: "/app/approvals", icon: "shield", requires: "staff_tasks:read", badge: "approvals" },
       { label: "To-dos", href: "/app/todos", icon: "check-circle", requires: "todos:manage" },
       { label: "Client comments", href: "/app/comments", icon: "message", requires: "comments:read", badge: "comments" },
       { label: "Notifications", href: "/app/notifications", icon: "bell", tab: "Alerts" },

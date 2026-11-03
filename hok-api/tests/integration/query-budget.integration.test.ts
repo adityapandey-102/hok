@@ -8,6 +8,7 @@ import { eventStages, events } from "../../src/modules/events/infrastructure/eve
 import { personalEvents } from "../../src/modules/personal-events/infrastructure/personal-events.schema";
 import { assetTags, assets, tags } from "../../src/modules/assets/infrastructure/assets.schema";
 import { clientComments } from "../../src/modules/client-comments/infrastructure/client-comments.schema";
+import { stageApprovals } from "../../src/modules/approvals/infrastructure/approvals.schema";
 import { clientTodos } from "../../src/modules/client-todos/infrastructure/client-todos.schema";
 import { staffTaskLinks, staffTasks } from "../../src/modules/staff-tasks/infrastructure/staff-tasks.schema";
 import { bearerFor, closeDb, createFixtureUser, deleteClientsOwnedBy, deleteFixtureUser, deleteStaffTasksFor, type FixtureUser } from "./helpers";
@@ -171,6 +172,9 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     ["staff tasks by assignee + search + priority", (l) => `/api/v1/staff-tasks?assigneeId=${admin.id}&search=QB&priority=high&limit=${l}`],
     ["staff tasks by role + overdue", (l) => `/api/v1/staff-tasks?role=admin&overdue=true&limit=${l}`],
     ["staff tasks by relation", (l) => `/api/v1/staff-tasks?relation=created&limit=${l}`],
+    ["approvals to decide", (l) => `/api/v1/approvals?limit=${l}`],
+    ["approvals requested", (l) => `/api/v1/approvals?view=requested&limit=${l}`],
+    ["approvals all visible + status", (l) => `/api/v1/approvals?view=all_visible&status=superseded&limit=${l}`],
     ["staff tasks open + due range", (l) => `/api/v1/staff-tasks?open=true&dueFrom=2000-01-01T00:00:00Z&dueTo=2100-01-01T00:00:00Z&limit=${l}`],
   ];
 
@@ -197,11 +201,13 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
 
   // M10: the dashboard is aggregates + capped lists. The fixture Admin owns 12 clients, events and
   // comments, yet the count is fixed: auth profile + 5 firm reads + 2 own to-do reads on the overview,
-  // auth profile + 9 reads (3 own tasks, 4 own clients, 2 own to-dos) on "My clients".
+  // auth profile + 9 reads (3 own tasks, 4 own clients, 2 own to-dos) on "My clients". Round 3 adds the viewer's
+  // 2 approval reads (count + the oldest 3) to every view.
+
   it("dashboard: a fixed number of queries, whatever the data", async (ctx) => {
     if (!staffTasksReady) ctx.skip();
-    expect(await queriesFor("/api/v1/dashboard")).toBe(8);
-    expect(await queriesFor("/api/v1/dashboard?view=mine")).toBe(10);
+    expect(await queriesFor("/api/v1/dashboard")).toBe(10);
+    expect(await queriesFor("/api/v1/dashboard?view=mine")).toBe(12);
   });
 
   // Phase 2: global search is one capped query per group (5 groups for the Admin) + the auth lookup,
@@ -223,7 +229,7 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
   });
 
   // Round 2: a task's detail reads the task, its stages, its links and its timeline -- one query each, in parallel --
-  // however many stages, links and updates it has (auth profile + 4 reads).
+  // however many stages, links and updates it has (auth profile + 4 reads; round 3 adds the approvals read = 6).
   it("task detail: stages, links and timeline are one query each, however many there are", async (ctx) => {
     if (!staffTasksReady) ctx.skip();
     const [bare, busy] = await db.select({ id: staffTasks.id }).from(staffTasks).where(eq(staffTasks.assigneeId, admin.id)).orderBy(staffTasks.title).limit(2);
@@ -233,7 +239,20 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     count = 0;
     const heavy = await queriesFor(`/api/v1/staff-tasks/${busy!.id}`);
     expect(heavy, `task detail: ${base} queries bare, ${heavy} with 30 links and 12 comments`).toBe(base);
-    expect(base).toBeLessThanOrEqual(5);
+    expect(base).toBeLessThanOrEqual(6);
+  });
+
+  // Round 3: an event's detail reads the event, its stages, its history and its approvals (+ the client's team) -- one query
+  // each, however many stages and approval rounds it has. The badge count is one query.
+  it("event detail: stages, history and approval rounds are one query each, however many there are", async () => {
+    const [bare, busy] = await db.select({ id: events.id }).from(events).where(sql`${events.title} like 'QB Event %'`).orderBy(events.title).limit(2);
+    const base = await queriesFor(`/api/v1/events/${bare!.id}`);
+    const [stage] = await db.select({ id: eventStages.id }).from(eventStages).where(eq(eventStages.eventId, busy!.id)).limit(1);
+    await db.insert(stageApprovals).values(Array.from({ length: 25 }, () => ({ eventId: busy!.id, eventStageId: stage!.id, status: "superseded" as const, requestedBy: admin.id })));
+    const heavy = await queriesFor(`/api/v1/events/${busy!.id}`);
+    expect(heavy, `event detail: ${base} queries bare, ${heavy} with 25 approval rounds`).toBe(base);
+    expect(base).toBeLessThanOrEqual(7); // auth profile + event + stages + history + approvals (+ the client's team)
+    expect(await queriesFor("/api/v1/approvals/count")).toBe(2); // auth profile + one count
   });
 
   // Round 2: the portal's event page adds its shared assets as one capped query, whatever their number.

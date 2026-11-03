@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, boolean, integer, timestamp } from "drizzle-orm/pg-core";
-import type { Role } from "../../../domain";
+import type { ApproverToken, Role } from "../../../domain";
 import type { TemplateKind } from "../domain/stage-template.entity";
 
 /**
@@ -26,4 +26,6 @@ export const stageTemplateStages = pgTable("stage_template_stages", {
   templateId: uuid("template_id").notNull(),
   position: integer("position").notNull(),
   name: text("name").notNull(),
+  /** Round 3: approver tokens (20261104000001); the API validates them (kind-dependent), the DB only the allowed set. */
+  approvers: text("approvers").array().notNull().$type<ApproverToken[]>().default([]),
 });

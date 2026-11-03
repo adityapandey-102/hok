@@ -89,9 +89,9 @@ describe("assertTeamValid", () => {
 
 describe("assertStageMove", () => {
   const stages = [
-    { id: "s1", position: 1, name: "Planned" },
-    { id: "s2", position: 2, name: "Shoot" },
-    { id: "s3", position: 3, name: "Editing" },
+    { id: "s1", position: 1, name: "Planned", approvers: [] },
+    { id: "s2", position: 2, name: "Shoot", approvers: [] },
+    { id: "s3", position: 3, name: "Editing", approvers: [] },
   ];
   const move = (targetStageId: string, state: "active" | "cancelled" | "postponed" = "active") =>
     codeOf(() => assertStageMove({ state, currentStageId: "s2", stages, targetStageId }));

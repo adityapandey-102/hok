@@ -51,10 +51,37 @@ export interface PortalAsset {
   createdAt: string;
 }
 
+/**
+ * A request waiting for THIS client's approval (round 3): only on a stage whose approvers include the client.
+ * Client-safe: the stage's name, the note and link staff attached, when it was asked -- no staff names or ids.
+ */
+export interface PortalPendingApproval {
+  id: string;
+  /** Echoed back with the decision (optimistic lock). */
+  version: number;
+  stageName: string;
+  requestNote: string | null;
+  requestLink: string | null;
+  requestedAt: string;
+}
+
+/** A decided round on a stage the client approves (approved or changes requested). No staff names: `decidedVia` says only whether it was the client (portal) or staff on their behalf. */
+export interface PortalApprovalHistoryEntry {
+  stageName: string;
+  status: "approved" | "changes_requested";
+  decidedVia: "staff" | "portal" | null;
+  decidedAt: string;
+  decisionComment: string | null;
+}
+
 export interface PortalEventDetail extends PortalEvent {
   updates: PortalUpdate[];
   /** Newest first, at most PORTAL_ASSETS_LIMIT. */
   assets: PortalAsset[];
+  /** The request waiting for the client, or null. */
+  pendingApproval: PortalPendingApproval | null;
+  /** Decided rounds on client-approved stages, newest first, at most 20. */
+  approvalHistory: PortalApprovalHistoryEntry[];
 }
 
 /** GET /portal/:token -- the client's dashboard. */
@@ -62,8 +89,8 @@ export interface PortalDashboard {
   client: { businessName: string; logoUrl: string | null; timeZone: string };
   /** The account manager's first name only (FR-POR-07: no staff data beyond that). */
   manager: { firstName: string };
-  /** The next or in-progress active event, if any. */
-  current: PortalEvent | null;
+  /** The next or in-progress active event, if any; `awaitingYourApproval` = a request is waiting for the client on it. */
+  current: (PortalEvent & { awaitingYourApproval: boolean }) | null;
   upcoming: PortalEvent[];
   recent: PortalEvent[];
 }

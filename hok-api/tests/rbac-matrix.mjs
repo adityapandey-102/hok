@@ -36,6 +36,11 @@
  *       delivered: assignee or Admin; delete: whoever added it or manages the task) and
  *       /links/:id/share (the Admin or a manager on the client's team). Needs migration
  *       20261103000001.
+ *   Round 3: /approvals (ask: whoever may move the item; decide: a matching approver who sees it, the
+ *       requester never, the Admin excepted; cancel: the requester or a manager; inbox + count for every
+ *       role), the move gate (STAGE_APPROVAL_REQUIRED), back moves superseding, template approvers
+ *       (Admin only; the client only on event templates) and POST /portal/:token/approvals/:id (no
+ *       login, the same 404 for every refusal). Needs migration 20261104000001.
  *
  * Creates its own fixtures (one fresh account per non-admin role) every run,
  * so it never depends on `npm run seed` beyond the admin account it signs in
@@ -688,6 +693,168 @@ async function main() {
   for (const id of extraTasks) await req(`/staff-tasks/${id}`, { method: "DELETE" }, admin.token);
   for (const c of [teamClient, mmClient]) if (c) await req(`/clients/${c.id}/archive`, { method: "POST", body: "{}" }, admin.token);
   for (const t of [taskTpl, editorTpl]) if (t.body?.template?.id) await req(`/stage-templates/${t.body.template.id}`, { method: "PATCH", body: JSON.stringify({ active: false, version: t.body.template.version }) }, admin.token);
+
+  console.log("\n--- stage approvals (round 3: anyone who may move the item asks; a matching approver who SEES the item decides; the client decides in the portal) ---");
+  const apprTaskTpl = await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC appr task tpl ${stamp}`, kind: "task", stages: ["Plan", { name: "Review", approvers: ["social_media_manager", "admin"] }, { name: "Ship", approvers: ["admin"] }] }) }, admin.token);
+  check("POST /stage-templates (with approvers) as admin -> 201", apprTaskTpl.status, 201);
+  check("... the stages carry their approvers", JSON.stringify(apprTaskTpl.body?.template?.stages?.map((s) => s.approvers)), JSON.stringify([[], ["social_media_manager", "admin"], ["admin"]]));
+  for (const [role, token] of NON_ADMIN) {
+    if (MANAGERS.includes(role) || role === "editor") {
+      check(`POST /stage-templates (with approvers) as ${role} -> 403`, (await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC appr nope ${role} ${stamp}`, stages: [{ name: "A", approvers: ["admin"] }] }) }, token)).status, 403);
+    }
+  }
+  check("POST /stage-templates (the client on a TASK template) as admin -> 400", (await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC appr bad ${stamp}`, kind: "task", stages: [{ name: "A", approvers: ["client"] }] }) }, admin.token)).status, 400);
+  check("POST /stage-templates (an unknown approver) as admin -> 400", (await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC appr bad2 ${stamp}`, stages: [{ name: "A", approvers: ["wizard"] }] }) }, admin.token)).status, 400);
+  const apprEventTpl = await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC appr event tpl ${stamp}`, stages: ["Plan", { name: "Client OK", approvers: ["client"] }, { name: "Team OK", approvers: ["team_managers"] }] }) }, admin.token);
+  check("POST /stage-templates (the client on an event template) as admin -> 201", apprEventTpl.status, 201);
+
+  const apprClient = (await req("/clients", { method: "POST", body: newClient("appr-client") }, smm.token)).body?.client;
+  check("PUT /clients/:id/team (SMM lead + MM) as admin -> 200", (await req(`/clients/${apprClient?.id}/team`, { method: "PUT", body: JSON.stringify({ leadId: smm.id, memberIds: [mm.id] }) }, admin.token)).status, 200);
+  const apprTasks = []; // fixture tasks, deleted at the end
+  const apprTask = async (creatorToken, extra = {}) => {
+    const r = await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: `RBAC appr task ${stamp}`, assigneeId: target.id, templateId: apprTaskTpl.body?.template?.id, clientId: apprClient?.id, ...extra }) }, creatorToken);
+    if (r.body?.task?.id) apprTasks.push(r.body.task.id);
+    return r.body?.task;
+  };
+  const taskMove = async (id, pos, token) => {
+    const t = (await req(`/staff-tasks/${id}`, {}, admin.token)).body?.task;
+    return req(`/staff-tasks/${id}/stage`, { method: "POST", body: JSON.stringify({ stageId: t?.stages?.[pos - 1]?.id, version: t?.version }) }, token);
+  };
+  const ask = (subject, subjectId, token, extra = {}) => req("/approvals", { method: "POST", body: JSON.stringify({ subject, subjectId, ...extra }) }, token);
+  const decideA = (a, token, decision, comment, version = a?.version) => req(`/approvals/${a?.id}/decision`, { method: "POST", body: JSON.stringify({ version, decision, ...(comment ? { comment } : {}) }) }, token);
+  const cancelA = (a, token) => req(`/approvals/${a?.id}/cancel`, { method: "POST", body: JSON.stringify({ version: a?.version }) }, token);
+
+  // Reads: every role has an inbox and a badge count; nobody anonymous.
+  check("GET /approvals without a token -> 401", (await req("/approvals")).status, 401);
+  check("GET /approvals/count without a token -> 401", (await req("/approvals/count")).status, 401);
+  check("POST /approvals without a token -> 401", (await req("/approvals", { method: "POST", body: "{}" })).status, 401);
+  for (const [role, token] of everyone) {
+    check(`GET /approvals as ${role} -> 200`, (await req("/approvals", {}, token)).status, 200);
+    check(`GET /approvals?view=requested as ${role} -> 200`, (await req("/approvals?view=requested", {}, token)).status, 200);
+    check(`GET /approvals?view=all_visible&status=approved as ${role} -> 200`, (await req("/approvals?view=all_visible&status=approved", {}, token)).status, 200);
+    const count = await req("/approvals/count", {}, token);
+    check(`GET /approvals/count as ${role} -> 200 with a number`, count.status === 200 && typeof count.body?.toDecide === "number", true);
+  }
+  check("GET /approvals?view=everything -> 400", (await req("/approvals?view=everything", {}, admin.token)).status, 400);
+  check("GET /approvals?status=nope -> 400", (await req("/approvals?status=nope", {}, admin.token)).status, 400);
+  check("GET /approvals?limit=100000 clamps to 100", (await req("/approvals?limit=100000", {}, admin.token)).body?.limit, 100);
+
+  // Asking: the editor's task (made by the SMM for the client, stage 2 needs an SMM or the Admin).
+  const T = await apprTask(smm.token);
+  check("POST /staff-tasks (with approval stages) as SMM -> 201", T?.id ? 201 : 0, 201);
+  check("POST /approvals at a stage without approvers -> 409", (await ask("task", T?.id, target.token)).status, 409);
+  check("POST /staff-tasks/:id/stage 1 -> 2 as editor -> 200", (await taskMove(T?.id, 2, target.token)).status, 200);
+  check("POST /staff-tasks/:id/stage 2 -> 3 before approval as editor -> 409", (await taskMove(T?.id, 3, target.token)).status, 409);
+  check("... the refusal is STAGE_APPROVAL_REQUIRED", (await taskMove(T?.id, 3, target.token)).body?.code, "STAGE_APPROVAL_REQUIRED");
+  for (const role of ["project_manager", "marketing_agent", "developer", "content_writer"]) {
+    check(`POST /approvals (someone else's task) as ${role} -> 404`, (await ask("task", T?.id, staff[role].token)).status, 404);
+  }
+  check("POST /approvals (a team member who isn't the assignee or creator) as MM -> 403", (await ask("task", T?.id, mm.token)).status, 403);
+  check("POST /approvals (missing task) as admin -> 404", (await ask("task", "00000000-0000-4000-8000-000000000000", admin.token)).status, 404);
+  check("POST /approvals (bad subject) as admin -> 400", (await ask("client", T?.id, admin.token)).status, 400);
+  check("POST /approvals (javascript: link) as editor -> 400", (await ask("task", T?.id, target.token, { link: "javascript:alert(1)" })).status, 400);
+  const A = (await ask("task", T?.id, target.token, { note: "Ready" })).body?.approval;
+  check("POST /approvals as editor (the assignee) -> 201", A?.status, "pending");
+  check("POST /approvals again as the creator (SMM) -> 409", (await ask("task", T?.id, smm.token)).status, 409);
+  check("... the refusal is STAGE_APPROVAL_PENDING", (await ask("task", T?.id, admin.token)).body?.code, "STAGE_APPROVAL_PENDING");
+
+  // Deciding: only a matching approver who sees the item.
+  check("POST /approvals/:id/decision as MM (sees it, not an approver) -> 403", (await decideA(A, mm.token, "approve")).status, 403);
+  check("... the refusal is STAGE_APPROVAL_NOT_APPROVER", (await decideA(A, mm.token, "approve")).body?.code, "STAGE_APPROVAL_NOT_APPROVER");
+  check("POST /approvals/:id/decision as editor (the requester, not an approver) -> 403", (await decideA(A, target.token, "approve")).status, 403);
+  for (const role of ["project_manager", "marketing_agent", "developer", "content_writer"]) {
+    check(`POST /approvals/:id/decision (invisible) as ${role} -> 404`, (await decideA(A, staff[role].token, "approve")).status, 404);
+    check(`POST /approvals/:id/cancel (invisible) as ${role} -> 404`, (await cancelA(A, staff[role].token)).status, 404);
+  }
+  check("POST /approvals/:id/cancel as MM (sees it, not the requester, not a manager) -> 403", (await cancelA(A, mm.token)).status, 403);
+  check("POST /approvals/:id/decision (changes, no comment) as SMM -> 400", (await decideA(A, smm.token, "changes")).status, 400);
+  check("POST /approvals/:id/decision (stale version) as SMM -> 409", (await decideA(A, smm.token, "approve", undefined, 9)).status, 409);
+  check("POST /approvals/:id/decision (bad body) as SMM -> 400", (await req(`/approvals/${A?.id}/decision`, { method: "POST", body: JSON.stringify({ decision: "approve" }) }, smm.token)).status, 400);
+  check("POST /approvals/not-a-uuid/decision as admin -> 404", (await decideA({ id: "not-a-uuid", version: 1 }, admin.token, "approve")).status, 404);
+  check("POST /approvals/:id/decision as SMM -> 200", (await decideA(A, smm.token, "approve", "Good")).status, 200);
+  check("POST /approvals/:id/decision again as admin -> 409", (await decideA(A, admin.token, "approve")).status, 409);
+  check("POST /approvals/:id/cancel (decided) as editor -> 409", (await cancelA(A, target.token)).status, 409);
+  check("POST /staff-tasks/:id/stage 2 -> 3 after approval as editor -> 200", (await taskMove(T?.id, 3, target.token)).status, 200);
+  check("POST /staff-tasks/:id/stage complete at an unapproved last stage as editor -> 409", (await req(`/staff-tasks/${T?.id}/stage`, { method: "POST", body: JSON.stringify({ complete: true, version: (await req(`/staff-tasks/${T?.id}`, {}, admin.token)).body?.task?.version }) }, target.token)).status, 409);
+  const A3 = (await ask("task", T?.id, target.token)).body?.approval;
+  check("POST /approvals at the Admin-only stage as editor -> 201", A3?.status, "pending");
+  check("POST /approvals/:id/decision (Admin-only stage) as SMM -> 403", (await decideA(A3, smm.token, "approve")).status, 403);
+  check("POST /approvals/:id/decision (Admin-only stage) as admin -> 200", (await decideA(A3, admin.token, "approve")).status, 200);
+  const detail = (await req(`/staff-tasks/${T?.id}`, {}, mm.token)).body?.task;
+  check("GET /staff-tasks/:id carries approvals (newest first) and no block", detail?.approvals?.length === 2 && detail?.nextBlockedBy === null, true);
+  check("... a non-approver's flags: canDecide false", detail?.approvals?.every((a) => a.canDecide === false), true);
+
+  // Self-approval: refused for everyone but the Admin; cancelling is the requester's or a manager's.
+  const T2 = await apprTask(smm.token);
+  await taskMove(T2?.id, 2, smm.token);
+  const A2 = (await ask("task", T2?.id, smm.token)).body?.approval;
+  check("POST /approvals as SMM (the creator) -> 201", A2?.status, "pending");
+  check("POST /approvals/:id/decision on one's own request as SMM -> 403", (await decideA(A2, smm.token, "approve")).status, 403);
+  check("... the refusal is STAGE_APPROVAL_SELF", (await decideA(A2, smm.token, "approve")).body?.code, "STAGE_APPROVAL_SELF");
+  check("POST /approvals/:id/cancel (SMM's own) as SMM -> 200", (await cancelA(A2, smm.token)).status, 200);
+  const T3 = await apprTask(admin.token, { clientId: undefined });
+  await taskMove(T3?.id, 2, admin.token);
+  const A4 = (await ask("task", T3?.id, admin.token)).body?.approval;
+  check("POST /approvals as admin -> 201", A4?.status, "pending");
+  check("POST /approvals/:id/decision on one's own request as admin (the exception) -> 200", (await decideA(A4, admin.token, "approve")).status, 200);
+  const T4 = await apprTask(smm.token);
+  await taskMove(T4?.id, 2, target.token);
+  const A5 = (await ask("task", T4?.id, target.token)).body?.approval;
+  check("POST /approvals/:id/cancel (editor's) as SMM (creator, manages the task) -> 200", (await cancelA(A5, smm.token)).status, 200);
+  check("... cancelled", (await req(`/staff-tasks/${T4?.id}`, {}, admin.token)).body?.task?.approvals?.[0]?.status, "cancelled");
+  // A back move supersedes: T goes back to stage 2 and needs approving again.
+  check("POST /staff-tasks/:id/stage back to 2 as editor -> 200", (await taskMove(T?.id, 2, target.token)).status, 200);
+  check("... the old approvals are superseded", (await req(`/staff-tasks/${T?.id}`, {}, admin.token)).body?.task?.approvals?.every((a) => a.status === "superseded"), true);
+  check("... and stage 2 is blocking again", (await req(`/staff-tasks/${T?.id}`, {}, admin.token)).body?.task?.nextBlockedBy?.stageName, "Review");
+
+  // Events: a client-approved stage then a team-managers stage.
+  const E = (await req("/events", { method: "POST", body: JSON.stringify({ clientId: apprClient?.id, templateId: apprEventTpl.body?.template?.id, title: `RBAC appr event ${stamp}`, type: "shoot", startsAt: "2031-04-01T10:00:00Z", endsAt: "2031-04-01T12:00:00Z" }) }, smm.token)).body?.event;
+  check("POST /events (approval template) as SMM -> 201", E?.id ? 201 : 0, 201);
+  const eventMove = async (pos, token) => {
+    const ev = (await req(`/events/${E?.id}`, {}, admin.token)).body?.event;
+    return req(`/events/${E?.id}/stage`, { method: "POST", body: JSON.stringify({ stageId: ev?.stages?.[pos - 1]?.id, version: ev?.version }) }, token);
+  };
+  check("POST /events/:id/stage 1 -> 2 as SMM -> 200", (await eventMove(2, smm.token)).status, 200);
+  check("POST /events/:id/stage 2 -> 3 before the client approves as SMM -> 409", (await eventMove(3, smm.token)).status, 409);
+  check("POST /approvals (event) as editor (not on the team) -> 404", (await ask("event", E?.id, target.token)).status, 404);
+  check("POST /approvals (event) as developer -> 404", (await ask("event", E?.id, staff.developer.token)).status, 404);
+  const EA = (await ask("event", E?.id, smm.token, { note: "Please sign off" })).body?.approval;
+  check("POST /approvals (event) as SMM -> 201", EA?.status, "pending");
+  check("POST /approvals (event, already pending) as MM (team) -> 409", (await ask("event", E?.id, mm.token)).status, 409);
+  for (const [role, token] of [["admin", admin.token], ["social_media_manager", smm.token], ["marketing_manager", mm.token]]) {
+    check(`POST /approvals/:id/decision (client-only stage) as ${role} -> 403`, (await decideA(EA, token, "approve")).status, 403);
+  }
+  check("POST /approvals/:id/decision (event, not on the team) as editor -> 404", (await decideA(EA, target.token, "approve")).status, 404);
+  check("POST /approvals/:id/cancel (event) as editor -> 404", (await cancelA(EA, target.token)).status, 404);
+
+  // The portal: no login; every refusal is the same 404.
+  const apprLink = await req(`/portal-links/${apprClient?.id}`, { method: "POST" }, smm.token);
+  const apprToken = apprLink.body?.token;
+  const otherClient = (await req("/clients", { method: "POST", body: newClient("appr-other-client") }, pm.token)).body?.client;
+  const otherToken = (await req(`/portal-links/${otherClient?.id}`, { method: "POST" }, pm.token)).body?.token;
+  const portalDecide = (tok, id, body) => req(`/portal/${tok}/approvals/${id}`, { method: "POST", body: JSON.stringify(body) });
+  const pe = await req(`/portal/${apprToken}/events/${E?.id}`);
+  check("GET /portal/:token/events/:id shows the pending approval (no login) -> 200", pe.status === 200 && pe.body?.event?.pendingApproval?.id === EA?.id, true);
+  check("... and no staff names", JSON.stringify(pe.body).includes("RBAC social_media_manager"), false);
+  check("POST /portal/:token/approvals/:id (changes, no comment) -> 400", (await portalDecide(apprToken, EA?.id, { version: 1, decision: "changes" })).status, 400);
+  check("POST /portal/<another client's token>/approvals/:id -> 404", (await portalDecide(otherToken, EA?.id, { version: 1, decision: "approve" })).status, 404);
+  check("POST /portal/:token/approvals/<made-up id> -> 404", (await portalDecide(apprToken, "00000000-0000-4000-8000-000000000000", { version: 1, decision: "approve" })).status, 404);
+  check("POST /portal/<made-up token>/approvals/:id -> 404", (await portalDecide("A".repeat(43), EA?.id, { version: 1, decision: "approve" })).status, 404);
+  check("POST /portal/:token/approvals/:id (approve) -> 200", (await portalDecide(apprToken, EA?.id, { version: 1, decision: "approve" })).status, 200);
+  check("POST /portal/:token/approvals/:id again (decided) -> 404", (await portalDecide(apprToken, EA?.id, { version: 2, decision: "approve" })).status, 404);
+  check("POST /events/:id/stage 2 -> 3 after the client approves as SMM -> 200", (await eventMove(3, smm.token)).status, 200);
+  // The team-managers stage: a team member decides unless they asked; the client can't.
+  const EB = (await ask("event", E?.id, smm.token)).body?.approval;
+  check("POST /approvals (event, team stage) as SMM -> 201", EB?.status, "pending");
+  check("POST /approvals/:id/decision (team stage, own request) as SMM -> 403", (await decideA(EB, smm.token, "approve")).body?.code, "STAGE_APPROVAL_SELF");
+  check("POST /approvals/:id/decision (team stage) as admin (not a token) -> 403", (await decideA(EB, admin.token, "approve")).body?.code, "STAGE_APPROVAL_NOT_APPROVER");
+  check("POST /portal/:token/approvals/:id (a team-only stage) -> 404", (await portalDecide(apprToken, EB?.id, { version: 1, decision: "approve" })).status, 404);
+  check("POST /approvals/:id/decision (team stage) as MM (team) -> 200", (await decideA(EB, mm.token, "approve")).status, 200);
+  check("POST /portal/:token/approvals/:id with a task approval's id -> 404", (await portalDecide(apprToken, A?.id, { version: 1, decision: "approve" })).status, 404);
+  // Fixtures: tasks deleted, clients archived, templates deactivated.
+  for (const id of apprTasks) await req(`/staff-tasks/${id}`, { method: "DELETE" }, admin.token);
+  for (const c of [apprClient, otherClient]) if (c) await req(`/clients/${c.id}/archive`, { method: "POST", body: "{}" }, admin.token);
+  for (const t of [apprTaskTpl, apprEventTpl]) if (t.body?.template?.id) await req(`/stage-templates/${t.body.template.id}`, { method: "PATCH", body: JSON.stringify({ active: false, version: t.body.template.version }) }, admin.token);
 
   console.log("\n--- my to-dos (round 1: todos:manage is own for every role; nobody, the Admin included, reaches another person's) ---");
   check("GET /todos without a token -> 401", (await req("/todos")).status, 401);

@@ -11,6 +11,7 @@ import { isOnTeam } from "../../clients/infrastructure/client-team.sql";
 import { clientComments } from "../../client-comments/infrastructure/client-comments.schema";
 import { eventStages, events } from "../../events/infrastructure/events.schema";
 import { staffTaskUpdates, staffTasks } from "../../staff-tasks/infrastructure/staff-tasks.schema";
+import { countApprovalRows, listApprovalRows } from "../../approvals/infrastructure/approval-queries";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { todos } from "../../todos/infrastructure/todos.schema";
 import type { DashboardComment, DashboardEvent, DashboardTask, DashboardTodo, StageGroup, WorkloadRow } from "../domain/dashboard.entity";
@@ -279,6 +280,15 @@ export class DrizzleDashboardRepository implements DashboardRepositoryPort {
         .where(and(eq(todos.ownerId, ownerId), isNull(todos.doneAt)));
       return { open: r?.open ?? 0, overdue: r?.overdue ?? 0 };
     });
+  }
+
+  /** Round 3: the same SQL predicate as the Approvals inbox ("may this person decide it"), so the numbers always agree. */
+  approvalsToDecide(userId: string, role: string) {
+    return guarded("count approvals to decide", () => countApprovalRows(db, userId, role, { view: "to_decide" }));
+  }
+
+  oldestApprovals(userId: string, role: string, limit: number) {
+    return guarded("load approvals to decide", () => listApprovalRows(db, userId, role, { view: "to_decide" }, limit, 0));
   }
 
   nextTodos(ownerId: string, limit: number) {

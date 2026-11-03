@@ -3,6 +3,8 @@
  * `timeZone` is the IANA zone the event happens in (ARCHITECTURE §10).
  */
 
+import type { Approval, ApprovalRecord, ApproverToken } from "../../../domain";
+
 export const EVENT_TYPES = ["shoot", "campaign", "meeting", "content_posting", "other"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -19,6 +21,8 @@ export interface EventStage {
   id: string;
   position: number;
   name: string;
+  /** Round 3: who can approve this stage (empty = no approval needed). Snapshotted from the template. */
+  approvers: ApproverToken[];
 }
 
 /** One stage move (FR-EVT-06); the first entry (fromStageId null) is written when the event is created. */
@@ -61,11 +65,20 @@ export interface EventEntity {
   updatedAt: string;
 }
 
-/** GET /events/:id and every write's response: the event with its stages, recent history and team names. */
-export interface EventDetail extends EventEntity {
+/** What the repository reads for a detail: the event with its stages, recent history, team names and approval rounds (without the caller's flags). */
+export interface EventDetailRecord extends EventEntity {
   stages: EventStage[];
   history: EventHistoryEntry[];
   team: { id: string; fullName: string }[];
+  /** All approval rounds, newest first, capped. */
+  approvalRecords: ApprovalRecord[];
+}
+
+/** GET /events/:id and every write's response: the event with its stages, recent history, team names and approvals (round 3). */
+export interface EventDetail extends Omit<EventDetailRecord, "approvalRecords"> {
+  approvals: Approval[];
+  /** The approval stage that stops forward moves right now, or null. */
+  nextBlockedBy: { stageId: string; stageName: string } | null;
 }
 
 /** A list / calendar row: no description or team; the current stage's name and position for the tracker. */

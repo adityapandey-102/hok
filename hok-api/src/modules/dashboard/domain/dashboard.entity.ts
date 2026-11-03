@@ -1,4 +1,4 @@
-import type { Role } from "../../../domain";
+import type { Approval, Role } from "../../../domain";
 import type { CommentStatus } from "../../client-comments/domain/client-comment.entity";
 import type { EventState, EventType } from "../../events/domain/event.entity";
 import type { StaffTaskPriority, StaffTaskStatus } from "../../staff-tasks/domain/staff-task.entity";
@@ -195,6 +195,15 @@ export interface TodosSection {
 
 export const DASHBOARD_TODOS_LIMIT = 5;
 
+/** Approvals shown on the dashboard: the oldest waiting ones (the full list is /app/approvals). */
+export const DASHBOARD_APPROVALS_LIMIT = 3;
+
+/** "Waiting for your approval" (round 3, every role): how many, and the oldest few. Never someone else's: only what the viewer may decide. */
+export interface ApprovalsSection {
+  toDecide: number;
+  oldest: Approval[];
+}
+
 export interface Dashboard {
   role: Role;
   view: DashboardView;
@@ -205,4 +214,6 @@ export interface Dashboard {
   firm: FirmSection | null;
   /** The viewer's own to-dos; present for every role and view. */
   todos: TodosSection;
+  /** Approvals waiting for the viewer to decide; present for every role and view (2 queries). */
+  approvals: ApprovalsSection;
 }

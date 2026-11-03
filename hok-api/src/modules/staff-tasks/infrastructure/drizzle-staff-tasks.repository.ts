@@ -8,15 +8,18 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 // Cross-module Infrastructure-only reads (ADR 0003): the assignee's and
 // author's names, the linked client's name and the linked event's title, the
 // stage templates a task starts from -- and, for "share with client", the one
-// cross-module WRITE: inserting the client-visible asset.
+// cross-module WRITE: inserting the client-visible asset. Round 3 adds the approvals
+// module's move-gate reads and writes (approval-gate, approval-queries).
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { clients } from "../../clients/infrastructure/clients.schema";
 import { isOnTeam, teamIdsOf } from "../../clients/infrastructure/client-team.sql";
 import { eventStages, events } from "../../events/infrastructure/events.schema";
 import { stageTemplateStages, stageTemplates } from "../../stage-templates/infrastructure/stage-templates.schema";
 import { assets } from "../../assets/infrastructure/assets.schema";
+import { approvedStageIds, supersedeFrom } from "../../approvals/infrastructure/approval-gate";
+import { selectItemApprovals } from "../../approvals/infrastructure/approval-queries";
 import { staffTaskLinks, staffTaskUpdates, staffTasks, taskStages } from "./staff-tasks.schema";
-import type { StaffTaskDetail, StaffTaskEntity, StaffTaskLink, StaffTaskSummaryEntity, StaffTaskUpdate, TaskStage } from "../domain/staff-task.entity";
+import type { StaffTaskDetail, StaffTaskEntity, StaffTaskLink, StaffTaskSummaryEntity, StaffTaskUpdate, TaskStageFull } from "../domain/staff-task.entity";
 import type { AssigneeCandidate, TaskClientRef, TaskEventRef, TaskTemplate } from "../domain/staff-task.rules";
 import type {
   LinkTargetContext,
@@ -28,7 +31,8 @@ import type {
   StaffTaskChangeDecision,
   StaffTaskListFilters,
   StaffTaskPage,
-  StaffTasksRepositoryPort } from "../application/ports/staff-tasks-repository.port";
+  StaffTasksRepositoryPort,
+  SupersededCounts } from "../application/ports/staff-tasks-repository.port";
 import { guarded } from "../../../common/database/guarded";
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -142,9 +146,9 @@ async function selectTask(ex: Executor, id: string, forUpdate = false): Promise<
 }
 
 /** A task's stages in order: one query. */
-async function selectStages(ex: Executor, taskId: string): Promise<TaskStage[]> {
+async function selectStages(ex: Executor, taskId: string): Promise<TaskStageFull[]> {
   return ex
-    .select({ id: taskStages.id, name: taskStages.name, position: taskStages.position })
+    .select({ id: taskStages.id, name: taskStages.name, position: taskStages.position, approvers: taskStages.approvers })
     .from(taskStages)
     .where(eq(taskStages.taskId, taskId))
     .orderBy(asc(taskStages.position));
@@ -285,10 +289,11 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
 
   findDetail(id: string) {
     return guarded("load the task", async (): Promise<StaffTaskDetail | null> => {
-      const [task, stages, links, updates] = await Promise.all([
+      const [task, stages, links, approvalRecords, updates] = await Promise.all([
         selectTask(db, id),
         selectStages(db, id),
         selectLinks(db, id),
+        selectItemApprovals(db, "task", id),
         db
           .select({
             id: staffTaskUpdates.id,
@@ -321,6 +326,7 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
         eventTitle: event?.title ?? null,
         stages,
         links,
+        approvalRecords,
         updates: updates.map((u): StaffTaskUpdate => ({ ...u, createdAt: u.createdAt.toISOString() })),
       };
     });
@@ -357,11 +363,11 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
         .limit(1);
       if (!row) return null;
       const stages = await db
-        .select({ name: stageTemplateStages.name })
+        .select({ name: stageTemplateStages.name, approvers: stageTemplateStages.approvers })
         .from(stageTemplateStages)
         .where(eq(stageTemplateStages.templateId, templateId))
         .orderBy(asc(stageTemplateStages.position));
-      return { ...row, stageNames: stages.map((s) => s.name) };
+      return { ...row, stageNames: stages.map((s) => s.name), stageApprovers: stages.map((s) => s.approvers) };
     });
   }
 
@@ -390,8 +396,8 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
           })
           .returning({ id: staffTasks.id });
         const id = row!.id;
-        // The template's stages are COPIED; later template edits never reach this task.
-        await tx.insert(taskStages).values(record.stageNames.map((name, i) => ({ id: stageIds[i]!, taskId: id, position: i + 1, name })));
+        // The template's stages (and, round 3, their approvers) are COPIED; later template edits never reach this task.
+        await tx.insert(taskStages).values(record.stageNames.map((name, i) => ({ id: stageIds[i]!, taskId: id, position: i + 1, name, approvers: record.stageApprovers?.[i] ?? [] })));
         if (record.links.length > 0) {
           await tx.insert(staffTaskLinks).values(
             record.links.map((l, i) => ({
@@ -420,10 +426,14 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
 
   update(id: string, decide: StaffTaskChangeDecision) {
     return guarded("update the task", () =>
-      db.transaction(async (tx) => {
+      db.transaction(async (tx): Promise<SupersededCounts> => {
         const current = await selectTask(tx, id, true);
         if (!current) throw new NotFoundError("Task not found", ERROR_CODES.STAFF_TASK_NOT_FOUND);
-        const changes = decide(current, await selectStages(tx, id));
+        const stages = await selectStages(tx, id);
+        // Round 3: only a task with approval stages pays for the extra read (one indexed query, on the locked row).
+        const hasApprovals = stages.some((s) => s.approvers.length > 0);
+        const approved = hasApprovals ? await approvedStageIds(tx, "task", id) : new Set<string>();
+        const changes = decide(current, stages, approved);
 
         const { dueAt, brief, ...fields } = changes.fields ?? {};
         const set: Partial<typeof staffTasks.$inferInsert> = { ...fields };
@@ -436,7 +446,8 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
         // The 2-hour due reminder starts over for a new due time, a new assignee or a reopened task.
         const reopened = changes.status !== undefined && changes.status !== "done" && current.status === "done";
         if (dueAt !== undefined || changes.assigneeId !== undefined || reopened) set.dueRemindedAt = null;
-        if (Object.keys(set).length === 0 && !changes.entry) return; // nothing to write
+        const none: SupersededCounts = { superseded: 0, cancelled: 0 };
+        if (Object.keys(set).length === 0 && !changes.entry) return none; // nothing to write
 
         await tx
           .update(staffTasks)
@@ -469,6 +480,9 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
             comment: changes.entry.comment,
           });
         }
+        // A BACK move or a reopen: approvals of the stages from the target on stop counting (same transaction).
+        if (hasApprovals && changes.supersedeFromPosition !== undefined) return supersedeFrom(tx, "task", id, changes.supersedeFromPosition);
+        return none;
       }),
     );
   }

@@ -17,6 +17,8 @@ export const NOTIFICATION_TYPES = [
   "event_reminder",
   "task_due_reminder",
   "todo_reminder",
+  "approval_requested",
+  "approval_decided",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -71,6 +73,16 @@ export const NOTIFICATION_TYPE_INFO: Record<NotificationType, NotificationTypeIn
   todo_reminder: {
     label: "My to-do reminders",
     description: "Reminders for your own to-dos, based on urgency.",
+    live: true,
+  },
+  approval_requested: {
+    label: "Approval requests",
+    description: "Someone asks you (or your role) to approve a stage of an event or task.",
+    live: true,
+  },
+  approval_decided: {
+    label: "Approval decisions",
+    description: "A stage you asked to have approved is approved, or changes are requested.",
     live: true,
   },
 };

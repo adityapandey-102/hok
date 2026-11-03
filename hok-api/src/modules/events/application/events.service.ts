@@ -3,7 +3,16 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "../../../common/audit/audit-actions";
 import { auditLogger as defaultAuditLogger } from "../../../common/audit/drizzle-audit-logger";
 import type { AuditLogger } from "../../../common/audit/audit-logger";
-import { getCapabilityScope, type Role } from "../../../domain";
+import {
+  approvedStageIds,
+  assertCanPass,
+  canManageApprovalItem,
+  getCapabilityScope,
+  nextBlockedBy,
+  toApproval,
+  withApproved,
+  type Role,
+} from "../../../domain";
 import {
   assertClientUsable,
   assertClientWritable,
@@ -16,7 +25,7 @@ import {
   resolveRange,
   type EventScope,
 } from "../domain/event.rules";
-import type { EventDetail, EventSummaryEntity } from "../domain/event.entity";
+import type { EventDetail, EventDetailRecord, EventSummaryEntity } from "../domain/event.entity";
 import type { EventChanges, EventsRepositoryPort } from "./ports/events-repository.port";
 import type { CreateEventDto, EventQueryDto, MoveStageDto, UpdateEventDto } from "../api/dto/event.dto";
 
@@ -69,7 +78,21 @@ export class EventsService {
   }
 
   async get(caller: EventsCaller, id: string): Promise<EventDetail> {
-    return assertEventVisible(this.scopeOf(caller), await this.repo.findDetail(id));
+    return this.view(caller, assertEventVisible(this.scopeOf(caller), await this.repo.findDetail(id)));
+  }
+
+  /** Round 3: the stored rounds get *this caller's* flags (canDecide / canCancel), and the stage that blocks forward moves is named. */
+  private view(caller: EventsCaller, record: EventDetailRecord): EventDetail {
+    const { approvalRecords, ...rest } = record;
+    const item = { subject: "event" as const, teamIds: record.teamIds };
+    const ctx = { teamIds: record.teamIds, canSeeItem: true, canManageItem: canManageApprovalItem(caller, item) };
+    const current = record.stages.find((s) => s.id === record.currentStageId);
+    const blocker = current ? nextBlockedBy(record.stages, approvedStageIds(approvalRecords), current.position) : null;
+    return {
+      ...rest,
+      approvals: approvalRecords.map((r) => toApproval(r, caller, ctx)),
+      nextBlockedBy: blocker ? { stageId: blocker.stageId, stageName: blocker.stageName } : null,
+    };
   }
 
   async create(caller: EventsCaller, dto: CreateEventDto): Promise<EventDetail> {
@@ -94,6 +117,7 @@ export class EventsService {
         templateId: template.id,
         templateName: template.name,
         stageNames: template.stageNames,
+        stageApprovers: template.stageApprovers,
         createdBy: caller.userId,
       },
       // Re-checked on the locked client row: it may have been archived or reassigned since the read above.
@@ -105,7 +129,7 @@ export class EventsService {
       entityId: id,
       metadata: { clientId: client.id, templateId: template.id },
     });
-    return this.detailOrThrow(id);
+    return this.detailOrThrow(caller, id);
   }
 
   async update(caller: EventsCaller, id: string, dto: UpdateEventDto): Promise<EventDetail> {
@@ -129,28 +153,40 @@ export class EventsService {
       return changes;
     });
     await this.audit.record({ action: AUDIT_ACTIONS.EVENT_UPDATED, entityType: AUDIT_ENTITIES.EVENT, entityId: id, metadata: { fields } });
-    return this.detailOrThrow(id);
+    return this.detailOrThrow(caller, id);
   }
 
   /** FR-EVT-06: the move and its history entry are one transaction; the history row is the record (not audit_log). */
   async moveStage(caller: EventsCaller, id: string, dto: MoveStageDto): Promise<EventDetail> {
     const scope = this.scopeOf(caller);
-    await this.repo.moveStage(
+    const outcome = await this.repo.moveStage(
       id,
-      (current, stages) => {
+      (current, stages, approved) => {
         assertEventVisible(scope, current);
         assertEventVersion(current.version, dto.version);
         assertClientWritable(current.clientStatus);
-        return assertStageMove({ state: current.state, currentStageId: current.currentStageId, stages, targetStageId: dto.stageId });
+        const target = assertStageMove({ state: current.state, currentStageId: current.currentStageId, stages, targetStageId: dto.stageId });
+        // Round 3: a forward move can enter an approval stage but not pass it until it is approved.
+        const from = stages.find((s) => s.id === current.currentStageId);
+        if (from) assertCanPass(withApproved(stages, approved), from.position, target.position);
+        return target;
       },
       { note: dto.note ?? null, visibleToClient: dto.visibleToClient, changedBy: caller.userId },
     );
-    return this.detailOrThrow(id);
+    if (outcome.superseded + outcome.cancelled > 0) {
+      await this.audit.record({
+        action: AUDIT_ACTIONS.APPROVAL_SUPERSEDED,
+        entityType: AUDIT_ENTITIES.EVENT,
+        entityId: id,
+        metadata: { superseded: outcome.superseded, cancelled: outcome.cancelled },
+      });
+    }
+    return this.detailOrThrow(caller, id);
   }
 
-  private async detailOrThrow(id: string): Promise<EventDetail> {
+  private async detailOrThrow(caller: EventsCaller, id: string): Promise<EventDetail> {
     const detail = await this.repo.findDetail(id);
     if (!detail) throw new NotFoundError("Event not found", ERROR_CODES.EVENT_NOT_FOUND);
-    return detail;
+    return this.view(caller, detail);
   }
 }

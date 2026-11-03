@@ -4,7 +4,7 @@ import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "../../../common/audit/audit-actio
 import { auditLogger as defaultAuditLogger } from "../../../common/audit/drizzle-audit-logger";
 import type { AuditLogger } from "../../../common/audit/audit-logger";
 import { getCapabilityScope, type Role } from "../../../domain";
-import { assertTemplateVersion, normalizeStageNames, normalizeTemplateRoles } from "../domain/stage-template.rules";
+import { assertTemplateVersion, normalizeStages, normalizeTemplateRoles } from "../domain/stage-template.rules";
 import type { StageTemplateEntity, TemplateKind } from "../domain/stage-template.entity";
 import type { StageTemplateChanges, StageTemplatesRepositoryPort } from "./ports/stage-templates-repository.port";
 import type { CreateStageTemplateDto, StageTemplateQueryDto, UpdateStageTemplateDto } from "../api/dto/stage-template.dto";
@@ -82,7 +82,7 @@ export class StageTemplatesService {
   async create(caller: StageTemplatesCaller, dto: CreateStageTemplateDto): Promise<StageTemplateEntity> {
     const template = await this.repo.create({
       name: dto.name,
-      stages: normalizeStageNames(dto.stages),
+      stages: normalizeStages(dto.kind, dto.stages),
       kind: dto.kind,
       roles: normalizeTemplateRoles(dto.kind, dto.roles ?? []),
       createdBy: caller.userId,
@@ -99,14 +99,14 @@ export class StageTemplatesService {
   async update(id: string, dto: UpdateStageTemplateDto): Promise<StageTemplateEntity> {
     const changes: StageTemplateChanges = {};
     if (dto.name !== undefined) changes.name = dto.name;
-    if (dto.stages !== undefined) changes.stages = normalizeStageNames(dto.stages);
     if (dto.active !== undefined) changes.active = dto.active;
-    const fields = [...Object.keys(changes), ...(dto.roles !== undefined ? ["roles"] : [])];
+    const fields = (["name", "stages", "active", "roles"] as const).filter((k) => dto[k] !== undefined);
     if (fields.length === 0) throw new BadRequestError("No fields to update", ERROR_CODES.VALIDATION_NO_FIELDS);
 
     const template = await this.repo.update(id, (current) => {
       assertTemplateVersion(current.version, dto.version);
-      // The kind is fixed, so whether roles are allowed is judged on the locked row.
+      // The kind is fixed, so whether roles (and the client as an approver) are allowed is judged on the locked row.
+      if (dto.stages !== undefined) changes.stages = normalizeStages(current.kind, dto.stages);
       if (dto.roles !== undefined) changes.roles = normalizeTemplateRoles(current.kind, dto.roles);
       return changes;
     });

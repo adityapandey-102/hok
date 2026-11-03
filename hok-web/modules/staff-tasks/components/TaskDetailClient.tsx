@@ -4,9 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  approvedStageIds,
+  blockedByWithPosition,
+  blockedReason,
   describeTaskUpdate,
   formatInZone,
   hasCapability,
+  isMoveBlocked,
   isTaskOverdue,
   nextStageOf,
   otherStages,
@@ -16,6 +20,8 @@ import {
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { staffTasksApi } from "../api/staffTasksApi";
+import { ApprovalCard } from "../../approvals/components/ApprovalCard";
+import { ApprovalHistory } from "../../approvals/components/ApprovalHistory";
 import { DueLabel, PersonDot, PriorityPill, TaskStatusPill, describeTaskError, roleLabel } from "./taskUi";
 import { TaskFormModal } from "./TaskFormModal";
 import { TaskLinksPanel } from "./TaskLinksPanel";
@@ -75,6 +81,11 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
   const next = nextStageOf(task.stages, task.currentStage.id);
   const others = otherStages(task.stages, task.currentStage.id);
   const lastStage = task.stages[task.stages.length - 1];
+  const blockedBy = blockedByWithPosition(task.nextBlockedBy, task.stages);
+  const currentPos = task.currentStage.position;
+  const currentWithApprovers = task.stages.find((s) => s.id === task.currentStage.id);
+  const nextBlocked = next ? isMoveBlocked(blockedBy, currentPos, next.position) : false;
+  const completeBlocked = isMoveBlocked(blockedBy, currentPos, null);
   const share = done ? 100 : task.stageCount > 0 ? Math.round((task.currentStage.position / task.stageCount) * 100) : 0;
 
   async function run(action: () => Promise<{ task: StaffTask }>, success: string, fallback: string): Promise<boolean> {
@@ -224,7 +235,7 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
           </div>
         </div>
         <div className="border-t border-border-light bg-accent-bg/40 px-5 py-5 sm:px-6 sm:py-6">
-          <StageTracker stages={task.stages} currentStageId={task.currentStage.id} label="Task stages" done={done} />
+          <StageTracker stages={task.stages} currentStageId={task.currentStage.id} label="Task stages" done={done} approvedStageIds={approvedStageIds(task.approvals)} />
         </div>
       </Card>
 
@@ -254,6 +265,18 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
         </div>
 
         <div className="flex min-w-0 flex-col gap-5 lg:col-span-5">
+          {currentWithApprovers && !done && (
+            <ApprovalCard
+              subject="task"
+              subjectId={task.id}
+              stage={currentWithApprovers}
+              approvals={task.approvals}
+              canRequest={canWork}
+              zone={zone}
+              onChanged={() => void reload()}
+            />
+          )}
+
           {canWork && (
             <Panel icon="check-circle" title="Update" subtitle={done ? "This task is complete" : "Move it along, or add a comment"}>
               <div className="flex flex-col gap-3 p-5">
@@ -283,13 +306,18 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
                 ) : (
                   <>
                     {next ? (
-                      <Button disabled={busy} onClick={() => moveTo(next.id, next.name)}>
+                      <Button disabled={busy || nextBlocked} onClick={() => moveTo(next.id, next.name)}>
                         Move to {next.name}
                       </Button>
                     ) : (
-                      <Button disabled={busy} onClick={complete}>
+                      <Button disabled={busy || completeBlocked} onClick={complete}>
                         <Icon name="check" size={15} strokeWidth={3} /> Mark complete
                       </Button>
+                    )}
+                    {blockedBy && (next ? nextBlocked : completeBlocked) && (
+                      <p data-testid="move-blocked-reason" className="-mt-1 flex items-center gap-1.5 text-xs text-text-muted">
+                        <Icon name="lock" size={12} className="shrink-0" /> {blockedReason(blockedBy)}
+                      </p>
                     )}
 
                     {others.length > 0 && (
@@ -299,7 +327,7 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
                           <Select id="task-jump" value={jumpTo} onChange={(e) => setJumpTo(e.target.value)}>
                             <option value="">Choose a stage</option>
                             {others.map((s) => (
-                              <option key={s.id} value={s.id}>
+                              <option key={s.id} value={s.id} disabled={isMoveBlocked(blockedBy, currentPos, s.position)}>
                                 {s.position}. {s.name}
                               </option>
                             ))}
@@ -354,6 +382,8 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
               </div>
             </Panel>
           )}
+
+          <ApprovalHistory approvals={task.approvals} zone={zone} />
 
           <Panel icon="history" title="Timeline" subtitle="Newest first">
             <ol className="mx-5 mb-5 ml-6 flex flex-col gap-5 border-l border-border" aria-label="Task timeline">

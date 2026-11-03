@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../../../common/errors/app-error";
 import { hasCapability, ROLES } from "../../../domain";
-import { assertTemplateVersion, normalizeStageNames, normalizeTemplateRoles } from "./stage-template.rules";
+import { assertTemplateVersion, normalizeStageNames, normalizeStages, normalizeTemplateRoles } from "./stage-template.rules";
 
 function codeOf(fn: () => unknown): string | null {
   try {
@@ -53,5 +53,24 @@ describe("who reads templates", () => {
     for (const role of ROLES) {
       if (hasCapability(role, "staff_tasks:assign")) expect(hasCapability(role, "events:read"), role).toBe(true);
     }
+  });
+});
+
+describe("normalizeStages (round 3)", () => {
+  it("keeps names in order with their approvers; a string has none", () => {
+    expect(normalizeStages("task", ["A", { name: " B ", approvers: ["admin", "editor"] }, { name: "C" }])).toEqual([
+      { name: "A", approvers: [] },
+      { name: "B", approvers: ["admin", "editor"] },
+      { name: "C", approvers: [] },
+    ]);
+  });
+
+  it("still refuses blank and repeated names", () => {
+    expect(codeOf(() => normalizeStages("event", ["A", { name: "a" }]))).toBe("STAGE_TEMPLATE_STAGES_INVALID");
+  });
+
+  it("judges the client approver by the kind", () => {
+    expect(codeOf(() => normalizeStages("event", [{ name: "A", approvers: ["client"] }]))).toBeNull();
+    expect(codeOf(() => normalizeStages("task", [{ name: "A", approvers: ["client"] }]))).toBe("STAGE_TEMPLATE_APPROVERS_INVALID");
   });
 });

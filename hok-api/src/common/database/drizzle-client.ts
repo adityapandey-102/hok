@@ -16,6 +16,7 @@ import * as staffTasksSchema from "../../modules/staff-tasks/infrastructure/staf
 import * as notificationsSchema from "../../modules/notifications/infrastructure/notifications.schema";
 import * as portalSchema from "../../modules/portal/infrastructure/portal.schema";
 import * as clientCommentsSchema from "../../modules/client-comments/infrastructure/client-comments.schema";
+import * as approvalsSchema from "../../modules/approvals/infrastructure/approvals.schema";
 
 /**
  * The one Postgres connection pool every repository queries through.
@@ -46,6 +47,7 @@ const schema = {
   ...notificationsSchema,
   ...portalSchema,
   ...clientCommentsSchema,
+  ...approvalsSchema,
 };
 
 const pool = new Pool({

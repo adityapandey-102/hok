@@ -54,4 +54,6 @@ export {
   eventReminderPayload,
   taskDueReminderPayload,
   todoReminderPayload,
+  approvalRequestedPayload,
+  approvalDecidedPayload,
 } from "./domain/notification.messages";

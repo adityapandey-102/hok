@@ -1,5 +1,6 @@
 import type { Role } from "../../../../domain";
 import type { StageTemplateEntity, TemplateKind } from "../../domain/stage-template.entity";
+import type { NormalizedStage } from "../../domain/stage-template.rules";
 
 export interface StageTemplateListFilters {
   search?: string;
@@ -16,8 +17,8 @@ export interface StageTemplatePage {
 
 export interface StageTemplateChanges {
   name?: string;
-  /** Replaces the whole ordered list. */
-  stages?: string[];
+  /** Replaces the whole ordered list (names + approvers). */
+  stages?: NormalizedStage[];
   active?: boolean;
   /** Replaces the role list (task templates). */
   roles?: Role[];
@@ -32,7 +33,7 @@ export interface StageTemplatesRepositoryPort {
   findMany(filters: StageTemplateListFilters, page: StageTemplatePage): Promise<StageTemplateEntity[]>;
   countMany(filters: StageTemplateListFilters): Promise<number>;
   findById(id: string): Promise<StageTemplateEntity | null>;
-  create(record: { name: string; stages: string[]; kind: TemplateKind; roles: Role[]; createdBy: string }): Promise<StageTemplateEntity>;
+  create(record: { name: string; stages: NormalizedStage[]; kind: TemplateKind; roles: Role[]; createdBy: string }): Promise<StageTemplateEntity>;
   /** Locks the template (FOR UPDATE), applies `decide`'s changes and bumps the version, in one transaction. 404 if missing. */
   update(id: string, decide: StageTemplateDecision): Promise<StageTemplateEntity>;
 }

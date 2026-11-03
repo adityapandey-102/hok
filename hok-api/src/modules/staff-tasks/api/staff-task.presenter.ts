@@ -1,7 +1,8 @@
-import type { StaffTaskDetailView, StaffTaskSummaryView, TaskStage } from "../domain/staff-task.entity";
+import type { StaffTaskDetailView, StaffTaskSummaryView, TaskStage, TaskStageFull } from "../domain/staff-task.entity";
 import type { StaffTaskDetailResponseDto, StaffTaskSummaryResponseDto } from "./dto/staff-task.response.dto";
 
 const stageDto = (s: TaskStage): TaskStage => ({ id: s.id, name: s.name, position: s.position });
+const fullStageDto = (s: TaskStageFull): TaskStageFull => ({ id: s.id, name: s.name, position: s.position, approvers: [...s.approvers] });
 
 /** Domain -> response DTO. Explicit field lists so a new column never leaks by accident. */
 export function toStaffTaskDetailResponseDto(t: StaffTaskDetailView): StaffTaskDetailResponseDto {
@@ -26,7 +27,7 @@ export function toStaffTaskDetailResponseDto(t: StaffTaskDetailView): StaffTaskD
     templateName: t.templateName,
     stageCount: t.stageCount,
     currentStage: stageDto(t.currentStage),
-    stages: t.stages.map(stageDto),
+    stages: t.stages.map(fullStageDto),
     blockedReason: t.blockedReason,
     links: t.links.map((l) => ({
       id: l.id,
@@ -46,6 +47,8 @@ export function toStaffTaskDetailResponseDto(t: StaffTaskDetailView): StaffTaskD
     updatedAt: t.updatedAt,
     canManage: t.canManage,
     canShare: t.canShare,
+    approvals: t.approvals.map((a) => ({ ...a, approvers: [...a.approvers] })),
+    nextBlockedBy: t.nextBlockedBy ? { stageId: t.nextBlockedBy.stageId, stageName: t.nextBlockedBy.stageName } : null,
     updates: t.updates.map((u) => ({
       id: u.id,
       kind: u.kind,

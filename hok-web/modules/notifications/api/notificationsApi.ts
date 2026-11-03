@@ -6,7 +6,9 @@ export type NotificationType =
   | "task_status_changed"
   | "task_commented"
   | "client_comment"
-  | "todo_reminder";
+  | "todo_reminder"
+  | "approval_requested"
+  | "approval_decided";
 
 export interface AppNotification {
   id: string;

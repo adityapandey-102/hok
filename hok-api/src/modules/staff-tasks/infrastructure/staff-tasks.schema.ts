@@ -1,4 +1,5 @@
 import { pgTable, uuid, text, integer, timestamp } from "drizzle-orm/pg-core";
+import type { ApproverToken } from "../../../domain";
 import type { StaffTaskPriority, StaffTaskStatus, StaffTaskUpdateKind, TaskLinkKind } from "../domain/staff-task.entity";
 
 /**
@@ -43,6 +44,8 @@ export const taskStages = pgTable("task_stages", {
   taskId: uuid("task_id").notNull(),
   position: integer("position").notNull(),
   name: text("name").notNull(),
+  /** Round 3: copied from the template's stage at creation (20261104000001); empty = no approval needed. */
+  approvers: text("approvers").array().notNull().$type<ApproverToken[]>().default([]),
 });
 
 export const staffTaskLinks = pgTable("staff_task_links", {

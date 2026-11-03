@@ -3,7 +3,18 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "../../../common/audit/audit-actions";
 import { auditLogger as defaultAuditLogger } from "../../../common/audit/drizzle-audit-logger";
 import type { AuditLogger } from "../../../common/audit/audit-logger";
-import { getCapabilityScope, hasCapability, type Role } from "../../../domain";
+import {
+  approvedStageIds,
+  assertCanPass,
+  canManageApprovalItem,
+  completionPosition,
+  getCapabilityScope,
+  hasCapability,
+  nextBlockedBy,
+  toApproval,
+  withApproved,
+  type Role,
+} from "../../../domain";
 import {
   assertBlocked,
   assertCanAddLink,
@@ -114,7 +125,18 @@ export class StaffTasksService {
   }
 
   private view(caller: StaffTasksCaller, task: StaffTaskDetail): StaffTaskDetailView {
-    return { ...task, canManage: canManageTask(caller, task), canShare: canShareWithClient(caller, task) };
+    const { approvalRecords, ...rest } = task;
+    // Round 3: the stored approval rounds get *this caller's* flags (canDecide / canCancel); `nextBlockedBy` names the stage that stops forward moves.
+    const item = { subject: "task" as const, teamIds: task.teamIds, assigneeId: task.assigneeId, assignedBy: task.assignedBy };
+    const ctx = { teamIds: task.teamIds, canSeeItem: true, canManageItem: canManageApprovalItem(caller, item) };
+    const blocker = nextBlockedBy(task.stages, approvedStageIds(approvalRecords), task.currentStage.position);
+    return {
+      ...rest,
+      canManage: canManageTask(caller, task),
+      canShare: canShareWithClient(caller, task),
+      approvals: approvalRecords.map((r) => toApproval(r, caller, ctx)),
+      nextBlockedBy: blocker ? { stageId: blocker.stageId, stageName: blocker.stageName } : null,
+    };
   }
 
   private async detail(caller: StaffTasksCaller, id: string): Promise<StaffTaskDetailView> {
@@ -196,6 +218,7 @@ export class StaffTasksService {
       templateId: usable.id,
       templateName: usable.name,
       stageNames: usable.stageNames,
+      stageApprovers: usable.stageApprovers,
       links: (dto.links ?? []).map((l) => ({ url: l.url, label: l.label })),
     });
     await this.audit.record({
@@ -294,7 +317,7 @@ export class StaffTasksService {
     this.assertAssigner(caller);
     const scope = this.scopeOf(caller);
     const seen: { task?: StaffTaskEntity; stage?: string } = {};
-    await this.repo.update(id, (current, stages) => {
+    const dropped = await this.repo.update(id, (current, stages) => {
       assertTaskVisible(scope, current);
       assertCanManage(caller, current);
       assertTaskVersion(current.version, dto.version);
@@ -307,8 +330,11 @@ export class StaffTasksService {
         status: statusForStage(target.position, current.stageCount),
         blockedReason: null,
         entry: { kind: "reopened", authorId: caller.userId, comment: dto.comment ?? null, toStageId: target.id },
+        // Round 3: a reopen is a back move -- approvals of this stage and later no longer count.
+        supersedeFromPosition: target.position,
       };
     });
+    await this.auditSuperseded(id, dropped);
     await this.notifyChange(seen.task, "reopened", seen.stage ?? null, null, caller.userId, dto.comment ?? null);
     return this.detail(caller, id);
   }
@@ -338,7 +364,7 @@ export class StaffTasksService {
   async moveStage(caller: StaffTasksCaller, id: string, dto: StageMoveDto): Promise<StaffTaskDetailView> {
     const scope = this.scopeOf(caller);
     const seen: { task?: StaffTaskEntity; action?: TaskChangeAction; stage?: string } = {};
-    await this.repo.update(id, (current, stages) => {
+    const dropped = await this.repo.update(id, (current, stages, approved) => {
       // Visibility first, so a stale version on someone else's task is still a 404.
       assertTaskVisible(scope, current);
       assertCanMoveStage(caller, current);
@@ -347,11 +373,15 @@ export class StaffTasksService {
       const comment = dto.comment ?? null;
       if (dto.complete) {
         assertCanComplete({ status: current.status, currentStagePosition: current.currentStage.position, stageCount: current.stageCount });
+        // Round 3: completing is the move past the last stage, so an unapproved approval stage stops it too.
+        assertCanPass(withApproved(stages, approved), current.currentStage.position, completionPosition(stages));
         seen.action = "completed";
         seen.stage = current.currentStage.name;
         return { status: "done", blockedReason: null, entry: { kind: "completed", authorId: caller.userId, comment } };
       }
       const target = assertStageMove({ status: current.status, currentStageId: current.currentStage.id, stages, targetStageId: dto.stageId! });
+      // Round 3: a forward move can enter an approval stage but not pass it until it is approved.
+      assertCanPass(withApproved(stages, approved), current.currentStage.position, target.position);
       seen.action = "stage";
       seen.stage = target.name;
       return {
@@ -359,10 +389,24 @@ export class StaffTasksService {
         status: statusForStage(target.position, current.stageCount),
         blockedReason: null,
         entry: { kind: "stage", authorId: caller.userId, comment, toStageId: target.id },
+        // Round 3: a back move drops the approvals of the stages from the target on.
+        ...(target.position < current.currentStage.position ? { supersedeFromPosition: target.position } : {}),
       };
     });
+    await this.auditSuperseded(id, dropped);
     await this.notifyChange(seen.task, seen.action ?? "stage", seen.stage ?? null, null, caller.userId, dto.comment ?? null);
     return this.detail(caller, id);
+  }
+
+  /** One audit entry per back move / reopen that dropped approvals, with the counts (never the notes). */
+  private async auditSuperseded(id: string, dropped: { superseded: number; cancelled: number }): Promise<void> {
+    if (dropped.superseded + dropped.cancelled === 0) return;
+    await this.audit.record({
+      action: AUDIT_ACTIONS.APPROVAL_SUPERSEDED,
+      entityType: AUDIT_ENTITIES.STAFF_TASK,
+      entityId: id,
+      metadata: { superseded: dropped.superseded, cancelled: dropped.cancelled },
+    });
   }
 
   /** Raises the blocked flag with a reason; the stage stays. The assignee or the Admin. */

@@ -1,4 +1,4 @@
-import type { Role } from "../../../domain";
+import type { ApproverToken, Role } from "../../../domain";
 
 /** What a template drives: the stages of a client event, or of a staff task (round 2). */
 export const TEMPLATE_KINDS = ["event", "task"] as const;
@@ -14,6 +14,8 @@ export interface TemplateStage {
   /** 1-based order. */
   position: number;
   name: string;
+  /** Round 3: who can approve this stage (empty = no approval needed). Items copy it when created. */
+  approvers: ApproverToken[];
 }
 
 /** An Admin-made stage template (FR-EVT-01): a name and an ordered list of stages, for events or for tasks. */

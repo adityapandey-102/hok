@@ -1,11 +1,17 @@
 import { z } from "zod";
-import { ROLES } from "../../../../domain";
+import { APPROVERS_MAX, ROLES } from "../../../../domain";
 import { STAGES_MAX, STAGE_NAME_MAX_LENGTH, TEMPLATE_KINDS, TEMPLATE_NAME_MAX_LENGTH } from "../../domain/stage-template.entity";
 
 const name = z.string().trim().min(1, "Please enter a template name").max(TEMPLATE_NAME_MAX_LENGTH);
 /** The whole ordered list. Blank/duplicate names are refused by the domain rule (normalizeStageNames). */
+const stageName = z.string().max(STAGE_NAME_MAX_LENGTH, `Each stage name is at most ${STAGE_NAME_MAX_LENGTH} characters`);
+/**
+ * A stage is a plain name (no approvers, the old shape) or { name, approvers? }. The tokens are free strings
+ * here and validated by the domain rule against the template's kind (400 STAGE_TEMPLATE_APPROVERS_INVALID).
+ */
+const stage = z.union([stageName, z.object({ name: stageName, approvers: z.array(z.string().max(40)).max(APPROVERS_MAX + 4).optional() }).strict()]);
 const stages = z
-  .array(z.string().max(STAGE_NAME_MAX_LENGTH, `Each stage name is at most ${STAGE_NAME_MAX_LENGTH} characters`))
+  .array(stage)
   .min(1, "A template needs at least one stage")
   .max(STAGES_MAX, `At most ${STAGES_MAX} stages`);
 

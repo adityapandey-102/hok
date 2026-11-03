@@ -21,6 +21,8 @@ import { calendarFeedPublicRouter, calendarRouter } from "./modules/calendar/api
 import { teamMembersRouter } from "./modules/team-members/api/team-members.routes";
 import { assetsRouter } from "./modules/assets/api/assets.routes";
 import { staffTasksRouter } from "./modules/staff-tasks/api/staff-tasks.routes";
+import { approvalsRouter } from "./modules/approvals/api/approvals.routes";
+import { portalApprovalsRouter } from "./modules/approvals/api/portal-approvals.routes";
 import { clientTodosByClientRouter, clientTodosRouter } from "./modules/client-todos/api/client-todos.routes";
 import { todosRouter } from "./modules/todos/api/todos.routes";
 import { notificationsRouter } from "./modules/notifications/api/notifications.routes";
@@ -97,6 +99,7 @@ export function createApp() {
     express.json({ limit: "4kb" }),
     requirePortalLink,
     portalCommentsRouter,
+    portalApprovalsRouter,
     portalPublicRouter,
   );
   app.use(express.json());
@@ -143,6 +146,7 @@ export function createApp() {
   apiV1.use("/team-members", teamMembersRouter);
   apiV1.use("/assets", assetsRouter);
   apiV1.use("/staff-tasks", staffTasksRouter);
+  apiV1.use("/approvals", approvalsRouter);
   apiV1.use("/client-todos", clientTodosRouter);
   apiV1.use("/todos", todosRouter);
   apiV1.use("/notifications", notificationsRouter);

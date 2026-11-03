@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { eventReminderPayload, taskDueReminderPayload, taskStatusChangedPayload, timeUntilWords, todoReminderPayload } from "./notification.messages";
+import {
+  approvalDecidedPayload,
+  approvalRequestedPayload,
+  eventReminderPayload,
+  taskDueReminderPayload,
+  taskStatusChangedPayload,
+  timeUntilWords,
+  todoReminderPayload,
+} from "./notification.messages";
 
 describe("taskStatusChangedPayload", () => {
   it("says what happened to the task, in words", () => {
@@ -71,5 +79,19 @@ describe("reminder messages", () => {
       expect(todoReminderPayload({ ...base, dueAt, now: new Date("2026-10-20T05:04:00Z") }).title).toBe("Due now: Call the printer");
       expect(todoReminderPayload({ ...base, dueAt, now: new Date("2026-10-20T04:50:00Z") }).title).toBe("Due now: Call the printer");
     });
+  });
+});
+
+describe("approval notifications (round 3)", () => {
+  it("a request names the stage and links to the item's page; the data carries ids only", () => {
+    const p = approvalRequestedPayload({ subject: "task", itemId: "t1", itemTitle: "Reel edit", stageName: "Review", approvalId: "a1" });
+    expect(p).toMatchObject({ title: "Approval needed: Review", url: "/app/tasks/t1", data: { approvalId: "a1", taskId: "t1" } });
+    expect(approvalRequestedPayload({ subject: "event", itemId: "e1", itemTitle: "Shoot", stageName: "Client Review", approvalId: "a2" }).url).toBe("/app/events/e1");
+  });
+
+  it("a decision says approved or changes requested, and whether the client or an approver did it", () => {
+    const base = { subject: "event" as const, itemId: "e1", itemTitle: "Shoot", stageName: "Client Review", approvalId: "a2" };
+    expect(approvalDecidedPayload({ ...base, decision: "approve", via: "portal" })).toMatchObject({ title: "Approved: Client Review", body: "The client approved Shoot." });
+    expect(approvalDecidedPayload({ ...base, decision: "changes", via: "staff" })).toMatchObject({ title: "Changes requested: Client Review", body: "An approver asked for changes on Shoot." });
   });
 });

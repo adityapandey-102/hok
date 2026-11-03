@@ -9,6 +9,8 @@ import { clients } from "../../clients/infrastructure/clients.schema";
 import { teamIdsOf } from "../../clients/infrastructure/client-team.sql";
 import { eventStageHistory, eventStages, events } from "../../events/infrastructure/events.schema";
 import { assets } from "../../assets/infrastructure/assets.schema";
+// Round 3: the stage approvals the client sees and decides (client-safe reads from the Approvals module).
+import { selectAwaitingClient, selectPortalHistory, selectPortalPending } from "../../approvals/infrastructure/approval-queries";
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { portalLinks } from "./portal.schema";
 import { PORTAL_ASSETS_LIMIT, PORTAL_UPDATES_LIMIT, type PortalEvent, type PortalEventDetail, type PortalLinkEntity } from "../domain/portal.entity";
@@ -167,7 +169,7 @@ export class DrizzlePortalReadRepository implements PortalReadRepositoryPort {
         .limit(1);
       if (!row) return null;
       const toStage = eventStages;
-      const [[event], updates, sharedAssets] = await Promise.all([
+      const [[event], updates, sharedAssets, pendingApproval, approvalHistory] = await Promise.all([
         withStages(db, [row]),
         // FR-POR-06: only moves marked visible to the client; no staff names.
         db
@@ -186,12 +188,21 @@ export class DrizzlePortalReadRepository implements PortalReadRepositoryPort {
           .where(and(eq(assets.eventId, eventId), eq(assets.clientId, clientId), eq(assets.visibleToClient, true), isNull(assets.deletedAt)))
           .orderBy(desc(assets.createdAt), desc(assets.id))
           .limit(PORTAL_ASSETS_LIMIT),
+        // Round 3: the request waiting for this client, and the decided rounds on stages the client approves.
+        selectPortalPending(db, clientId, eventId),
+        selectPortalHistory(db, clientId, eventId),
       ]);
       return {
         ...event!,
         updates: updates.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() })),
         assets: sharedAssets.map((a) => ({ ...a, createdAt: a.createdAt.toISOString() })),
+        pendingApproval,
+        approvalHistory,
       };
     });
+  }
+
+  awaitingApproval(clientId: string, eventId: string) {
+    return guarded("check for a waiting approval", () => selectAwaitingClient(db, clientId, eventId));
   }
 }

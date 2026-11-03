@@ -1,0 +1,5 @@
+- web: domain types (Approval, ApproverToken, StageRef/TaskStage.approvers, EventDetail/StaffTask approvals+nextBlockedBy) and lib/domain/utils/approvals.ts with unit tests (11) done.
+- web: ApprovalCard/History/Request modal/DecisionControls, approvalsApi, StageRail lock/seal, EventDetail+TaskDetail wired (gating, reasons), template editor (switch+chips) done.
+- web: Approvals page (/app/approvals), ApprovalsBadge in nav (More on phones), dashboard ApprovalsPanel, notification types/icon done.
+- web: portal (PortalApprovalBox, thank-you, history, dashboard badge, decideApproval API) done.
+- web: e2e/approvals.spec.ts written (3 tests); guide entries + tests done.

@@ -1,4 +1,5 @@
-import type { EventDetail, EventEntity, EventStage, EventState, EventSummaryEntity, EventType } from "../../domain/event.entity";
+import type { ApproverToken } from "../../../../domain";
+import type { EventDetailRecord, EventEntity, EventStage, EventState, EventSummaryEntity, EventType } from "../../domain/event.entity";
 import type { EventClient, EventTemplate } from "../../domain/event.rules";
 
 /** List filters; `ownerId` (events of clients whose team includes this person) already resolved from the caller's scope by the service. */
@@ -31,6 +32,8 @@ export interface NewEventRecord {
   templateName: string;
   /** Copied onto the event in this order; the first becomes the current stage. */
   stageNames: string[];
+  /** Round 3: each stage's approvers (same order as `stageNames`); a missing entry means none. */
+  stageApprovers?: ApproverToken[][];
   createdBy: string;
 }
 
@@ -46,6 +49,12 @@ export interface EventChanges {
   state?: EventState;
 }
 
+/** What a back move dropped: approvals that no longer count, and pending requests cancelled. */
+export interface SupersededCounts {
+  superseded: number;
+  cancelled: number;
+}
+
 export interface StageMoveEntry {
   note: string | null;
   visibleToClient: boolean;
@@ -57,8 +66,8 @@ export interface EventsRepositoryPort {
   /** One page joined to client name and current stage (no per-row queries). */
   findMany(filters: EventListFilters, page: EventPage): Promise<EventSummaryEntity[]>;
   countMany(filters: EventListFilters): Promise<number>;
-  /** The event + stages + recent history (newest first, capped) + team names; null if missing. */
-  findDetail(id: string): Promise<EventDetail | null>;
+  /** The event + stages + recent history (newest first, capped) + team names + approval rounds (newest first, capped); null if missing. */
+  findDetail(id: string): Promise<EventDetailRecord | null>;
   findClient(clientId: string): Promise<EventClient | null>;
   findTemplate(templateId: string): Promise<EventTemplate | null>;
   /** Which of these ids are active staff accounts. */
@@ -74,7 +83,13 @@ export interface EventsRepositoryPort {
   /**
    * Lock the event, let `decide` check it against its stages and return the
    * target stage, then set it as current, bump the version and append the
-   * history entry -- all in one transaction.
+   * history entry -- all in one transaction. `approvedStageIds` (round 3) = the stages
+   * holding an approved approval, for the move gate. A BACK move also supersedes the
+   * approvals of the stages from the target on, in the same transaction; the counts come back.
    */
-  moveStage(id: string, decide: (current: EventEntity, stages: EventStage[]) => EventStage, entry: StageMoveEntry): Promise<void>;
+  moveStage(
+    id: string,
+    decide: (current: EventEntity, stages: EventStage[], approvedStageIds: ReadonlySet<string>) => EventStage,
+    entry: StageMoveEntry,
+  ): Promise<SupersededCounts>;
 }

@@ -30,6 +30,9 @@ import { searchRouter } from "../modules/search/api/search.routes";
 import { reportsRouter } from "../modules/reports/api/reports.routes";
 import { COMMENT_STATUSES } from "../modules/client-comments/domain/client-comment.entity";
 import { NOTIFICATION_TYPES } from "../modules/notifications/domain/notification.entity";
+import { approvalsRouter } from "../modules/approvals/api/approvals.routes";
+import { portalApprovalsRouter } from "../modules/approvals/api/portal-approvals.routes";
+import { APPROVAL_STATUSES, APPROVER_TOKENS } from "../domain";
 
 /**
  * openapi.yaml is hand-maintained, so it can silently drift from the code.
@@ -65,7 +68,9 @@ const MOUNTED: [string, Router][] = [
   ["/api/v1/activity", activityRouter],
   ["/api/v1/search", searchRouter],
   ["/api/v1/reports", reportsRouter],
+  ["/api/v1/approvals", approvalsRouter],
   ["/api/v1/portal/{token}", portalCommentsRouter],
+  ["/api/v1/portal/{token}", portalApprovalsRouter],
   ["/api/v1/portal/{token}", portalPublicRouter],
 ];
 
@@ -139,6 +144,23 @@ describe("openapi.yaml stays in sync with the To-dos module", () => {
 describe("openapi.yaml stays in sync with the Notifications module", () => {
   it("documents exactly the notification types, in order", () => {
     expect(schemas.NotificationType?.enum).toEqual([...NOTIFICATION_TYPES]);
+  });
+});
+
+describe("openapi.yaml stays in sync with the Approvals module", () => {
+  it("documents exactly the approval statuses and approver tokens, in order", () => {
+    expect(schemas.ApprovalStatus?.enum).toEqual([...APPROVAL_STATUSES]);
+    expect(schemas.ApproverToken?.enum).toEqual([...APPROVER_TOKENS]);
+  });
+
+  it("documents the approval fields on event and task detail, the dashboard and the portal", () => {
+    const props = (name: string) => Object.keys((schemas[name] as { properties?: Record<string, unknown> }).properties ?? {});
+    expect(props("StaffTaskDetail")).toEqual(expect.arrayContaining(["approvals", "nextBlockedBy"]));
+    expect(props("Dashboard")).toEqual(expect.arrayContaining(["approvals"]));
+    expect(props("PortalEvent")).toEqual(expect.arrayContaining(["pendingApproval", "approvalHistory"]));
+    expect(props("Approval")).toEqual(
+      expect.arrayContaining(["id", "subject", "subjectId", "stageName", "approvers", "status", "requestedByName", "decidedVia", "decisionComment", "version", "canDecide", "canCancel"]),
+    );
   });
 });
 

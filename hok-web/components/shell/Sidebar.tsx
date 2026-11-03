@@ -7,6 +7,7 @@ import { activeNavHref, visibleNavSections } from "./nav-config";
 import { BrandLockup, BrandMark } from "./BrandMark";
 import { Icon } from "../ui/Icon";
 import { CommentsBadge } from "../../modules/client-comments/components/CommentsBadge";
+import { ApprovalsBadge } from "../../modules/approvals/components/ApprovalsBadge";
 import { authApi } from "../../modules/auth/api/authApi";
 import { unsubscribeThisDevice } from "../../modules/notifications/pushDevice";
 
@@ -96,6 +97,9 @@ export function Sidebar({
                     <span className={rail ? "lg:max-xl:sr-only" : ""}>{item.label}</span>
                     {item.badge === "comments" && (
                       <CommentsBadge className={`ml-auto ${rail ? "lg:max-xl:absolute lg:max-xl:top-0.5 lg:max-xl:right-0.5 lg:max-xl:ml-0" : ""}`} />
+                    )}
+                    {item.badge === "approvals" && (
+                      <ApprovalsBadge className={`ml-auto ${rail ? "lg:max-xl:absolute lg:max-xl:top-0.5 lg:max-xl:right-0.5 lg:max-xl:ml-0" : ""}`} />
                     )}
                   </Link>
                 );

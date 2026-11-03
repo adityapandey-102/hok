@@ -1,7 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ROLES, ROLE_LABELS, templateRolesLabel, type Role, type StageTemplate, type TemplateKind } from "../../../lib/domain";
+import {
+  APPROVER_ROLE_TOKENS,
+  ROLES,
+  ROLE_LABELS,
+  approvalStageCount,
+  approvalStageCountLabel,
+  approverLabel,
+  templateRolesLabel,
+  type ApproverToken,
+  type Role,
+  type StageTemplate,
+  type TemplateKind,
+} from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
 import { templatesApi } from "../api/templatesApi";
@@ -14,6 +26,7 @@ import { StatusPill } from "../../../components/ui/StatusPill";
 import { useToast } from "../../../components/ui/Toast";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
 import { EmptyState } from "../../../components/ui/EmptyState";
+import { Switch } from "../../../components/ui/Switch";
 
 const PAGE_SIZE = 20;
 const MAX_STAGES = 20;
@@ -26,8 +39,20 @@ const KIND_OPTIONS: { id: TemplateKind; label: string }[] = [
 ];
 const KIND_NOUN: Record<TemplateKind, string> = { event: "event", task: "task" };
 
+/** One stage row in the editor: its name and who must approve it (empty = no approval needed). */
+interface StageDraft {
+  name: string;
+  needsApproval: boolean;
+  approvers: ApproverToken[];
+}
+
+/** Chips offered for a stage's approvers; "The client" only on event templates (the API refuses it on tasks). */
+function approverChoices(kind: TemplateKind): ApproverToken[] {
+  return ["admin", "team_managers", ...APPROVER_ROLE_TOKENS, ...(kind === "event" ? (["client"] as const) : [])];
+}
+
 /**
- * Admin: stage templates (FR-EVT-01/02, round 2). A template is an ordered list of
+ * Admin: stage templates (FR-EVT-01/02, round 2; approvers per stage, round 3). A template is an ordered list of
  * stage names that an event (or a staff task) copies when it is created. The
  * Events | Tasks switch picks which kind the list and "New template" are about;
  * a task template can be limited to some assignee roles.
@@ -180,6 +205,11 @@ export function TemplatesClient() {
                     <span className="font-serif text-[16px] text-text-primary">{t.name}</span>
                     <StatusPill label={t.active ? "Active" : "Inactive"} tone={t.active ? "green" : "gray"} />
                     <span className="text-xs text-text-muted">{t.stages.length} stages</span>
+                    {approvalStageCount(t.stages) > 0 && (
+                      <span className="inline-flex items-center gap-1 text-xs text-text-muted" data-testid="approval-stage-count">
+                        <Icon name="lock" size={11} /> {approvalStageCountLabel(approvalStageCount(t.stages))}
+                      </span>
+                    )}
                     {t.kind === "task" && <span className="text-xs text-text-muted">· For: {templateRolesLabel(t.roles)}</span>}
                   </div>
                   <ol className="mt-2.5 flex flex-wrap items-center gap-1.5" aria-label={`${t.name} stages`}>
@@ -188,6 +218,12 @@ export function TemplatesClient() {
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-bg px-2.5 py-1 text-xs text-text-secondary ring-1 ring-border ring-inset">
                           <span className="figure text-[10.5px] text-text-muted">{i + 1}</span>
                           {s.name}
+                          {s.approvers.length > 0 && (
+                            <>
+                              <Icon name="lock" size={11} className="text-text-muted" />
+                              <span className="sr-only">(needs approval)</span>
+                            </>
+                          )}
                         </span>
                         {i < t.stages.length - 1 && <Icon name="chevron-right" size={12} className="text-border" />}
                       </li>
@@ -226,14 +262,22 @@ function TemplateEditor({
 }) {
   const { showToast } = useToast();
   const [name, setName] = useState(template?.name ?? "");
-  const [stages, setStages] = useState<string[]>(template?.stages.map((s) => s.name) ?? ["Planned", "Completed"]);
+  const [stages, setStages] = useState<StageDraft[]>(
+    template?.stages.map((s) => ({ name: s.name, needsApproval: s.approvers.length > 0, approvers: s.approvers })) ?? [
+      { name: "Planned", needsApproval: false, approvers: [] },
+      { name: "Completed", needsApproval: false, approvers: [] },
+    ],
+  );
   const [roles, setRoles] = useState<Role[]>(template?.roles ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const kind = template?.kind ?? newKind;
 
   const toggleRole = (r: Role) => setRoles((cur) => (cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r]));
-  const setStage = (i: number, value: string) => setStages((s) => s.map((x, j) => (j === i ? value : x)));
+  const patchStage = (i: number, patch: Partial<StageDraft>) => setStages((s) => s.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const setStage = (i: number, value: string) => patchStage(i, { name: value });
+  const toggleApprover = (i: number, token: ApproverToken) =>
+    setStages((s) => s.map((x, j) => (j === i ? { ...x, approvers: x.approvers.includes(token) ? x.approvers.filter((t) => t !== token) : [...x.approvers, token] } : x)));
   const move = (i: number, delta: number) =>
     setStages((s) => {
       const j = i + delta;
@@ -246,10 +290,12 @@ function TemplateEditor({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const cleaned = stages.map((s) => s.trim());
+    const cleaned = stages.map((s) => ({ name: s.name.trim(), approvers: s.needsApproval ? s.approvers : [] }));
     if (!name.trim()) return setError("Please enter a template name.");
-    if (cleaned.length === 0 || cleaned.some((s) => !s)) return setError("Every stage needs a name.");
-    if (new Set(cleaned.map((s) => s.toLowerCase())).size !== cleaned.length) return setError("Stage names can not repeat.");
+    if (cleaned.length === 0 || cleaned.some((s) => !s.name)) return setError("Every stage needs a name.");
+    if (new Set(cleaned.map((s) => s.name.toLowerCase())).size !== cleaned.length) return setError("Stage names can not repeat.");
+    const unpicked = stages.findIndex((s) => s.needsApproval && s.approvers.length === 0);
+    if (unpicked >= 0) return setError(`Stage ${unpicked + 1} needs approval: pick at least one person who can approve it, or switch it off.`);
     setSaving(true);
     try {
       if (template) {
@@ -262,6 +308,7 @@ function TemplateEditor({
     } catch (err) {
       if (isApiErrorCode(err, "STAGE_TEMPLATE_NAME_TAKEN")) setError("A template with this name already exists.");
       else if (isApiErrorCode(err, "STAGE_TEMPLATE_MODIFIED")) setError("Someone else changed this template. Cancel and reopen it to see the latest version.");
+      else if (isApiErrorCode(err, "STAGE_TEMPLATE_APPROVERS_INVALID")) setError("One of the approvers is not allowed here (the client can only approve event stages, and nobody can be listed twice).");
       else setError(err instanceof Error ? err.message : "Failed to save the template");
     } finally {
       setSaving(false);
@@ -308,22 +355,56 @@ function TemplateEditor({
         <legend className="mb-2 text-xs font-medium text-text-secondary">Stages, in order (a{kind === "task" ? " task" : "n event"} starts at the first one)</legend>
         <ol className="flex flex-col gap-2">
           {stages.map((stage, i) => (
-            <li key={i} className="flex items-center gap-2">
-              <span className="figure flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-bg text-[11px] text-text-secondary ring-1 ring-border ring-inset">{i + 1}</span>
-              <Input className="min-w-0" aria-label={`Stage ${i + 1} name`} value={stage} maxLength={60} onChange={(e) => setStage(i, e.target.value)} />
-              <Button type="button" variant="outline" className="px-2.5 py-2" aria-label={`Move stage ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)}>
-                <Icon name="chevron-right" size={14} className="-rotate-90" />
-              </Button>
-              <Button type="button" variant="outline" className="px-2.5 py-2" aria-label={`Move stage ${i + 1} down`} disabled={i === stages.length - 1} onClick={() => move(i, 1)}>
-                <Icon name="chevron-right" size={14} className="rotate-90" />
-              </Button>
-              <Button type="button" variant="ghost" className="px-2.5 py-2" aria-label={`Remove stage ${i + 1}`} disabled={stages.length === 1} onClick={() => setStages((s) => s.filter((_, j) => j !== i))}>
-                <Icon name="x" size={14} />
-              </Button>
+            <li key={i} className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="figure flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-bg text-[11px] text-text-secondary ring-1 ring-border ring-inset">{i + 1}</span>
+                <Input className="min-w-0" aria-label={`Stage ${i + 1} name`} value={stage.name} maxLength={60} onChange={(e) => setStage(i, e.target.value)} />
+                <Button type="button" variant="outline" className="px-2.5 py-2" aria-label={`Move stage ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)}>
+                  <Icon name="chevron-right" size={14} className="-rotate-90" />
+                </Button>
+                <Button type="button" variant="outline" className="px-2.5 py-2" aria-label={`Move stage ${i + 1} down`} disabled={i === stages.length - 1} onClick={() => move(i, 1)}>
+                  <Icon name="chevron-right" size={14} className="rotate-90" />
+                </Button>
+                <Button type="button" variant="ghost" className="px-2.5 py-2" aria-label={`Remove stage ${i + 1}`} disabled={stages.length === 1} onClick={() => setStages((s) => s.filter((_, j) => j !== i))}>
+                  <Icon name="x" size={14} />
+                </Button>
+              </div>
+              <div className="ml-8">
+                <Switch
+                  label="Needs approval"
+                  checked={stage.needsApproval}
+                  onChange={(next) => patchStage(i, { needsApproval: next })}
+                  hint={stage.needsApproval ? undefined : "Work can't move past this stage until someone approves it."}
+                />
+                {stage.needsApproval && (
+                  <fieldset className="mt-2">
+                    <legend className="mb-1.5 text-xs text-text-muted">Who can approve it (any one of them)</legend>
+                    <div className="flex flex-wrap gap-2">
+                      {approverChoices(kind).map((token) => (
+                        <label
+                          key={token}
+                          className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-full px-3.5 py-1.5 text-sm ring-1 ring-inset transition-colors has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-ring/25 ${
+                            stage.approvers.includes(token) ? "bg-ink text-on-ink ring-ink" : "bg-accent-bg text-text-secondary ring-border hover:bg-accent-light/70"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            aria-label={`Stage ${i + 1} approver: ${approverLabel(token)}`}
+                            checked={stage.approvers.includes(token)}
+                            onChange={() => toggleApprover(i, token)}
+                          />
+                          {approverLabel(token)}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
+              </div>
             </li>
           ))}
         </ol>
-        <Button type="button" variant="outline" className="mt-3" disabled={stages.length >= MAX_STAGES} onClick={() => setStages((s) => [...s, ""])}>
+        <Button type="button" variant="outline" className="mt-3" disabled={stages.length >= MAX_STAGES} onClick={() => setStages((s) => [...s, { name: "", needsApproval: false, approvers: [] }])}>
           <Icon name="plus" size={14} /> Add stage
         </Button>
       </fieldset>

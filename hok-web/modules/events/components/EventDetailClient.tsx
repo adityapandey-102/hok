@@ -3,14 +3,20 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
+  approvedStageIds,
+  blockedByWithPosition,
+  blockedReason,
   describeEventTime,
   EVENT_STATE_LABELS,
   EVENT_TYPE_LABELS,
   formatDate,
+  isMoveBlocked,
   type EventDetail,
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { eventsApi } from "../api/eventsApi";
+import { ApprovalCard } from "../../approvals/components/ApprovalCard";
+import { ApprovalHistory } from "../../approvals/components/ApprovalHistory";
 import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Card } from "../../../components/ui/Card";
@@ -50,6 +56,7 @@ export function EventDetailClient({
   const currentStage = event.stages.find((s) => s.id === event.currentStageId);
   const currentName = currentStage?.name ?? "";
   const currentPos = currentStage?.position ?? 0;
+  const blockedBy = blockedByWithPosition(event.nextBlockedBy, event.stages);
   const stageNames = new Map(event.stages.map((s) => [s.id, s.name]));
   const start = describeEventTime(event.startsAt, viewerTimeZone, event.timeZone);
   const end = describeEventTime(event.endsAt, viewerTimeZone, event.timeZone);
@@ -225,9 +232,21 @@ export function EventDetailClient({
               </div>
             </div>
             <div className="border-t border-border-light bg-accent-bg/40 px-5 py-5 sm:px-6 sm:py-6">
-              <StageTracker stages={event.stages} currentStageId={event.currentStageId} />
+              <StageTracker stages={event.stages} currentStageId={event.currentStageId} approvedStageIds={approvedStageIds(event.approvals)} />
             </div>
           </Card>
+
+          {currentStage && (
+            <ApprovalCard
+              subject="event"
+              subjectId={event.id}
+              stage={currentStage}
+              approvals={event.approvals}
+              canRequest={canMove}
+              zone={viewerTimeZone}
+              onChanged={() => void reload()}
+            />
+          )}
 
           <div className="grid grid-cols-1 items-start gap-x-6 gap-y-7 lg:grid-cols-12">
             <Panel icon="calendar" title="When and where" subtitle={`Times in ${viewerTimeZone}`} className="lg:col-span-7">
@@ -251,11 +270,16 @@ export function EventDetailClient({
                         {event.stages
                           .filter((s) => s.id !== event.currentStageId)
                           .map((s) => (
-                            <option key={s.id} value={s.id}>
+                            <option key={s.id} value={s.id} disabled={isMoveBlocked(blockedBy, currentPos, s.position)}>
                               {s.position}. {s.name}
                             </option>
                           ))}
                       </Select>
+                      {blockedBy && (
+                        <p data-testid="move-blocked-reason" className="mt-1.5 flex items-center gap-1.5 text-xs text-text-muted">
+                          <Icon name="lock" size={12} className="shrink-0" /> Later stages are locked. {blockedReason(blockedBy)}.
+                        </p>
+                      )}
                     </div>
                     <div>
                       <FieldLabel htmlFor="mv-note">Note (optional)</FieldLabel>
@@ -277,6 +301,8 @@ export function EventDetailClient({
               </div>
             </Panel>
           </div>
+
+          <ApprovalHistory approvals={event.approvals} zone={viewerTimeZone} />
 
           <Panel icon="history" title="History" subtitle="Every stage change, newest first">
             <ol className="border-t border-border-light px-5 py-5 sm:px-6" aria-label="Stage history">

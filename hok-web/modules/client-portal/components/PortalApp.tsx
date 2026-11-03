@@ -112,6 +112,11 @@ export function PortalApp({ token }: { token: string }) {
                     <span aria-hidden className="current-pulse h-2 w-2 rounded-full bg-primary" />
                     {stageSummary(data.current)}
                   </p>
+                  {data.current.awaitingYourApproval && (
+                    <p className="mb-2 ml-2 inline-flex">
+                      <StatusPill label="Needs your approval" tone="amber" />
+                    </p>
+                  )}
                   <h3 className="font-serif text-[24px] leading-snug text-text-primary sm:text-[30px]">{data.current.title}</h3>
                   <p className="mt-1.5 flex items-center gap-1.5 text-[15px] text-text-secondary">
                     <Icon name="calendar" size={15} className="shrink-0 text-text-muted" />
@@ -127,8 +132,8 @@ export function PortalApp({ token }: { token: string }) {
               <div className="mt-7">
                 <PortalStageTrack stages={data.current.stages} currentPosition={data.current.currentStagePosition} />
               </div>
-              <Button variant="outline" className="mt-6 max-sm:w-full" onClick={() => setOpenEventId(data.current!.id)}>
-                <Icon name="history" size={15} /> See updates
+              <Button variant={data.current.awaitingYourApproval ? "primary" : "outline"} className="mt-6 max-sm:w-full" onClick={() => setOpenEventId(data.current!.id)}>
+                <Icon name={data.current.awaitingYourApproval ? "shield" : "history"} size={15} /> {data.current.awaitingYourApproval ? "Review and approve" : "See updates"}
               </Button>
             </Card>
           ) : (
@@ -155,7 +160,7 @@ export function PortalApp({ token }: { token: string }) {
         </footer>
       </main>
 
-      <PortalEventModal token={token} zone={zone} eventId={openEventId} onClose={() => setOpenEventId(null)} />
+      <PortalEventModal token={token} zone={zone} eventId={openEventId} onClose={() => setOpenEventId(null)} onChanged={load} />
     </div>
   );
 }

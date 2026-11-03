@@ -25,6 +25,8 @@ export interface PortalEvent {
   stages: PortalStage[];
   currentStagePosition: number;
   stageCount: number;
+  /** Dashboard's current event only: a request is waiting for the client's approval (round 3). */
+  awaitingYourApproval?: boolean;
 }
 
 /** A link the staff chose to share with the client on one event (internal fields never come this way). */
@@ -37,8 +39,29 @@ export interface PortalAsset {
   createdAt: string;
 }
 
+/** A request for the client's approval of the event's current stage. No staff names ever come with it. */
+export interface PortalPendingApproval {
+  id: string;
+  version: number;
+  stageName: string;
+  requestNote: string | null;
+  requestLink: string | null;
+  requestedAt: string;
+}
+
+export interface PortalApprovalHistoryEntry {
+  stageName: string;
+  status: "approved" | "changes_requested";
+  decidedVia: "staff" | "portal" | null;
+  decidedAt: string | null;
+  decisionComment: string | null;
+}
+
 export interface PortalEventDetail extends PortalEvent {
   updates: { stageName: string; note: string | null; createdAt: string }[];
+  pendingApproval?: PortalPendingApproval | null;
+  /** Decided approvals of stages the client approves, newest first (at most 20). */
+  approvalHistory?: PortalApprovalHistoryEntry[];
   /** Newest first, at most 100. */
   assets: PortalAsset[];
 }
@@ -100,6 +123,9 @@ export const publicPortalApi = {
   event: (token: string, eventId: string) => call<{ event: PortalEventDetail }>(token, `/events/${encodeURIComponent(eventId)}`),
   comments: (token: string, limit = 20, offset = 0) =>
     call<{ comments: PortalComment[]; total: number }>(token, `/comments?limit=${limit}&offset=${offset}`),
+  /** The client's decision on a pending approval. Changes need a comment (the API refuses otherwise). */
+  decideApproval: (token: string, approvalId: string, payload: { version: number; decision: "approve" | "changes"; comment?: string }) =>
+    call<{ ok: true }>(token, `/approvals/${encodeURIComponent(approvalId)}`, { method: "POST", body: JSON.stringify(payload) }),
   postComment: (token: string, body: string, eventId: string | null) =>
     call<{ comment: PortalComment }>(token, "/comments", { method: "POST", body: JSON.stringify(eventId ? { body, eventId } : { body }) }),
 };

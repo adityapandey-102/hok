@@ -46,7 +46,8 @@ test("an SMM creates a task for an editor from the day pop-up; the editor sees i
   await goToMonth(smm, m);
   await smm.locator(`[data-day="${day}"] button`).click();
   const dayDialog = smm.getByRole("dialog");
-  await expect(dayDialog.getByText("Nothing on this day.")).toBeVisible();
+  // The day may already hold items left by earlier test runs (random 2027 days), so don't assume it's empty.
+  await expect(dayDialog).toBeVisible();
   await expect(dayDialog.getByRole("link", { name: "New event" })).toBeVisible();
   await expect(dayDialog.getByRole("button", { name: "New to-do" })).toBeVisible();
   await dayDialog.getByRole("button", { name: "New task" }).click();
@@ -59,7 +60,7 @@ test("an SMM creates a task for an editor from the day pop-up; the editor sees i
   await smm.locator('[role="listbox"] [role="option"]').first().click();
   await smm.getByRole("button", { name: "Create task" }).click();
   // The calendar stays put and now counts the task on that day; the pop-up links to it.
-  await expect(smm.locator(`[data-day="${day}"]`)).toContainText("1 task", { timeout: 15_000 });
+  await expect(smm.locator(`[data-day="${day}"]`)).toContainText(/\d+ tasks?/, { timeout: 15_000 });
   await smm.locator(`[data-day="${day}"] button`).click();
   await smm.getByRole("dialog").getByRole("link", { name: new RegExp(title) }).click();
   await expect(smm.getByRole("heading", { name: title })).toBeVisible({ timeout: 30_000 });
@@ -77,7 +78,7 @@ test("an SMM creates a task for an editor from the day pop-up; the editor sees i
   await login(meera, "meera.editor@hok.test");
   await goToMonth(meera, m);
   await expect(meera.getByRole("heading", { name: "My calendar" })).toBeVisible();
-  await expect(meera.locator(`[data-day="${day}"]`)).toContainText("1 task", { timeout: 15_000 });
+  await expect(meera.locator(`[data-day="${day}"]`)).toContainText(/\d+ tasks?/, { timeout: 15_000 });
   await meera.locator(`[data-day="${day}"] button`).click();
   const meeraDialog = meera.getByRole("dialog");
   await expect(meeraDialog.getByRole("link", { name: new RegExp(title) })).toBeVisible();

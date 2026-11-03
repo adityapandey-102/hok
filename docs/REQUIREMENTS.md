@@ -4,7 +4,7 @@
 |---|---|
 | **Version** | 0.4 — team feedback round 1: task ladder, calendar for everyone, day pop-up, My to-dos (0.3: portfolio website + needleye design system) |
 | **Date** | 2026-11-03 (0.3: 2026-10-13) |
-| **Changes from 0.3** | Admin and managers assign tasks down a role ladder (FR-TSK-01/05); everyone sees tasks they're assigned, created, or (managers) on their clients; calendar for every role with tasks and to-dos, counts per day and a day pop-up (FR-CAL-09/10); private My to-dos with urgency reminders (§5.14); editor raw-files link no longer required. **Round 2 (2026-11-04):** task templates and stages (FR-TSK-03/04/12), Links on every task (FR-TSK-10), "Show to client" assets in the portal (FR-AST-07, FR-POR-10). Plan: [PLAN-team-feedback-2026-11.md](PLAN-team-feedback-2026-11.md) |
+| **Changes from 0.3** | Admin and managers assign tasks down a role ladder (FR-TSK-01/05); everyone sees tasks they're assigned, created, or (managers) on their clients; calendar for every role with tasks and to-dos, counts per day and a day pop-up (FR-CAL-09/10); private My to-dos with urgency reminders (§5.14); editor raw-files link no longer required. **Round 2 (2026-11-04):** task templates and stages (FR-TSK-03/04/12), Links on every task (FR-TSK-10), "Show to client" assets in the portal (FR-AST-07, FR-POR-10). **Round 3 (2026-11-04):** stage approvals in event and task templates, client approval in the portal (FR-EVT-01c, FR-APR-01..07, FR-POR-11). Plan: [PLAN-team-feedback-2026-11.md](PLAN-team-feedback-2026-11.md) |
 | **Status** | Requirements agreed in principle; architecture draft in [ARCHITECTURE.md](ARCHITECTURE.md) |
 | **Changes from 0.1** | Open questions answered (§10); Marketing Agent → tasks only; stage templates; editor task fields; multiple time zones; plain portal branding; assignee closes own task; client portal moved into Phase 1 |
 
@@ -134,6 +134,7 @@ An **event** is a client-related activity such as a social media shoot, campaign
 |---|---|
 | FR-EVT-01 | **Admin** manages **stage templates**: a template has a name (e.g. "Photo Shoot", "Reel Production", "Campaign Launch") and an ordered list of stages (e.g. `Planned → Pre-production → Shoot → Editing → Client Review → Completed`). Admin can create, edit, reorder stages, and deactivate templates. |
 | FR-EVT-01b | *(v0.4)* Templates have a **kind**: Event or Task. Task templates can be limited to assignee roles (empty = any role). Events only use event templates; tasks only task templates. |
+| FR-EVT-01c | *(v0.4)* Any stage of any template can need **approval**: the Admin picks the approvers per stage (see §5.15). |
 | FR-EVT-02 | When creating an event, the Client Manager **selects a stage template**. The event uses that template's stages **as-is** — managers cannot add/remove/rename stages on an event. |
 | FR-EVT-03 | Editing a template later does **not** change events already created from it (each event keeps the stages it started with). |
 | FR-EVT-04 | Every event can additionally be marked **Cancelled** or **Postponed** regardless of template. |
@@ -203,6 +204,7 @@ A read-mostly dashboard for the **client**, opened via a generated link.
 | FR-POR-08 | Plain, neutral design — no firm or per-client branding beyond showing the client's own name/logo. |
 | FR-POR-09 | Portal must be mobile-friendly (clients will mostly open it on phones). |
 | FR-POR-10 | *(v0.4)* The portal's event page lists **"Shared with you"**: that event's assets marked "Show to client" (title, type, stage, date, link). No internal comment, tags or staff names. |
+| FR-POR-11 | *(v0.4)* When an event stage waits for the **client's** approval, the portal's event page shows "Your approval is needed" with the team's note, link and shared assets, and **Approve** / **Request changes** (a comment is required for changes). The dashboard flags the event. The client's past decisions are listed. Same rate limits as portal comments. |
 
 ### 5.8 Client Comments / Feedback (CMT)
 
@@ -234,6 +236,18 @@ Tasks the **Admin** assigns to staff — the **only** module available to Market
 | FR-TSK-09 | Admin sees all tasks, filterable by assignee, role, status, due date. Board (Kanban) and list views. *(v0.4)* Managers see tasks assigned to them, created by them and linked to their clients, with filters All / Assigned to me / I assigned / My clients. |
 | FR-TSK-10 | *(v0.4)* Every task has a **Brief** (text, for every role) and a **Links** area: **Brief and inputs** (added by the creator or Admin) and **Delivered work** (added by the assignee or Admin), each optionally tied to a stage. The old editor-only fields (raw files, reference edit, script) were moved into these. A delivered link can be **shared with the client** in one step (Admin or a manager on the client's team; the task must be linked to an event): it becomes a "Show to client" asset. |
 | FR-TSK-12 | *(v0.4)* A task's stages are fixed when it is created (editing the template later doesn't change them). |
+
+### 5.15 Stage Approvals (APR) — v0.4
+
+| ID | Requirement |
+|---|---|
+| FR-APR-01 | On any stage of an event or task template the Admin can set **approvers**: Admin, specific roles (e.g. Social Media Manager), the client's team managers, and **the client** (event templates only). Items keep the approvers they were created with. |
+| FR-APR-02 | An item **can't move past** (or complete from) a stage with approvers until that stage is **approved**; it also can't jump over such a stage. Moving back is always allowed. |
+| FR-APR-03 | Anyone who can move the item **requests approval** on its current stage (optional note and link). One request waits per stage. |
+| FR-APR-04 | **Any one** listed approver can **approve** or **request changes** (comment required). Approvers must be able to see the item. Nobody decides their own request, except the Admin. |
+| FR-APR-05 | Moving an item back to a stage, or earlier, means those stages need approving again (the old approvals stay in the history as "superseded"). |
+| FR-APR-06 | Notifications: approvers when a request is made; the requester and the item's people when it is decided. An **Approvals** page (To decide / I requested) and a dashboard card show what's waiting. |
+| FR-APR-07 | Example (the user's): an editing template with 5 stages, where stage 4 is approved by an SMM or the Admin and stage 5 by the Admin only. |
 | FR-TSK-11 | *(Phase 2)* Due-date reminder: notify the assignee **2 hours before** the task is due. |
 
 ### 5.10 Notifications (NTF)

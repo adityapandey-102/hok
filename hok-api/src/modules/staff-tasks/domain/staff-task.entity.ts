@@ -1,4 +1,4 @@
-import type { Role } from "../../../domain";
+import type { Approval, ApprovalRecord, ApproverToken, Role } from "../../../domain";
 
 /**
  * Pure domain shapes for staff tasks (REQUIREMENTS §5.9). Instants are ISO
@@ -50,6 +50,11 @@ export interface TaskStage {
   /** 1-based order. */
   position: number;
   name: string;
+}
+
+/** A stage with its approvers (round 3): what the move gate and the detail read. `approvers` empty = no approval needed. */
+export interface TaskStageFull extends TaskStage {
+  approvers: ApproverToken[];
 }
 
 /** The fields the Admin or creator edits (create + PATCH). */
@@ -123,7 +128,9 @@ export interface StaffTaskLink {
 export interface StaffTaskDetail extends StaffTaskEntity {
   /** Null when there's no event, or the events table isn't there yet. */
   eventTitle: string | null;
-  stages: TaskStage[];
+  stages: TaskStageFull[];
+  /** Round 3: every approval round, newest first, capped. Becomes `approvals` (with the caller's flags) in the view. */
+  approvalRecords: ApprovalRecord[];
   /** Oldest first, at most TASK_LINKS_MAX. */
   links: StaffTaskLink[];
   updates: StaffTaskUpdate[];
@@ -160,5 +167,11 @@ export interface StaffTaskSummaryEntity {
  * staff_tasks:assign) and whether they may share its delivered links with the
  * client, so the web needs no role logic of its own.
  */
-export type StaffTaskDetailView = StaffTaskDetail & { canManage: boolean; canShare: boolean };
+export type StaffTaskDetailView = Omit<StaffTaskDetail, "approvalRecords"> & {
+  canManage: boolean;
+  canShare: boolean;
+  approvals: Approval[];
+  /** The approval stage that stops forward moves right now, or null. */
+  nextBlockedBy: { stageId: string; stageName: string } | null;
+};
 export type StaffTaskSummaryView = StaffTaskSummaryEntity & { canManage: boolean };

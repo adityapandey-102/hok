@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventTypeLabel, formatEventWhen, stageSummary } from "./portalFormat";
+import { approvalHistoryLabel, eventTypeLabel, formatEventWhen, stageSummary } from "./portalFormat";
 
 describe("portal formatting", () => {
   it("shows times in the client's zone, on one day or across days", () => {
@@ -16,5 +16,14 @@ describe("portal formatting", () => {
     expect(stageSummary(e)).toBe("Stage 2 of 2 · Shoot");
     expect(eventTypeLabel("shoot")).toBe("Shoot");
     expect(eventTypeLabel("mystery")).toBe("Event");
+  });
+});
+
+describe("approvalHistoryLabel", () => {
+  it("says who decided without naming staff", () => {
+    expect(approvalHistoryLabel({ status: "approved", decidedVia: "portal" })).toBe("Approved by you");
+    expect(approvalHistoryLabel({ status: "changes_requested", decidedVia: "portal" })).toBe("Changes requested by you");
+    expect(approvalHistoryLabel({ status: "approved", decidedVia: "staff" })).toBe("Approved by your account team");
+    expect(approvalHistoryLabel({ status: "approved", decidedVia: null })).toBe("Approved by your account team");
   });
 });

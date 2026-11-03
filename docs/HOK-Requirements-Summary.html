@@ -45,7 +45,7 @@
 <body>
 
 <h1>HOK — Agency Operations Platform</h1>
-<div class="sub">Requirements Summary &nbsp;·&nbsp; Version 0.4 (team feedback rounds 1–2) &nbsp;·&nbsp; 4 Nov 2026</div>
+<div class="sub">Requirements Summary &nbsp;·&nbsp; Version 0.4 (team feedback rounds 1–3) &nbsp;·&nbsp; 4 Nov 2026</div>
 
 <div class="hero">
   <p><b>What are we building?</b> One website with two sides. The <b>public side</b> is the firm’s portfolio. The <b>private side</b>
@@ -91,7 +91,8 @@
   <div class="card"><h3><span class="num">2</span>Events &amp; Shoots</h3>
     <ul><li>Shoot, campaign, meeting… with date, time, time zone, place</li>
     <li>Admin makes <b>stage templates</b> (e.g. “Photo Shoot”: Planned → Shoot → Editing → Client Review → Completed)</li>
-    <li>Manager picks a template when creating the event; its stages are used as they are</li></ul></div>
+    <li>Manager picks a template when creating the event; its stages are used as they are</li>
+    <li>A stage can <b>need approval</b> (Admin, a role, the team’s managers, or <b>the client in the portal</b>); work can’t move past it until approved</li></ul></div>
 
   <div class="card"><h3><span class="num">3</span>Content Links (Assets)</h3>
     <ul><li>Paste a link (Drive, Dropbox, Canva…). <b>No file upload</b></li>
@@ -119,6 +120,7 @@
   <div class="card"><h3><span class="num">7</span>Team Tasks</h3>
     <ul><li>Admin or a manager gives a task to <b>one</b> person below them</li>
     <li>Every task uses an Admin-made <b>task template</b> (e.g. “Reel edit”: Brief → Rough cut → Final cut → Delivered) and moves through its stages; can be marked <b>Blocked</b> with a reason</li>
+    <li>Stages can <b>need approval</b> too, e.g. stage 4 by a Social Media Manager or Admin, stage 5 by Admin only</li>
     <li>Whoever gave the task is notified of every update and can reopen</li></ul></div>
 
   <div class="card"><h3><span class="num">8</span>Brief &amp; Links on every task</h3>
@@ -159,8 +161,9 @@
   <tr><td>Sharing clients</td><td>No. One manager per client; Admin can move it</td></tr>
   <tr><td>Portal security</td><td>Link only; can be turned off or replaced</td></tr>
   <tr><td>Event stages</td><td>Admin-made templates, picked when creating an event</td></tr>
+  <tr><td>Stage approvals</td><td>Per stage, any template; any one approver; no self-approval (except Admin); client only on events (Nov 2026)</td></tr>
   <tr><td>Content links on portal</td><td>Only links marked “Show to client” (Nov 2026)</td></tr>
-  <tr><td>Who gets pushed on a client comment</td><td>Only the client’s manager</td></tr>
+  <tr><td>Push on a client comment</td><td>The client’s team</td></tr>
   <tr><td>Who assigns tasks</td><td>Admin and managers, only downwards (Nov 2026)</td></tr>
   <tr><td>Task rules</td><td>One person per task; they can mark it Done</td></tr>
   <tr><td>Mobile</td><td>Mobile-friendly website you can install (no app store)</td></tr>
@@ -168,11 +171,11 @@
   <tr><td>Time zones / language</td><td>Multiple time zones, English</td></tr>
   <tr><td>Email / WhatsApp messages</td><td>None. Notifications are phone/browser push + the in-app bell only</td></tr>
   <tr><td>Portal look</td><td>Plain, no branding</td></tr>
-  <tr><td>Google Calendar</td><td>Dropped for now</td></tr>
+  <tr><td>Google Calendar</td><td>Subscribe link for managers</td></tr>
   <tr><td>Deadline</td><td>No fixed date. Quality first</td></tr>
   <tr><td>Technology &amp; look</td><td>Same setup and same design system as the Needleye project</td></tr>
   <tr><td>Portfolio website</td><td>The HOK template becomes the firm’s public website, in the same app. Moved in as it is now; redesigned with real content later</td></tr>
-  <tr><td>Hosting</td><td>First on our own machine. Later: Railway (backend), Supabase (database + logins), Vercel (website)</td></tr>
+  <tr><td>Hosting</td><td>Supabase (database + logins), DigitalOcean (backend), Vercel (website)</td></tr>
 </table>
 
 <div class="avoid">
@@ -187,10 +190,8 @@
 
 <h2>7. Not included (for now)</h2>
 <ul>
-  <li>Uploading or storing actual photo/video files (we only save links)</li>
-  <li>Posting directly to Instagram / Facebook etc.</li>
-  <li>Billing, invoices, payments · Ad performance / analytics reports</li>
-  <li>App-store mobile apps · Email/WhatsApp messages to clients</li>
+  <li>Storing photo/video files (we only save links) · Posting directly to Instagram / Facebook</li>
+  <li>Billing, invoices, payments · Ad analytics · App-store apps · Email/WhatsApp messages to clients</li>
 </ul>
 
 <p class="note" style="margin-top:14px">Full detail: <b>docs/REQUIREMENTS.md</b> &nbsp;·&nbsp; Technical design: <b>docs/ARCHITECTURE.md</b></p>

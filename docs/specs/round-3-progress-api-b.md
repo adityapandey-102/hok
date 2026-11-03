@@ -1,0 +1,5 @@
+- API-B part 1 done: tests/integration/approvals.integration.test.ts (37 tests: templates, 5-stage example, gate, supersede/reopen, race, self-approval, team_managers, inbox, audit, portal incl. limiter/413) + query-budget additions (approvals lists, event detail, count). All green.
+- API-B part 2 done: rbac-matrix.mjs approvals section (+~110 checks incl. self-approval 403, stranger 404, portal 404s); 944/944 pass.
+- API-B part 3 done: openapi.yaml (approvals paths, portal POST, schemas, stages[].approvers, detail approvals/nextBlockedBy, dashboard, portal fields, notification types) + openapi.test.ts (routers + enum/field pins); 121 green.
+- API-B part 4 done: seed.ts (templates 'Shoot with client sign-off' and 'Reel edit (approvals)', a seeded event on Client Review with a pending client approval, a seeded task on stage 4 with a pending request); re-run reuses rows.
+- API-B part 5 done: final run: lint, typecheck clean; unit 903; integration 323 (21 files); rbac 944/944; seed re-run reuses rows.

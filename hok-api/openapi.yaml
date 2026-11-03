@@ -61,6 +61,8 @@ tags:
     description: Admin reports (FR-RPT-01..04) -- team status, one person's month, one client's month. `dashboard:global` only.
   - name: Activity
     description: "The Admin activity log (FR-SYS-02, FR-RPT-05): who did what, newest first."
+  - name: Approvals
+    description: "Stage approvals (round 3). A stage of any template can list approvers (`admin`, `team_managers`, `client` on event templates, or a role); an item (event or task) can enter such a stage but not move past it, forward or by completing, until the stage has an `approved` approval in the current visit (`409 STAGE_APPROVAL_REQUIRED`). Whoever may MOVE the item asks; any ONE eligible approver who can see the item approves or requests changes (the requester never decides their own request, the Admin excepted). Moving back to a stage supersedes the approvals from there on. The client approves from the portal. Every staff role has an inbox (`staff_tasks:read`); the service enforces who may do what."
   - name: Client comments
     description: Comments clients post on their portal, worked by the owning manager (comments:read / comments:manage).
 paths:
@@ -796,7 +798,13 @@ paths:
               required: [name, stages]
               properties:
                 name: { type: string, minLength: 1, maxLength: 80 }
-                stages: { type: array, minItems: 1, maxItems: 20, items: { type: string, maxLength: 60 }, example: [Planned, Pre-production, Shoot, Editing, Client Review, Completed] }
+                stages:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  description: "Each stage is a plain name (no approvers, the old shape) or { name, approvers }. `client` is allowed on an event template only; no repeats, at most 8 tokens (`400 STAGE_TEMPLATE_APPROVERS_INVALID`)."
+                  items: { $ref: "#/components/schemas/StageTemplateStageInput" }
+                  example: [Planned, Pre-production, Shoot, Editing, { name: Client Review, approvers: [client] }, Completed]
                 kind: { type: string, enum: [event, task], default: event }
                 roles: { type: array, items: { $ref: "#/components/schemas/Role" }, description: "Task templates only: the assignee roles it is offered for. Empty = any role." }
       responses:
@@ -826,7 +834,7 @@ paths:
         events or tasks from it). `roles` replaces a task template's role list
         (`400 STAGE_TEMPLATE_ROLES_INVALID` on an event template). The `kind`
         never changes (sending one is a 400). `version` required. **Events and
-        tasks already created keep their own copy of the stages** (FR-EVT-03).
+        tasks already created keep their own copy of the stages, approvers included** (FR-EVT-03).
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -837,7 +845,7 @@ paths:
               required: [version]
               properties:
                 name: { type: string, minLength: 1, maxLength: 80 }
-                stages: { type: array, minItems: 1, maxItems: 20, items: { type: string, maxLength: 60 } }
+                stages: { type: array, minItems: 1, maxItems: 20, items: { $ref: "#/components/schemas/StageTemplateStageInput" } }
                 active: { type: boolean }
                 roles: { type: array, items: { $ref: "#/components/schemas/Role" } }
                 version: { type: integer, minimum: 1 }
@@ -983,6 +991,10 @@ paths:
         another event's stage (`400 EVENT_STAGE_INVALID`), a cancelled or
         postponed event (`409 EVENT_NOT_ACTIVE`), a stale version
         (`409 EVENT_MODIFIED`), an archived client (`409 CLIENT_ARCHIVED`).
+        **Approval gate (round 3):** a forward move past a stage that has approvers
+        and no `approved` approval is `409 STAGE_APPROVAL_REQUIRED` (the message
+        names the stage); moving onto that stage is free. A back move to a stage
+        supersedes the approved requests from there on and cancels the waiting ones.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/EventId"
@@ -1902,6 +1914,10 @@ paths:
         stage (stage 1 todo, 2..N in_progress, completed done and `completedAt`) and
         appends a `stage` or `completed` timeline entry, all in one transaction. A done task
         is `409 STAFF_TASK_DONE`; a stale version `409 STAFF_TASK_MODIFIED`. Notifies the other side.
+        **Approval gate (round 3):** a forward move, or completing, past a stage that has
+        approvers and no `approved` approval is `409 STAGE_APPROVAL_REQUIRED`; moving onto
+        that stage is free. A back move supersedes the approved requests from the target
+        stage on and cancels the waiting ones.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/StaffTaskId"
@@ -2463,6 +2479,169 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { description: PORTAL_LINK_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/portal/{token}/approvals/{approvalId}:
+    parameters:
+      - { name: token, in: path, required: true, description: The link token (the credential). Redacted from logs., schema: { type: string } }
+      - { name: approvalId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Portal, Approvals]
+      summary: "Public: the client approves, or asks for changes"
+      description: |
+        No login. Body limit 4 KB (413); behind the same rate limiters as portal comments (429). The
+        approval must be a waiting one on an event of THIS link's client whose stage lists the client as
+        an approver; **every** other case (another client's, a staff-only stage, a task's, already
+        decided, a made-up or malformed id) is the same `404 PORTAL_APPROVAL_NOT_FOUND`. Changes need
+        a comment (`400 STAGE_APPROVAL_COMMENT_REQUIRED`); a stale `version` is `409
+        STAGE_APPROVAL_MODIFIED`. The comment is plain text. Records `decidedVia: portal` with no
+        staff decider, audits with no actor ({ via: portal, linkId }) and notifies the requester and the
+        event's team (`approval_decided`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, decision]
+              properties:
+                version: { type: integer, minimum: 1 }
+                decision: { type: string, enum: [approve, changes] }
+                comment: { type: string, maxLength: 2000 }
+      responses:
+        "200": { description: Recorded., content: { application/json: { schema: { type: object, required: [ok], properties: { ok: { type: boolean, enum: [true] } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: PORTAL_LINK_INVALID or PORTAL_APPROVAL_NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: STAGE_APPROVAL_MODIFIED (stale version)., content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "413": { description: PAYLOAD_TOO_LARGE (over 4 KB)., content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  # ------------------------------------------------------------ Approvals --
+  /api/v1/approvals:
+    get:
+      tags: [Approvals]
+      summary: The approvals inbox (and the lists behind it)
+      description: |
+        Every staff role. `view=to_decide` (default) = waiting requests this caller may
+        decide (they see the item, match an approver token and did not ask for it
+        themselves; the Admin may decide their own), oldest first; worked out in SQL, so
+        paging and `total` are exact. `requested` = what the caller asked for;
+        `all_visible` = every approval on an item the caller can see (both newest first).
+        `status` filters those two (ignored by `to_decide`). Page size is clamped to 1..100.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: view, in: query, schema: { type: string, enum: [to_decide, requested, all_visible], default: to_decide } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/ApprovalStatus" } }
+        - { name: limit, in: query, description: Default 20; clamped to 1..100., schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200": { description: One page., content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Approvals]
+      summary: Ask for approval of the item's CURRENT stage
+      description: |
+        Whoever may MOVE the item: for an event the Admin or a manager on the client's team;
+        for a task its assignee, its creator or the Admin. The item stays where it is. Checked
+        in order: the item must be visible (`404 EVENT_NOT_FOUND` / `STAFF_TASK_NOT_FOUND`); the
+        caller may move it (`403 FORBIDDEN` / `STAFF_TASK_FORBIDDEN`); a cancelled or postponed
+        event (`409 EVENT_NOT_ACTIVE`), a done task (`409 STAFF_TASK_DONE`), an archived client
+        (`409 CLIENT_ARCHIVED`); the stage needs approval (`409 STAGE_APPROVAL_NOT_NEEDED`), is not
+        approved already (`409 STAGE_APPROVAL_ALREADY_APPROVED`) and has no request waiting
+        (`409 STAGE_APPROVAL_PENDING`, also when two requests race: one wins). Notifies (bell + push)
+        every staff person who could decide it, never the requester (`approval_requested`, at most 50).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [subject, subjectId]
+              properties:
+                subject: { type: string, enum: [event, task] }
+                subjectId: { type: string, format: uuid }
+                note: { type: string, maxLength: 2000, description: Blank = none. }
+                link: { type: string, maxLength: 2000, description: "An http(s) link to the work; blank = none (javascript: and relative links are refused)." }
+      responses:
+        "201": { description: The waiting request., content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ApprovalItemNotFound" }
+        "409": { $ref: "#/components/responses/ApprovalConflict" }
+  /api/v1/approvals/count:
+    get:
+      tags: [Approvals]
+      summary: How many requests wait for the caller to decide (the badge)
+      description: One query. The same number as `total` of `GET /approvals?view=to_decide`.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: The count., content: { application/json: { schema: { type: object, required: [toDecide], properties: { toDecide: { type: integer } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/approvals/{id}/decision:
+    post:
+      tags: [Approvals]
+      summary: Approve, or request changes (any ONE eligible approver)
+      description: |
+        Checked in this order: the approval exists and the caller sees its item (`404
+        STAGE_APPROVAL_NOT_FOUND`, the same answer for both); the caller matches an approver
+        token (`403 STAGE_APPROVAL_NOT_APPROVER`: `admin` = an Admin, a role name = that role,
+        `team_managers` = a client manager on the item's client team, `client` = never staff) and did not
+        ask for it (`403 STAGE_APPROVAL_SELF`; the Admin may decide their own request); it is still
+        waiting (`409 STAGE_APPROVAL_NOT_PENDING`); changes need a comment (`400
+        STAGE_APPROVAL_COMMENT_REQUIRED`); a stale `version` (`409 STAGE_APPROVAL_MODIFIED`). An
+        approval unlocks the stage; changes leave it blocked (move the work back, fix it, ask again).
+        Notifies the requester, the task's assignee and creator, or the event's team (`approval_decided`);
+        the actor is skipped.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, decision]
+              properties:
+                version: { type: integer, minimum: 1 }
+                decision: { type: string, enum: [approve, changes] }
+                comment: { type: string, maxLength: 2000, description: "Plain text. Required for `changes`." }
+      responses:
+        "200": { description: The decided approval., content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ApprovalNotFound" }
+        "409": { $ref: "#/components/responses/ApprovalConflict" }
+  /api/v1/approvals/{id}/cancel:
+    post:
+      tags: [Approvals]
+      summary: Withdraw a waiting request (the requester, or whoever manages the item)
+      description: |
+        The requester, or whoever manages the item: the Admin, a manager on the event's team, the
+        task's creator. Someone who only sees the item is `403 FORBIDDEN`; someone who can't see it
+        `404 STAGE_APPROVAL_NOT_FOUND`. A request already dealt with is `409 STAGE_APPROVAL_NOT_PENDING`;
+        a stale `version` `409 STAGE_APPROVAL_MODIFIED`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [version], properties: { version: { type: integer, minimum: 1 } } }
+      responses:
+        "200": { description: The cancelled approval., content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalEnvelope" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ApprovalNotFound" }
+        "409": { $ref: "#/components/responses/ApprovalConflict" }
   # ----------------------------------------------------- Client comments --
   /api/v1/client-comments:
     get:
@@ -2581,6 +2760,12 @@ components:
       required: true
       description: A non-UUID is `404 NOTIFICATION_NOT_FOUND`.
       schema: { type: string, format: uuid }
+    ApprovalId:
+      name: id
+      in: path
+      required: true
+      description: A non-UUID is `404 STAGE_APPROVAL_NOT_FOUND`.
+      schema: { type: string, format: uuid }
     PushDeviceId:
       name: deviceId
       in: path
@@ -2654,7 +2839,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     EventConflict:
-      description: "`EVENT_MODIFIED` (stale version), `EVENT_STAGE_UNCHANGED`, `EVENT_NOT_ACTIVE` or `CLIENT_ARCHIVED` (the client is archived: its events are read-only)."
+      description: "`EVENT_MODIFIED` (stale version), `EVENT_STAGE_UNCHANGED`, `EVENT_NOT_ACTIVE`, `STAGE_APPROVAL_REQUIRED` (a forward move past an unapproved approval stage) or `CLIENT_ARCHIVED` (the client is archived: its events are read-only)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -2694,7 +2879,22 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     StaffTaskConflict:
-      description: "`STAFF_TASK_MODIFIED` (stale version), `STAFF_TASK_STAGE_UNCHANGED`, `STAFF_TASK_NOT_AT_LAST_STAGE`, `STAFF_TASK_ALREADY_BLOCKED`, `STAFF_TASK_NOT_BLOCKED`, `STAFF_TASK_DONE` (reopen first), `STAFF_TASK_NOT_DONE`, `STAFF_TASK_LINKS_LIMIT`, `STAFF_TASK_LINK_ALREADY_SHARED` or `STAFF_TASK_NO_EVENT`."
+      description: "`STAFF_TASK_MODIFIED` (stale version), `STAFF_TASK_STAGE_UNCHANGED`, `STAFF_TASK_NOT_AT_LAST_STAGE`, `STAFF_TASK_ALREADY_BLOCKED`, `STAFF_TASK_NOT_BLOCKED`, `STAFF_TASK_DONE` (reopen first), `STAFF_TASK_NOT_DONE`, `STAFF_TASK_LINKS_LIMIT`, `STAFF_TASK_LINK_ALREADY_SHARED`, `STAFF_TASK_NO_EVENT` or `STAGE_APPROVAL_REQUIRED` (a forward move or completion past an unapproved approval stage)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ApprovalNotFound:
+      description: "`STAGE_APPROVAL_NOT_FOUND` -- no such approval, or one on an item the caller can't see (the same answer)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ApprovalItemNotFound:
+      description: "`EVENT_NOT_FOUND` or `STAFF_TASK_NOT_FOUND` -- no such item, or one the caller can't see (the same answer)."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ApprovalConflict:
+      description: "`STAGE_APPROVAL_NOT_NEEDED`, `STAGE_APPROVAL_ALREADY_APPROVED`, `STAGE_APPROVAL_PENDING`, `STAGE_APPROVAL_NOT_PENDING`, `STAGE_APPROVAL_MODIFIED` (stale version), `EVENT_NOT_ACTIVE`, `STAFF_TASK_DONE` or `CLIENT_ARCHIVED`."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -2912,10 +3112,17 @@ components:
         doneThisWeek: { type: integer, description: Closed in the last 7 days. }
     Dashboard:
       type: object
-      required: [role, view, window, tasks, clients, firm, todos]
+      required: [role, view, window, tasks, clients, firm, todos, approvals]
       properties:
         role: { $ref: "#/components/schemas/Role" }
         view: { type: string, enum: [overview, mine] }
+        approvals:
+          type: object
+          description: "Waiting for the caller's approval (every role, every view; two queries): how many, and the oldest 3. Never someone else's."
+          required: [toDecide, oldest]
+          properties:
+            toDecide: { type: integer }
+            oldest: { type: array, maxItems: 3, items: { $ref: "#/components/schemas/Approval" } }
         todos:
           type: object
           description: The caller's own to-dos (every role, every view; never anyone else's). Two queries.
@@ -3018,13 +3225,45 @@ components:
         currentStagePosition: { type: integer }
         stageCount: { type: integer }
         updates: { type: array, description: Only on the single-event read. Client-visible stage notes., items: { type: object, properties: { stageName: { type: string }, note: { type: string, nullable: true }, createdAt: { type: string, format: date-time } } } }
+        pendingApproval:
+          type: object
+          nullable: true
+          description: "Only on the single-event read: the request waiting for THE CLIENT (only on a stage whose approvers include the client), else null. No staff names. Send id and version to POST /portal/{token}/approvals/{approvalId}."
+          required: [id, version, stageName, requestNote, requestLink, requestedAt]
+          properties:
+            id: { type: string, format: uuid }
+            version: { type: integer }
+            stageName: { type: string }
+            requestNote: { type: string, nullable: true }
+            requestLink: { type: string, nullable: true }
+            requestedAt: { type: string, format: date-time }
+        approvalHistory:
+          type: array
+          maxItems: 20
+          description: "Only on the single-event read: decided rounds on client-approved stages, newest first. No staff names (decidedVia says only whether the client or staff on their behalf decided)."
+          items:
+            type: object
+            required: [stageName, status, decidedVia, decidedAt, decisionComment]
+            properties:
+              stageName: { type: string }
+              status: { type: string, enum: [approved, changes_requested] }
+              decidedVia: { type: string, enum: [staff, portal], nullable: true }
+              decidedAt: { type: string, format: date-time }
+              decisionComment: { type: string, nullable: true, description: Plain text; render as text. }
         assets: { type: array, maxItems: 100, description: "Only on the single-event read: the links staff chose to share ('Shared with you'), newest first. Client-safe: no comment, tags, preview or creator.", items: { type: object, required: [id, title, url, type, stageName, createdAt], properties: { id: { type: string, format: uuid }, title: { type: string }, url: { type: string }, type: { $ref: "#/components/schemas/AssetType" }, stageName: { type: string, nullable: true }, createdAt: { type: string, format: date-time } } } }
     PortalDashboard:
       type: object
       properties:
         client: { type: object, properties: { businessName: { type: string }, logoUrl: { type: string, nullable: true }, timeZone: { type: string } } }
         manager: { type: object, properties: { firstName: { type: string } } }
-        current: { allOf: [{ $ref: "#/components/schemas/PortalEvent" }], nullable: true }
+        current:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PortalEvent"
+            - type: object
+              required: [awaitingYourApproval]
+              properties:
+                awaitingYourApproval: { type: boolean, description: A request is waiting for the client on this event (show a "Needs your approval" badge). }
         upcoming: { type: array, items: { $ref: "#/components/schemas/PortalEvent" } }
         recent: { type: array, items: { $ref: "#/components/schemas/PortalEvent" } }
     PortalComment:
@@ -3258,6 +3497,72 @@ components:
       required: [client]
       properties:
         client: { $ref: "#/components/schemas/Client" }
+    ApproverToken:
+      type: string
+      description: "Who may approve a stage: `admin` (an Admin), `team_managers` (a client manager on the item's client team; a task with no client has none), `client` (the client in the portal; event templates only), or a role name other than admin."
+      enum: [admin, team_managers, client, social_media_manager, marketing_manager, project_manager, marketing_agent, developer, editor, content_writer]
+    StageTemplateStageInput:
+      description: A stage name (no approvers) or an object with its approvers.
+      oneOf:
+        - { type: string, maxLength: 60 }
+        - type: object
+          additionalProperties: false
+          required: [name]
+          properties:
+            name: { type: string, maxLength: 60 }
+            approvers: { type: array, maxItems: 8, uniqueItems: true, items: { $ref: "#/components/schemas/ApproverToken" } }
+    ApprovalStatus:
+      type: string
+      description: "pending (waiting), approved / changes_requested (decided), cancelled (withdrawn, or its stage was moved back to while waiting), superseded (approved once, then the item moved back to that stage or earlier; kept for history)."
+      enum: [pending, approved, changes_requested, cancelled, superseded]
+    Approval:
+      type: object
+      required: [id, subject, subjectId, subjectTitle, clientName, stageId, stageName, stagePosition, approvers, status, requestNote, requestLink, requestedById, requestedByName, requestedAt, decidedById, decidedByName, decidedVia, decidedAt, decisionComment, version, canDecide, canCancel]
+      properties:
+        id: { type: string, format: uuid }
+        subject: { type: string, enum: [event, task] }
+        subjectId: { type: string, format: uuid }
+        subjectTitle: { type: string }
+        clientName: { type: string, nullable: true }
+        stageId: { type: string, format: uuid }
+        stageName: { type: string }
+        stagePosition: { type: integer, minimum: 1 }
+        approvers: { type: array, items: { $ref: "#/components/schemas/ApproverToken" }, description: The stage's approvers as snapshotted on the item. }
+        status: { $ref: "#/components/schemas/ApprovalStatus" }
+        requestNote: { type: string, nullable: true }
+        requestLink: { type: string, nullable: true }
+        requestedById: { type: string, format: uuid, nullable: true }
+        requestedByName: { type: string, nullable: true }
+        requestedAt: { type: string, format: date-time }
+        decidedById: { type: string, format: uuid, nullable: true, description: Null while waiting and when the client decided in the portal. }
+        decidedByName: { type: string, nullable: true }
+        decidedVia: { type: string, enum: [staff, portal], nullable: true }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        decisionComment: { type: string, nullable: true, description: Plain text. }
+        version: { type: integer, description: Sent back with a decision or cancel (optimistic lock). }
+        canDecide: { type: boolean, description: "The request is waiting and this caller may decide it (sees the item, matches a token, did not ask for it unless Admin)." }
+        canCancel: { type: boolean, description: The request is waiting and this caller asked for it or manages the item. }
+    ApprovalEnvelope:
+      type: object
+      required: [approval]
+      properties:
+        approval: { $ref: "#/components/schemas/Approval" }
+    ApprovalList:
+      type: object
+      required: [approvals, total, limit, offset]
+      properties:
+        approvals: { type: array, items: { $ref: "#/components/schemas/Approval" } }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+    NextBlockedBy:
+      type: object
+      nullable: true
+      description: "The approval stage that currently stops forward moves (and completing) of the item, or null. The web uses it to explain a disabled button."
+      required: [stageId, stageName]
+      properties:
+        stageId: { type: string, format: uuid }
+        stageName: { type: string }
     StageTemplate:
       type: object
       required: [id, name, active, kind, roles, stages, version, createdAt, updatedAt]
@@ -3271,11 +3576,12 @@ components:
           type: array
           items:
             type: object
-            required: [id, position, name]
+            required: [id, position, name, approvers]
             properties:
               id: { type: string, format: uuid }
               position: { type: integer, minimum: 1 }
               name: { type: string }
+              approvers: { type: array, items: { $ref: "#/components/schemas/ApproverToken" }, description: "Empty = no approval needed at this stage." }
         version: { type: integer }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -3298,6 +3604,7 @@ components:
         id: { type: string, format: uuid }
         position: { type: integer, minimum: 1 }
         name: { type: string }
+        approvers: { type: array, items: { $ref: "#/components/schemas/ApproverToken" }, description: "On the event detail: this stage's approvers, copied from the template at creation (empty = none)." }
     EventSummary:
       type: object
       required: [id, clientId, clientName, ownerId, title, type, startsAt, endsAt, timeZone, location, state, templateName, currentStageId, currentStageName, currentStagePosition, stageCount, version]
@@ -3323,7 +3630,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/EventSummary"
         - type: object
-          required: [clientStatus, description, assignedTeam, templateId, createdAt, updatedAt, stages, history, team]
+          required: [clientStatus, description, assignedTeam, templateId, createdAt, updatedAt, stages, history, team, approvals, nextBlockedBy]
           properties:
             clientStatus: { $ref: "#/components/schemas/ClientStatus" }
             description: { type: string, nullable: true }
@@ -3347,6 +3654,8 @@ components:
                   changedBy: { type: string, format: uuid, nullable: true }
                   changedByName: { type: string, nullable: true }
                   createdAt: { type: string, format: date-time }
+            approvals: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/Approval" }, description: "Every approval round on this event, newest first, one query." }
+            nextBlockedBy: { $ref: "#/components/schemas/NextBlockedBy" }
             team:
               type: array
               items:
@@ -3525,6 +3834,7 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         position: { type: integer, minimum: 1 }
+        approvers: { type: array, items: { $ref: "#/components/schemas/ApproverToken" }, description: "On the task detail's stages list: this stage's approvers (empty = none)." }
     TaskLink:
       type: object
       required: [id, kind, url, label, stageId, stageName, addedById, addedByName, createdAt, sharedAssetId]
@@ -3576,7 +3886,7 @@ components:
         canManage: { type: boolean, description: "The caller may edit, reassign, reopen and delete this task: the Admin, or its creator while they hold staff_tasks:assign." }
     StaffTaskDetail:
       type: object
-      required: [id, title, description, brief, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedBy, assignedById, assignedByName, clientId, clientName, eventId, eventTitle, templateName, stageCount, currentStage, stages, blockedReason, links, completedAt, version, createdAt, updatedAt, canManage, canShare, updates]
+      required: [id, title, description, brief, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedBy, assignedById, assignedByName, clientId, clientName, eventId, eventTitle, templateName, stageCount, currentStage, stages, blockedReason, links, completedAt, version, createdAt, updatedAt, canManage, canShare, updates, approvals, nextBlockedBy]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -3607,6 +3917,8 @@ components:
         updatedAt: { type: string, format: date-time }
         canManage: { type: boolean, description: "The caller may edit, reassign, reopen and delete this task: the Admin, or its creator while they hold staff_tasks:assign." }
         canShare: { type: boolean, description: "The task has an event and the caller may share its delivered links with the client (the Admin, or a client manager on that client's team)." }
+        approvals: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/Approval" }, description: "Every approval round on this task, newest first, one query." }
+        nextBlockedBy: { $ref: "#/components/schemas/NextBlockedBy" }
         updates:
           type: array
           description: The timeline, newest first, at most 100.
@@ -3655,8 +3967,8 @@ components:
         todo: { $ref: "#/components/schemas/Todo" }
     NotificationType:
       type: string
-      description: "The trigger (FR-NTF-03). todo_reminder is the owner's own to-do reminder (link /app/todos)."
-      enum: [client_reassigned, task_assigned, task_status_changed, task_commented, client_comment, event_reminder, task_due_reminder, todo_reminder]
+      description: "The trigger (FR-NTF-03). todo_reminder is the owner's own to-do reminder (link /app/todos). approval_requested goes to everyone who could decide a new request (never the requester); approval_decided to the requester, the task's assignee and creator or the event's team (link: the item's page)."
+      enum: [client_reassigned, task_assigned, task_status_changed, task_commented, client_comment, event_reminder, task_due_reminder, todo_reminder, approval_requested, approval_decided]
     Notification:
       type: object
       required: [id, type, title, body, url, data, actorName, readAt, createdAt]

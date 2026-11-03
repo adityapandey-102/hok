@@ -1,13 +1,14 @@
 # HOK: status snapshot (handoff)
 
-> Updated 2026-10-22. **No agents running.** Resume from here.
+> Updated 2026-11-04. **No agents running.** Resume from here.
 
 ## Team feedback plan (2026-11-02, current work)
 - Plan: [PLAN-team-feedback-2026-11.md](PLAN-team-feedback-2026-11.md), 4 rounds. Specs in [specs/](specs/).
 - **Round 1 committed** (`5cb99cd`, 2026-11-03, not pushed): ladder, calendar for everyone, day pop-up, My to-dos.
-- **Round 2 done and reviewed, uncommitted** (2026-11-04): task templates + stages (status derived, blocked flag), task Links (brief / delivered), "Show to client" assets in the portal, share a delivered link. Migration `20261103000001_task_stages_links_client_assets.sql`. Gates: API unit 808, integration 282, RBAC 816/816; web unit 205, build + bundle ok (client page 298/300 KB), e2e green. Gates: API lint/tsc clean, unit 765, integration 259, RBAC 719/719; web lint/tsc clean, unit 194, build + bundle ok, e2e todos/calendar/staff-tasks/dashboard green (helper ran all 74).
-- Production steps after the user's yes to push: `npx supabase@2.119.0 db push` (adds migrations `20261102000001_todos.sql` and `20261103000001_task_stages_links_client_assets.sql`), then the deploys run from GitHub.
-- Next: round 3 (stage approvals, incl. client approval in the portal). Unused dependency `@dnd-kit/*` in hok-web (board drag removed in round 2) can be removed.
+- **Round 2 committed** (`2d73985`, 2026-11-04, not pushed): task templates + stages (status derived, blocked flag), task Links (brief / delivered), "Show to client" assets in the portal, share a delivered link.
+- **Round 3 done and reviewed, uncommitted** (2026-11-04): stage approvals in event and task templates (approvers per stage: Admin, roles, team managers, client on events), move gate, superseding on back moves, Approvals page + dashboard card, client approval in the portal. Migration `20261104000001_stage_approvals.sql`. Gates: API unit 903, integration 323, RBAC 944/944; web unit 224, build + bundle ok (client page 298/300 KB), e2e approvals 3/3 + affected specs green (todos test made robust against leftover test data).
+- Production steps after the user's yes to push: `npx supabase@2.119.0 db push` (adds `20261102000001_todos.sql`, `20261103000001_task_stages_links_client_assets.sql`, `20261104000001_stage_approvals.sql`), then the deploys run from GitHub.
+- Next: round 4 (parent/child events and tasks, blocking stages). Unused dependency `@dnd-kit/*` in hok-web (board drag removed in round 2) can be removed.
 - Remind the user later (memory): logout-on-500 fix, GitHub CI, 31 hardening notes.
 
 ## Where we are

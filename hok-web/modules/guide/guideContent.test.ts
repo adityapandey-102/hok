@@ -36,3 +36,12 @@ describe("guide (round 1: calendar for everyone, My to-dos)", () => {
     expect(searchGuide(GUIDE, "urgent reminder").map((a) => a.id)).toContain("my-todos");
   });
 });
+
+describe("guide (round 3: approvals)", () => {
+  it("opens on the Approvals topic and is found by its words, for every staff role", () => {
+    expect(topicFor("/app/approvals")).toBe("Approvals");
+    expect(GUIDE.find((a) => a.id === "approvals")?.requires).toBe("staff_tasks:read");
+    expect(searchGuide(GUIDE, "request changes").map((a) => a.id)).toContain("approvals");
+    expect(searchGuide(GUIDE, "approvers").map((a) => a.id)).toContain("templates");
+  });
+});

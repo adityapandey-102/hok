@@ -177,6 +177,8 @@ describe("preferences", () => {
       { type: "event_reminder", push: true, inApp: true },
       { type: "task_due_reminder", push: true, inApp: true },
       { type: "todo_reminder", push: true, inApp: true },
+      { type: "approval_requested", push: true, inApp: true },
+      { type: "approval_decided", push: true, inApp: true },
     ]);
   });
 

@@ -1,10 +1,12 @@
-import type { Role } from "../../../domain";
+import { approvalFromRow, type Role } from "../../../domain";
 import {
+  DASHBOARD_APPROVALS_LIMIT,
   DASHBOARD_EVENTS_LIMIT,
   DASHBOARD_LIST_LIMIT,
   DASHBOARD_STAGE_GROUPS,
   DASHBOARD_TODOS_LIMIT,
   DASHBOARD_TEAM_LIMIT,
+  type ApprovalsSection,
   type ClientsSection,
   type Dashboard,
   type FirmSection,
@@ -25,8 +27,9 @@ export interface DashboardViewer {
 /**
  * Builds a role's dashboard (FR-DSH-01..03). Sections the role doesn't get
  * are never queried. All queries run in parallel; the count is fixed per
- * role and view (task-only staff 5, managers 9, the Admin's overview 7 and
- * "My clients" 9; two of each are the viewer's own to-dos) whatever the data size.
+ * role and view (task-only staff 7, managers 11, the Admin's overview 9 and
+ * "My clients" 11; two of each are the viewer's own to-dos and two the viewer's
+ * waiting approvals) whatever the data size.
  */
 export class DashboardService {
   constructor(
@@ -45,13 +48,23 @@ export class DashboardService {
     };
     const sections = dashboardSections(viewer.role, view);
 
-    const [tasks, clients, firm, todos] = await Promise.all([
+    const [tasks, clients, firm, todos, approvals] = await Promise.all([
       sections.tasks ? this.tasks(viewer.userId, w) : Promise.resolve(null),
       sections.clients ? this.clients(viewer.userId, w, window) : Promise.resolve(null),
       sections.firm ? this.firm(w) : Promise.resolve(null),
       this.todos(viewer.userId, w),
+      this.approvals(viewer),
     ]);
-    return { role: viewer.role, view, window, tasks, clients, firm, todos };
+    return { role: viewer.role, view, window, tasks, clients, firm, todos, approvals };
+  }
+
+  /** Round 3, every role: what is waiting for THIS viewer to decide -- a count and the oldest few. Two queries. */
+  private async approvals(viewer: DashboardViewer): Promise<ApprovalsSection> {
+    const [toDecide, oldest] = await Promise.all([
+      this.repo.approvalsToDecide(viewer.userId, viewer.role),
+      this.repo.oldestApprovals(viewer.userId, viewer.role, DASHBOARD_APPROVALS_LIMIT),
+    ]);
+    return { toDecide, oldest: oldest.map((r) => approvalFromRow(r, viewer)) };
   }
 
   private async tasks(userId: string, w: Window): Promise<TasksSection> {

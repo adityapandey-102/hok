@@ -1,4 +1,4 @@
-import type { Role } from "../../../../domain";
+import type { ApproverToken, Role } from "../../../../domain";
 import type {
   StaffTaskDetail,
   StaffTaskEntity,
@@ -9,7 +9,7 @@ import type {
   StaffTaskStatus,
   StaffTaskSummaryEntity,
   TaskLinkKind,
-  TaskStage,
+  TaskStageFull,
 } from "../../domain/staff-task.entity";
 import type { AssigneeCandidate, StaffTaskScope, TaskClientRef, TaskEventRef, TaskTemplate } from "../../domain/staff-task.rules";
 
@@ -62,6 +62,8 @@ export interface NewStaffTaskRecord extends StaffTaskFields {
   templateId: string;
   templateName: string;
   stageNames: string[];
+  /** Round 3: each stage's approvers (same order as `stageNames`); a missing entry means none. */
+  stageApprovers?: ApproverToken[][];
   /** Brief links added at creation. */
   links: { url: string; label: string | null }[];
 }
@@ -89,15 +91,29 @@ export interface StaffTaskChanges {
   stageId?: string;
   blockedReason?: string | null;
   entry?: StaffTaskUpdateEntry;
+  /**
+   * Round 3, a BACK move or a reopen to the stage at this position: approvals of the stages from there on stop
+   * counting (approved -> superseded, pending -> cancelled), in the same transaction.
+   */
+  supersedeFromPosition?: number;
 }
 
-/** Guard callback: given the row as it stands after the lock (and its stages), throw or return the changes. */
-export type StaffTaskChangeDecision = (current: StaffTaskEntity, stages: TaskStage[]) => StaffTaskChanges;
+/** What a back move dropped: approvals that no longer count, and pending requests cancelled. */
+export interface SupersededCounts {
+  superseded: number;
+  cancelled: number;
+}
+
+/**
+ * Guard callback: given the row as it stands after the lock (and its stages, with their approvers, and the ids of the
+ * stages holding an approved approval -- the move gate's input), throw or return the changes.
+ */
+export type StaffTaskChangeDecision = (current: StaffTaskEntity, stages: TaskStageFull[], approvedStageIds: ReadonlySet<string>) => StaffTaskChanges;
 
 /** What a link write sees under the task's lock. */
 export interface LinkWriteContext {
   task: StaffTaskEntity;
-  stages: TaskStage[];
+  stages: TaskStageFull[];
   /** How many links the task holds right now. */
   linkCount: number;
 }
@@ -143,8 +159,8 @@ export interface StaffTasksRepositoryPort {
   findTemplate(templateId: string): Promise<TaskTemplate | null>;
   /** One transaction: insert the task, its stages, its brief links and its "created" timeline entry. Returns the new id. */
   create(record: NewStaffTaskRecord): Promise<string>;
-  /** One transaction: lock the task (FOR UPDATE), `decide`, apply, bump the version, append `entry`. */
-  update(id: string, decide: StaffTaskChangeDecision): Promise<void>;
+  /** One transaction: lock the task (FOR UPDATE), `decide`, apply, bump the version, append `entry`; a back move / reopen also supersedes approvals. */
+  update(id: string, decide: StaffTaskChangeDecision): Promise<SupersededCounts>;
   /** Appends a comment (no version bump). `guard` sees the task first (scope check). */
   addComment(id: string, guard: (current: StaffTaskEntity) => void, authorId: string, comment: string): Promise<void>;
   /** Lock, `guard`, delete (the timeline cascades). Returns the deleted row as it was. */

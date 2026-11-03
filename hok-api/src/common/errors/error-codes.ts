@@ -211,6 +211,32 @@ export const ERROR_CODES = {
   /** `from` is after `to`, or the range is longer than 31 days (400). */
   ACTIVITY_RANGE_INVALID: "ACTIVITY_RANGE_INVALID",
 
+  // -- Stage approvals (round 3) ---------------------------------------------------
+  /** A forward move or completion would pass a stage that needs approval and has none yet (409). */
+  STAGE_APPROVAL_REQUIRED: "STAGE_APPROVAL_REQUIRED",
+  /** Requesting approval on a stage that has no approvers (409). */
+  STAGE_APPROVAL_NOT_NEEDED: "STAGE_APPROVAL_NOT_NEEDED",
+  /** The current stage is already approved (409). */
+  STAGE_APPROVAL_ALREADY_APPROVED: "STAGE_APPROVAL_ALREADY_APPROVED",
+  /** A request for this stage is already waiting (409). */
+  STAGE_APPROVAL_PENDING: "STAGE_APPROVAL_PENDING",
+  /** Deciding or cancelling a request that is not pending any more (409). */
+  STAGE_APPROVAL_NOT_PENDING: "STAGE_APPROVAL_NOT_PENDING",
+  /** Stale `version` on a decision or cancel (409). */
+  STAGE_APPROVAL_MODIFIED: "STAGE_APPROVAL_MODIFIED",
+  /** The caller is not one of the stage's approvers (403). */
+  STAGE_APPROVAL_NOT_APPROVER: "STAGE_APPROVAL_NOT_APPROVER",
+  /** You can't decide your own request (the Admin can) (403). */
+  STAGE_APPROVAL_SELF: "STAGE_APPROVAL_SELF",
+  /** Requesting changes needs a comment (400). */
+  STAGE_APPROVAL_COMMENT_REQUIRED: "STAGE_APPROVAL_COMMENT_REQUIRED",
+  /** No such approval, or one on an item the caller can't see -- the same 404 either way. */
+  STAGE_APPROVAL_NOT_FOUND: "STAGE_APPROVAL_NOT_FOUND",
+  /** Approvers on a stage template are unknown tokens, repeated, or include 'client' on a task template (400). */
+  STAGE_TEMPLATE_APPROVERS_INVALID: "STAGE_TEMPLATE_APPROVERS_INVALID",
+  /** Public: no such approval for this portal's client, it doesn't ask the client, or it is already decided -- always the same 404. */
+  PORTAL_APPROVAL_NOT_FOUND: "PORTAL_APPROVAL_NOT_FOUND",
+
   // -- Notifications (M9) -----------------------------------------------------------
   /** No such notification, or someone else's (the same 404). */
   NOTIFICATION_NOT_FOUND: "NOTIFICATION_NOT_FOUND",

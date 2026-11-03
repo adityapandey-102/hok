@@ -8,6 +8,7 @@ import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { stageTemplateStages, stageTemplates } from "./stage-templates.schema";
 import type { Role } from "../../../domain";
 import type { StageTemplateEntity, TemplateKind, TemplateStage } from "../domain/stage-template.entity";
+import type { NormalizedStage } from "../domain/stage-template.rules";
 import type {
   StageTemplateDecision,
   StageTemplateListFilters,
@@ -34,7 +35,7 @@ async function stagesFor(ex: Executor, templateIds: string[]): Promise<Map<strin
     .from(stageTemplateStages)
     .where(inArray(stageTemplateStages.templateId, templateIds))
     .orderBy(asc(stageTemplateStages.templateId), asc(stageTemplateStages.position));
-  for (const r of rows) byTemplate.get(r.templateId)?.push({ id: r.id, position: r.position, name: r.name });
+  for (const r of rows) byTemplate.get(r.templateId)?.push({ id: r.id, position: r.position, name: r.name, approvers: r.approvers });
   return byTemplate;
 }
 
@@ -59,8 +60,8 @@ async function selectTemplate(ex: Executor, id: string, forUpdate = false): Prom
   return toEntity(row, (await stagesFor(ex, [id])).get(id) ?? []);
 }
 
-async function insertStages(ex: Executor, templateId: string, names: string[]): Promise<void> {
-  await ex.insert(stageTemplateStages).values(names.map((name, i) => ({ templateId, position: i + 1, name })));
+async function insertStages(ex: Executor, templateId: string, stages: NormalizedStage[]): Promise<void> {
+  await ex.insert(stageTemplateStages).values(stages.map((s, i) => ({ templateId, position: i + 1, name: s.name, approvers: s.approvers })));
 }
 
 /** Templates are few (tens), so each list is one page query + one count + one batched stages query. */
@@ -102,7 +103,7 @@ export class DrizzleStageTemplatesRepository implements StageTemplatesRepository
     return guarded("load the stage template", () => selectTemplate(db, id));
   }
 
-  create(record: { name: string; stages: string[]; kind: TemplateKind; roles: Role[]; createdBy: string }) {
+  create(record: { name: string; stages: NormalizedStage[]; kind: TemplateKind; roles: Role[]; createdBy: string }) {
     return guarded("create the stage template", async () => {
       const id = await db.transaction(async (tx) => {
         const [row] = await tx.insert(stageTemplates).values({ name: record.name, kind: record.kind, roles: record.roles, createdBy: record.createdBy }).returning({ id: stageTemplates.id });

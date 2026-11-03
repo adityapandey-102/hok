@@ -138,3 +138,42 @@ export function todoReminderPayload(input: { todoId: string; title: string; dueA
     data: { todoId: input.todoId },
   };
 }
+
+/** The staff page of an item an approval is on. */
+const approvalItemUrl = (subject: "event" | "task", itemId: string) => (subject === "event" ? `/app/events/${itemId}` : `/app/tasks/${itemId}`);
+
+/** approval_requested -> everyone who could decide it (round 3). One payload for every recipient; the bell shows who asked. */
+export function approvalRequestedPayload(input: {
+  subject: "event" | "task";
+  itemId: string;
+  itemTitle: string;
+  stageName: string;
+  approvalId: string;
+}): NotificationPayload {
+  return {
+    title: `Approval needed: ${input.stageName}`,
+    body: `${input.itemTitle} is waiting for your approval.`,
+    url: approvalItemUrl(input.subject, input.itemId),
+    data: { approvalId: input.approvalId, [input.subject === "event" ? "eventId" : "taskId"]: input.itemId },
+  };
+}
+
+/** approval_decided -> the requester and the item's people: approved, or changes requested (round 3). `via: "portal"` = the client decided. */
+export function approvalDecidedPayload(input: {
+  subject: "event" | "task";
+  itemId: string;
+  itemTitle: string;
+  stageName: string;
+  approvalId: string;
+  decision: "approve" | "changes";
+  via: "staff" | "portal";
+}): NotificationPayload {
+  const approved = input.decision === "approve";
+  const who = input.via === "portal" ? "The client" : "An approver";
+  return {
+    title: `${approved ? "Approved" : "Changes requested"}: ${input.stageName}`,
+    body: `${who} ${approved ? "approved" : "asked for changes on"} ${input.itemTitle}.`,
+    url: approvalItemUrl(input.subject, input.itemId),
+    data: { approvalId: input.approvalId, decision: input.decision, [input.subject === "event" ? "eventId" : "taskId"]: input.itemId },
+  };
+}

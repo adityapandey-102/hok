@@ -1,4 +1,5 @@
 import type { Role } from "../constants/roles";
+import type { Approval, ApproverToken, NextBlockedBy } from "./approval";
 
 /** Staff task types. Mirror hok-api's staff-tasks module responses (REQUIREMENTS §5.9, round 2 contract §7). */
 
@@ -35,6 +36,8 @@ export interface TaskStage {
   id: string;
   name: string;
   position: number;
+  /** Who may approve this stage (round 3); empty = no approval needed. */
+  approvers: ApproverToken[];
 }
 
 export type TaskLinkKind = "brief" | "delivered";
@@ -107,6 +110,10 @@ export interface StaffTask extends StaffTaskSummary {
   brief: string | null;
   eventTitle: string | null;
   stages: TaskStage[];
+  /** Every approval round, newest first (at most 100). */
+  approvals: Approval[];
+  /** The approval stage that stops forward moves, or null. */
+  nextBlockedBy: NextBlockedBy | null;
   links: TaskLink[];
   /** The caller may share a delivered link with the client: the task has an event and they manage that client (Admin or on its team). Decided by the API. */
   canShare: boolean;

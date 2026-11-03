@@ -25,4 +25,6 @@ export interface PortalReadRepositoryPort {
   inRange(clientId: string, from: string, to: string, limit: number): Promise<PortalEvent[]>;
   /** One of THIS client's events with its client-visible updates, or null. */
   event(clientId: string, eventId: string): Promise<PortalEventDetail | null>;
+  /** Is a request waiting for THIS client on this event (round 3)? One query. */
+  awaitingApproval(clientId: string, eventId: string): Promise<boolean>;
 }

@@ -52,3 +52,9 @@ export function formatLongDate(iso: string, zone: string): string {
 export function formatShortDate(iso: string, zone: string): string {
   return new Intl.DateTimeFormat("en-GB", { timeZone: zone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 }
+
+/** One line for the approval history: "Approved by you", "Changes requested by you", or by the team when staff decided for the client. */
+export function approvalHistoryLabel(e: { status: "approved" | "changes_requested"; decidedVia: "staff" | "portal" | null }): string {
+  const what = e.status === "approved" ? "Approved" : "Changes requested";
+  return `${what} by ${e.decidedVia === "portal" ? "you" : "your account team"}`;
+}

@@ -1,4 +1,5 @@
 import type { Role } from "../constants/roles";
+import type { Approval, ApproverToken, NextBlockedBy } from "./approval";
 
 /** Stage templates and client events (M4). Mirror hok-api's stage-templates and events modules. */
 export const EVENT_TYPES = ["shoot", "campaign", "meeting", "content_posting", "other"] as const;
@@ -23,6 +24,8 @@ export interface StageRef {
   id: string;
   position: number;
   name: string;
+  /** Who may approve this stage (round 3); empty = no approval needed. */
+  approvers: ApproverToken[];
 }
 
 /** What a stage template is for (round 2): the stages of a client event, or of a staff task. */
@@ -81,6 +84,10 @@ export interface EventDetail extends EventSummary {
   createdAt: string;
   updatedAt: string;
   stages: StageRef[];
+  /** Every approval round, newest first (at most 100). */
+  approvals: Approval[];
+  /** The approval stage that stops forward moves, or null. */
+  nextBlockedBy: NextBlockedBy | null;
   history: EventHistoryEntry[];
   team: { id: string; fullName: string }[];
 }

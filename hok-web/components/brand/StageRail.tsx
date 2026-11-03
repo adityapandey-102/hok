@@ -11,7 +11,8 @@ export function StageRail({
   currentIndex,
   label = "Stages",
 }: {
-  stages: { key: string; name: string }[];
+  /** `approval`: the stage needs approval (a lock) or has it (a green seal). */
+  stages: { key: string; name: string; approval?: "needed" | "approved" }[];
   /** Index into `stages` of the current one (-1 if none). */
   currentIndex: number;
   label?: string;
@@ -58,6 +59,16 @@ export function StageRail({
               }`}
             >
               {s.name}
+              {s.approval && (
+                <>
+                  <Icon
+                    name={s.approval === "approved" ? "shield" : "lock"}
+                    size={12}
+                    className={`ml-1 inline align-[-1px] ${s.approval === "approved" ? "text-success" : "text-text-muted"}`}
+                  />
+                  <span className="sr-only"> ({s.approval === "approved" ? "approved" : "needs approval"})</span>
+                </>
+              )}
               {current && <span className="sr-only"> (current stage)</span>}
               {done && <span className="sr-only"> (done)</span>}
             </span>

@@ -1,6 +1,6 @@
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
-import { canAssignTo, hasCapability, roleLevel, type Role } from "../../../domain";
+import { canAssignTo, hasCapability, roleLevel, type ApproverToken, type Role } from "../../../domain";
 import { TASK_LINKS_MAX, type StaffTaskStatus, type TaskLinkKind, type TaskStage } from "./staff-task.entity";
 
 /**
@@ -39,6 +39,8 @@ export interface TaskTemplate {
   /** The assignee roles it is offered for; empty = any role. */
   roles: Role[];
   stageNames: string[];
+  /** Round 3: each stage's approvers (same order as `stageNames`); copied onto the task with them. */
+  stageApprovers?: ApproverToken[][];
 }
 
 /** A would-be assignee as stored. */

@@ -1,4 +1,4 @@
-import type { Role } from "../../../lib/domain";
+import type { Approval, Role } from "../../../lib/domain";
 import type { CommentStatus } from "../../client-comments/lib/commentStatus";
 import type { EventState, EventType, StaffTaskPriority, StaffTaskStatus, TodosSection } from "../../../lib/domain";
 import { apiFetch } from "../../../lib/api/client";
@@ -127,6 +127,8 @@ export interface Dashboard {
   firm: FirmSection | null;
   /** The caller's own to-dos (every role, the Admin too). */
   todos: TodosSection;
+  /** Pending approvals the caller can decide, with the 3 oldest (round 3). Absent from an older API. */
+  approvals?: { toDecide: number; oldest: Approval[] };
 }
 
 export interface TeamWorkloadPage {

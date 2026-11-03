@@ -12,7 +12,10 @@ import { stageTemplateStages, stageTemplates } from "../../stage-templates/infra
 import { profiles } from "../../users/infrastructure/profile.schema";
 import { eventStageHistory, eventStages, events } from "./events.schema";
 import { scanLowerBound } from "../../../domain";
-import { type EventDetail, type EventEntity, type EventStage, type EventSummaryEntity } from "../domain/event.entity";
+import { type EventDetailRecord, type EventEntity, type EventStage, type EventSummaryEntity } from "../domain/event.entity";
+// Round 3 (stage approvals): the move gate and the detail's approval rounds, Infrastructure-to-Infrastructure (ADR 0003).
+import { approvedStageIds, supersedeFrom } from "../../approvals/infrastructure/approval-gate";
+import { selectItemApprovals } from "../../approvals/infrastructure/approval-queries";
 import type { EventClient, EventTemplate } from "../domain/event.rules";
 import type {
   EventChanges,
@@ -20,7 +23,8 @@ import type {
   EventPage,
   EventsRepositoryPort,
   NewEventRecord,
-  StageMoveEntry } from "../application/ports/events-repository.port";
+  StageMoveEntry,
+  SupersededCounts } from "../application/ports/events-repository.port";
 import { guarded } from "../../../common/database/guarded";
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -100,7 +104,7 @@ async function selectEvent(ex: Executor, id: string, forUpdate = false): Promise
 
 async function selectStages(ex: Executor, eventId: string): Promise<EventStage[]> {
   return ex
-    .select({ id: eventStages.id, position: eventStages.position, name: eventStages.name })
+    .select({ id: eventStages.id, position: eventStages.position, name: eventStages.name, approvers: eventStages.approvers })
     .from(eventStages)
     .where(eq(eventStages.eventId, eventId))
     .orderBy(asc(eventStages.position));
@@ -166,10 +170,10 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
   }
 
   findDetail(id: string) {
-    return guarded("load the event", async (): Promise<EventDetail | null> => {
+    return guarded("load the event", async (): Promise<EventDetailRecord | null> => {
       const event = await selectEvent(db, id);
       if (!event) return null;
-      const [stages, history, team] = await Promise.all([
+      const [stages, history, team, approvalRecords] = await Promise.all([
         selectStages(db, id),
         db
           .select({
@@ -190,10 +194,12 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
         event.assignedTeam.length > 0
           ? db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).where(inArray(profiles.id, event.assignedTeam))
           : Promise.resolve([]),
+        selectItemApprovals(db, "event", id),
       ]);
       return {
         ...event,
         stages,
+        approvalRecords,
         history: history.map((h) => ({ ...h, createdAt: h.createdAt.toISOString() })),
         // In the order the event lists them.
         team: event.assignedTeam.flatMap((tid) => team.filter((t) => t.id === tid)),
@@ -221,11 +227,11 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
         .limit(1);
       if (!row) return null;
       const stages = await db
-        .select({ name: stageTemplateStages.name })
+        .select({ name: stageTemplateStages.name, approvers: stageTemplateStages.approvers })
         .from(stageTemplateStages)
         .where(eq(stageTemplateStages.templateId, templateId))
         .orderBy(asc(stageTemplateStages.position));
-      return { ...row, stageNames: stages.map((s) => s.name) };
+      return { ...row, stageNames: stages.map((s) => s.name), stageApprovers: stages.map((s) => s.approvers) };
     });
   }
 
@@ -270,10 +276,10 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
           })
           .returning({ id: events.id });
         const eventId = event!.id;
-        // FR-EVT-03: the template's stages are COPIED; later template edits never reach this event.
+        // FR-EVT-03: the template's stages (and, round 3, their approvers) are COPIED; later template edits never reach this event.
         const stages = await tx
           .insert(eventStages)
-          .values(record.stageNames.map((name, i) => ({ eventId, position: i + 1, name })))
+          .values(record.stageNames.map((name, i) => ({ eventId, position: i + 1, name, approvers: record.stageApprovers?.[i] ?? [] })))
           .returning({ id: eventStages.id, position: eventStages.position });
         const first = stages.find((s) => s.position === 1)!;
         await tx.update(events).set({ currentStageId: first.id }).where(eq(events.id, eventId));
@@ -303,12 +309,16 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
     );
   }
 
-  moveStage(id: string, decide: (current: EventEntity, stages: EventStage[]) => EventStage, entry: StageMoveEntry) {
+  moveStage(id: string, decide: (current: EventEntity, stages: EventStage[], approvedStageIds: ReadonlySet<string>) => EventStage, entry: StageMoveEntry) {
     return guarded("move the event's stage", () =>
-      db.transaction(async (tx) => {
+      db.transaction(async (tx): Promise<SupersededCounts> => {
         const current = await selectEvent(tx, id, true);
         if (!current) throw new NotFoundError("Event not found", ERROR_CODES.EVENT_NOT_FOUND);
-        const target = decide(current, await selectStages(tx, id));
+        const stages = await selectStages(tx, id);
+        // Round 3: only an event with approval stages pays for the extra read (one indexed query, on the locked row).
+        const hasApprovals = stages.some((s) => s.approvers.length > 0);
+        const approved = hasApprovals ? await approvedStageIds(tx, "event", id) : new Set<string>();
+        const target = decide(current, stages, approved);
         await tx
           .update(events)
           .set({ currentStageId: target.id, version: sql`${events.version} + 1` })
@@ -321,6 +331,10 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
           visibleToClient: entry.visibleToClient,
           changedBy: entry.changedBy,
         });
+        // A BACK move: approvals of the stages from the target on stop counting (same transaction).
+        const from = stages.find((s) => s.id === current.currentStageId);
+        if (hasApprovals && from && target.position < from.position) return supersedeFrom(tx, "event", id, target.position);
+        return { superseded: 0, cancelled: 0 };
       }),
     );
   }

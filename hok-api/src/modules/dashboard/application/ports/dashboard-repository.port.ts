@@ -9,7 +9,7 @@ import type {
   TaskStatusCounts,
   WorkloadRow,
 } from "../../domain/dashboard.entity";
-import type { Role } from "../../../../domain";
+import type { ApprovalRow, Role } from "../../../../domain";
 
 export interface TeamFilter {
   /** Name, case-insensitive. */
@@ -54,4 +54,8 @@ export interface DashboardRepositoryPort {
   todoSummary(ownerId: string, now: Date): Promise<{ open: number; overdue: number }>;
   /** The owner's open to-dos, soonest due first (no due date last), capped. */
   nextTodos(ownerId: string, limit: number): Promise<DashboardTodo[]>;
+  /** Round 3: how many pending approvals this person may decide (one query; worked out in SQL). */
+  approvalsToDecide(userId: string, role: string): Promise<number>;
+  /** The oldest pending approvals this person may decide, capped (one query). */
+  oldestApprovals(userId: string, role: string, limit: number): Promise<ApprovalRow[]>;
 }

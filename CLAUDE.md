@@ -30,6 +30,7 @@ Core capabilities of the agency-management side:
 - **Client portal**: shareable generated link (link only, revocable). The client sees their dashboard, current event stage and upcoming events, and can post comments. Plain design.
 - **Client comments**: push notification to the client's team; status Received → In Progress → Solved.
 - **Staff tasks**: assigned **only downwards** (Admin → managers + task-only staff; managers → task-only staff, 2026-11-03), one assignee, who can mark Done. The creator or Admin edits/reassigns/reopens/deletes. Since 2026-11-04 every task comes from an Admin-made **task template** and moves through stages (status derived; blocked flag), and has a Brief plus Links (brief / delivered); a delivered link can be shared with the client as a "Show to client" asset.
+- **Stage approvals** (2026-11-04): any stage of an event or task template can need approval from Admin, specific roles, the client's team managers, or (events only) the client in the portal; one approval from any approver unlocks it; an item can't pass or skip an unapproved stage.
 - **Role dashboards**, **web push (PWA)** and **in-app notifications**.
 
 Docs:

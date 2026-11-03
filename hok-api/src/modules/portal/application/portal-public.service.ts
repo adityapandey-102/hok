@@ -26,10 +26,13 @@ export class PortalPublicService {
       this.repo.upcoming(ctx.clientId, now, PORTAL_UPCOMING_LIMIT),
       this.repo.recent(ctx.clientId, now, PORTAL_RECENT_LIMIT),
     ]);
+    const current = pickCurrent(upcoming);
+    // Round 3: the badge "Needs your approval" on the current event (one extra query, only when there is one).
+    const awaitingYourApproval = current ? await this.repo.awaitingApproval(ctx.clientId, current.id) : false;
     return {
       client: { businessName: ctx.businessName, logoUrl: ctx.logoUrl, timeZone: ctx.timeZone },
       manager: { firstName: ctx.ownerFirstName },
-      current: pickCurrent(upcoming),
+      current: current ? { ...current, awaitingYourApproval } : null,
       upcoming,
       recent,
     };

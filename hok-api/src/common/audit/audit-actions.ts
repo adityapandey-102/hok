@@ -89,6 +89,14 @@ export const AUDIT_ACTIONS = {
   CLIENT_TODO_UPDATED: "client_todo.updated",
   /** Hard delete; this entry is the trace. */
   CLIENT_TODO_DELETED: "client_todo.deleted",
+
+  // Stage approvals (round 3). Metadata carries ids and counts, never notes or comments.
+  APPROVAL_REQUESTED: "approval.requested",
+  /** metadata { decision: "approve" | "changes", via?: "portal", linkId? }. */
+  APPROVAL_DECIDED: "approval.decided",
+  APPROVAL_CANCELLED: "approval.cancelled",
+  /** One entry per back move that dropped approvals; metadata { superseded, cancelled } counts. */
+  APPROVAL_SUPERSEDED: "approval.superseded",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -106,6 +114,7 @@ export const AUDIT_ENTITIES = {
   ASSET: "asset",
   STAFF_TASK: "staff_task",
   CLIENT_TODO: "client_todo",
+  STAGE_APPROVAL: "stage_approval",
 } as const;
 
 export type AuditEntity = (typeof AUDIT_ENTITIES)[keyof typeof AUDIT_ENTITIES];

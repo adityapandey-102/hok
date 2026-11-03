@@ -3,8 +3,8 @@ import { StaffTasksService, type StaffTasksCaller } from "./staff-tasks.service"
 import { AppError, ConflictError, NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import type { AuditEvent } from "../../../common/audit/audit-logger";
-import type { Role } from "../../../domain";
-import type { StaffTaskDetail, StaffTaskEntity, StaffTaskLink, TaskStage } from "../domain/staff-task.entity";
+import type { ApprovalRecord, Role } from "../../../domain";
+import type { StaffTaskDetail, StaffTaskEntity, StaffTaskLink, TaskStageFull } from "../domain/staff-task.entity";
 import type { AssigneeCandidate, TaskEventRef, TaskTemplate } from "../domain/staff-task.rules";
 import type {
   LinkTargetContext,
@@ -36,11 +36,41 @@ const PIA: StaffTasksCaller = { userId: "pia", role: "marketing_manager" };
 const DRIVE = "https://drive.google.com/drive/folders/raw";
 
 /** The three stages every fake task has. */
-const STAGES: TaskStage[] = [
-  { id: "s1", position: 1, name: "Brief" },
-  { id: "s2", position: 2, name: "Cut" },
-  { id: "s3", position: 3, name: "Review" },
+const STAGES: TaskStageFull[] = [
+  { id: "s1", position: 1, name: "Brief", approvers: [] },
+  { id: "s2", position: 2, name: "Cut", approvers: [] },
+  { id: "s3", position: 3, name: "Review", approvers: [] },
 ];
+
+/** The user's example, scaled down: stage 2 is approved by a Social Media Manager or the Admin, stage 3 by the Admin only. */
+const GATED_STAGES: TaskStageFull[] = [STAGES[0]!, { ...STAGES[1]!, approvers: ["social_media_manager", "admin"] }, { ...STAGES[2]!, approvers: ["admin"] }];
+
+function round(o: Partial<ApprovalRecord> = {}): ApprovalRecord {
+  return {
+    id: "a1",
+    subject: "task",
+    subjectId: "t1",
+    subjectTitle: "Edit the Diwali reel",
+    clientName: null,
+    stageId: "s2",
+    stageName: "Cut",
+    stagePosition: 2,
+    approvers: ["social_media_manager", "admin"],
+    status: "pending",
+    requestNote: null,
+    requestLink: null,
+    requestedById: "meera",
+    requestedByName: "Meera",
+    requestedAt: "2026-10-14T00:00:00.000Z",
+    decidedById: null,
+    decidedByName: null,
+    decidedVia: null,
+    decidedAt: null,
+    decisionComment: null,
+    version: 1,
+    ...o,
+  };
+}
 
 function task(o: Partial<StaffTaskEntity> = {}): StaffTaskEntity {
   return {
@@ -84,6 +114,10 @@ class FakeRepo implements StaffTasksRepositoryPort {
     ["t2", task({ id: "t2", title: "Fix the site", assigneeId: "arjun", assigneeName: "Arjun", assigneeRole: "developer" })],
   ]);
   links = new Map<string, StaffTaskLink[]>();
+  /** Round 3: the stages every fake task has, the stage ids holding an approved approval, and the rounds a detail lists. */
+  stages: TaskStageFull[] = STAGES;
+  approved = new Set<string>();
+  rounds: ApprovalRecord[] = [];
   people = new Map<string, AssigneeCandidate>(
     (
       [
@@ -126,7 +160,7 @@ class FakeRepo implements StaffTasksRepositoryPort {
   }
   findDetail(id: string): Promise<StaffTaskDetail | null> {
     const t = this.tasks.get(id);
-    return Promise.resolve(t ? { ...t, eventTitle: null, stages: STAGES, links: this.links.get(id) ?? [], updates: [] } : null);
+    return Promise.resolve(t ? { ...t, eventTitle: null, stages: this.stages, links: this.links.get(id) ?? [], approvalRecords: this.rounds, updates: [] } : null);
   }
   findAssigneeCandidate(id: string) {
     return Promise.resolve(this.people.get(id) ?? null);
@@ -160,7 +194,7 @@ class FakeRepo implements StaffTasksRepositoryPort {
     if (!current) return Promise.reject(new AppError(404, "nf", "STAFF_TASK_NOT_FOUND"));
     let c;
     try {
-      c = decide(current, STAGES);
+      c = decide(current, this.stages, this.approved);
     } catch (e) {
       return Promise.reject(e instanceof Error ? e : new Error(String(e)));
     }
@@ -171,11 +205,14 @@ class FakeRepo implements StaffTasksRepositoryPort {
       ...c.fields,
       ...(c.assigneeId ? { assigneeId: c.assigneeId, assigneeRole } : {}),
       ...(c.status ? { status: c.status, completedAt: c.status === "done" ? "now" : null } : {}),
-      ...(c.stageId ? { currentStage: STAGES.find((s) => s.id === c.stageId)! } : {}),
+      ...(c.stageId ? { currentStage: this.stages.find((s) => s.id === c.stageId)! } : {}),
       ...(c.blockedReason !== undefined ? { blockedReason: c.blockedReason } : {}),
       version: current.version + 1,
     });
-    return Promise.resolve();
+    // A back move or reopen drops the approvals of the stages from the target on (the repository does this in SQL).
+    const from = c.supersedeFromPosition;
+    const dropped = from === undefined ? 0 : this.stages.filter((s) => s.position >= from && this.approved.delete(s.id)).length;
+    return Promise.resolve({ superseded: dropped, cancelled: 0 });
   }
   addComment(id: string, guard: (t: StaffTaskEntity) => void, authorId: string, comment: string) {
     const current = this.tasks.get(id);
@@ -386,6 +423,12 @@ describe("create (Admin and client managers)", () => {
     expect(notifier.calls).toEqual(["assigned:meera"]);
   });
 
+  it("round 3: copies each template stage's approvers onto the task (a snapshot, in the same order)", async () => {
+    repo.templates.set("tpl-reel", { id: "tpl-reel", name: "Reel edit", active: true, kind: "task", roles: ["editor"], stageNames: ["Brief", "Cut", "Review"], stageApprovers: [[], [], ["social_media_manager", "admin"]] });
+    await service.create(ADMIN, base);
+    expect(repo.created[0]).toMatchObject({ stageNames: ["Brief", "Cut", "Review"], stageApprovers: [[], [], ["social_media_manager", "admin"]] });
+  });
+
   it("the template must be an active task template offered for the assignee's role (400 STAFF_TASK_TEMPLATE_INVALID)", async () => {
     expect(await codeOf(service.create(ADMIN, { ...base, templateId: "tpl-event" }))).toBe("STAFF_TASK_TEMPLATE_INVALID");
     expect(await codeOf(service.create(ADMIN, { ...base, templateId: "tpl-old" }))).toBe("STAFF_TASK_TEMPLATE_INVALID");
@@ -557,6 +600,67 @@ describe("moving through the stages (assignee, creator, Admin)", () => {
     await service.block(MEERA, "t1", { reason: "No footage", version: 1 });
     await service.moveStage(MEERA, "t1", { stageId: "s2", version: 2 });
     expect(repo.tasks.get("t1")).toMatchObject({ status: "in_progress", blockedReason: null });
+  });
+});
+
+describe("stage approvals (round 3)", () => {
+  beforeEach(() => {
+    repo.stages = GATED_STAGES;
+  });
+
+  it("enters an approval stage but can't pass it, forward or by jumping, until it is approved", async () => {
+    expect(await codeOf(service.moveStage(MEERA, "t1", { stageId: "s3", version: 1 }))).toBe("STAGE_APPROVAL_REQUIRED");
+    await service.moveStage(MEERA, "t1", { stageId: "s2", version: 1 });
+    expect(await codeOf(service.moveStage(MEERA, "t1", { stageId: "s3", version: 2 }))).toBe("STAGE_APPROVAL_REQUIRED");
+    repo.approved.add("s2");
+    await service.moveStage(MEERA, "t1", { stageId: "s3", version: 2 });
+    expect(repo.tasks.get("t1")).toMatchObject({ currentStage: { id: "s3" } });
+  });
+
+  it("completing is stopped at an unapproved last stage, and allowed once it is approved", async () => {
+    repo.approved.add("s2");
+    await service.moveStage(MEERA, "t1", { stageId: "s3", version: 1 });
+    expect(await codeOf(service.moveStage(MEERA, "t1", { complete: true, version: 2 }))).toBe("STAGE_APPROVAL_REQUIRED");
+    repo.approved.add("s3");
+    await service.moveStage(MEERA, "t1", { complete: true, version: 2 });
+    expect(repo.tasks.get("t1")).toMatchObject({ status: "done" });
+  });
+
+  it("a back move is always allowed; it drops the approvals from that stage on and audits the count once", async () => {
+    repo.approved = new Set(["s2", "s3"]);
+    repo.tasks.set("t1", task({ currentStage: GATED_STAGES[2]!, status: "in_progress" }));
+    await service.moveStage(MEERA, "t1", { stageId: "s2", version: 1 });
+    expect([...repo.approved]).toEqual([]);
+    expect(audits.filter((a) => a.action === "approval.superseded").map((a) => a.metadata)).toEqual([{ superseded: 2, cancelled: 0 }]);
+    // Moving back where nothing is approved writes no entry.
+    await service.moveStage(MEERA, "t1", { stageId: "s1", version: 2 });
+    expect(audits.filter((a) => a.action === "approval.superseded")).toHaveLength(1);
+  });
+
+  it("a reopen counts as a back move", async () => {
+    repo.approved = new Set(["s2", "s3"]);
+    repo.tasks.set("t1", task({ status: "done", completedAt: "x", currentStage: GATED_STAGES[2]! }));
+    await service.reopen(ADMIN, "t1", { version: 1 });
+    expect([...repo.approved]).toEqual(["s2"]);
+    expect(audits.filter((a) => a.action === "approval.superseded").map((a) => a.metadata)).toEqual([{ superseded: 1, cancelled: 0 }]);
+  });
+
+  it("the detail carries the stages' approvers, each round with the caller's flags, and the stage that blocks", async () => {
+    repo.rounds = [round()];
+    const asAdmin = await service.get(ADMIN, "t1");
+    expect(asAdmin.stages.map((s) => s.approvers)).toEqual([[], ["social_media_manager", "admin"], ["admin"]]);
+    expect(asAdmin.nextBlockedBy).toEqual({ stageId: "s2", stageName: "Cut" });
+    expect(asAdmin.approvals[0]).toMatchObject({ canDecide: true, canCancel: true });
+    // Meera asked for it herself: she can cancel, not decide.
+    const asRequester = await service.get(MEERA, "t1");
+    expect(asRequester.approvals[0]).toMatchObject({ canDecide: false, canCancel: true });
+  });
+
+  it("an approved stage stops blocking; the next unapproved approval stage does", async () => {
+    repo.rounds = [round({ status: "approved" })];
+    expect((await service.get(ADMIN, "t1")).nextBlockedBy).toEqual({ stageId: "s3", stageName: "Review" });
+    repo.rounds = [round({ status: "approved" }), round({ id: "a2", stageId: "s3", stageName: "Review", stagePosition: 3, approvers: ["admin"], status: "approved" })];
+    expect((await service.get(ADMIN, "t1")).nextBlockedBy).toBeNull();
   });
 });
 

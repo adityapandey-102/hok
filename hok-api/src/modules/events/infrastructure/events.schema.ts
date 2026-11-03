@@ -1,4 +1,5 @@
 import { pgTable, uuid, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import type { ApproverToken } from "../../../domain";
 import type { EventState, EventType } from "../domain/event.entity";
 
 /**
@@ -36,6 +37,8 @@ export const eventStages = pgTable("event_stages", {
   eventId: uuid("event_id").notNull(),
   position: integer("position").notNull(),
   name: text("name").notNull(),
+  /** Round 3: copied from the template's stage at creation (20261104000001); empty = no approval needed. */
+  approvers: text("approvers").array().notNull().$type<ApproverToken[]>().default([]),
 });
 
 export const eventStageHistory = pgTable("event_stage_history", {

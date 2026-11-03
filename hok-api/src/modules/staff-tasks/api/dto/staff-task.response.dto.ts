@@ -1,5 +1,5 @@
-import type { Role } from "../../../../domain";
-import type { StaffTaskPriority, StaffTaskStatus, StaffTaskUpdateKind, TaskLinkKind, TaskStage } from "../../domain/staff-task.entity";
+import type { Approval, Role } from "../../../../domain";
+import type { StaffTaskPriority, StaffTaskStatus, StaffTaskUpdateKind, TaskLinkKind, TaskStage, TaskStageFull } from "../../domain/staff-task.entity";
 
 /** One row of GET /staff-tasks (and a board card). */
 export interface StaffTaskSummaryResponseDto {
@@ -83,8 +83,8 @@ export interface StaffTaskDetailResponseDto {
   templateName: string;
   stageCount: number;
   currentStage: TaskStage;
-  /** Every stage of the task, in order. */
-  stages: TaskStage[];
+  /** Every stage of the task, in order, with the tokens that can approve it (empty = no approval needed). */
+  stages: TaskStageFull[];
   blockedReason: string | null;
   /** Oldest first, at most 50. */
   links: StaffTaskLinkResponseDto[];
@@ -96,6 +96,10 @@ export interface StaffTaskDetailResponseDto {
   canManage: boolean;
   /** The caller may share this task's delivered links with the client (the task has an event and they can write assets on its client). */
   canShare: boolean;
+  /** Every approval round on this task, newest first, at most 100, with what the caller may do. */
+  approvals: Approval[];
+  /** The approval stage that stops forward moves right now (and completing), or null. */
+  nextBlockedBy: { stageId: string; stageName: string } | null;
   /** Newest first, at most 100. */
   updates: StaffTaskUpdateResponseDto[];
 }

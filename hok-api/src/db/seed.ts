@@ -43,7 +43,8 @@ import type { StaffTaskPriority, StaffTaskStatus } from "../modules/staff-tasks/
 import { todos } from "../modules/todos/infrastructure/todos.schema";
 import type { TodoUrgency } from "../modules/todos/domain/todo.entity";
 import { nextTodoReminder } from "../modules/todos/domain/todo.rules";
-import type { Role } from "../domain";
+import type { ApproverToken, Role } from "../domain";
+import { stageApprovals } from "../modules/approvals/infrastructure/approvals.schema";
 
 export const SEED_PASSWORD = "Hok@2026";
 
@@ -161,7 +162,7 @@ async function seedClients(): Promise<void> {
 /** Extra team members (besides the lead) for some sample clients. */
 const EXTRA_TEAM: Record<string, string[]> = { "Chai Point Cafe": ["kiran.pm@hok.test"] };
 
-const TEMPLATES: { name: string; stages: string[]; kind: "event" | "task"; roles: Role[] }[] = [
+const TEMPLATES: { name: string; stages: string[]; kind: "event" | "task"; roles: Role[]; approvers?: Record<number, ApproverToken[]> }[] = [
   { name: "Photo Shoot", kind: "event", roles: [], stages: ["Planned", "Pre-production", "Shoot", "Editing", "Client Review", "Completed"] },
   { name: "Reel Production", kind: "event", roles: [], stages: ["Brief", "Script", "Shoot", "Edit", "Client Review", "Published"] },
   { name: "Campaign Launch", kind: "event", roles: [], stages: ["Strategy", "Creatives", "Approval", "Live", "Report"] },
@@ -169,6 +170,11 @@ const TEMPLATES: { name: string; stages: string[]; kind: "event" | "task"; roles
   { name: "Reel edit", kind: "task", roles: ["editor"], stages: ["Brief received", "Rough cut", "Review", "Final cut"] },
   { name: "Caption writing", kind: "task", roles: ["content_writer"], stages: ["Draft", "Review", "Final"] },
   { name: "General task", kind: "task", roles: [], stages: ["To do", "In progress", "Done"] },
+  // Round 3 (stage approvals). `approvers` = stage index (0-based) -> who approves it.
+  // The client signs off in the portal at "Client Review".
+  { name: "Shoot with client sign-off", kind: "event", roles: [], stages: ["Planned", "Shoot", "Editing", "Client Review", "Completed"], approvers: { 3: ["client"] } },
+  // The example from the team feedback: stage 4 by an SMM or the Admin, stage 5 by the Admin only.
+  { name: "Reel edit (approvals)", kind: "task", roles: ["editor"], stages: ["Brief received", "Rough cut", "Review", "Final cut", "Delivery"], approvers: { 3: ["social_media_manager", "admin"], 4: ["admin"] } },
 ];
 
 /** The task template each seeded task uses, by its assignee's role. */
@@ -188,7 +194,7 @@ async function seedTemplates(adminId: string | undefined): Promise<Map<string, {
     }
     const id = await db.transaction(async (tx) => {
       const [row] = await tx.insert(stageTemplates).values({ name: t.name, kind: t.kind, roles: t.roles, createdBy: adminId ?? null }).returning({ id: stageTemplates.id });
-      await tx.insert(stageTemplateStages).values(t.stages.map((name, i) => ({ templateId: row!.id, position: i + 1, name })));
+      await tx.insert(stageTemplateStages).values(t.stages.map((name, i) => ({ templateId: row!.id, position: i + 1, name, approvers: t.approvers?.[i] ?? [] })));
       return row!.id;
     });
     byName.set(t.name, { id, stages: t.stages });
@@ -560,6 +566,143 @@ async function ensureDeliveredLink(taskId: string, assigneeId: string, link: { u
  * each manager's own zone, relative to the day the seed runs. Idempotent by
  * (owner, title).
  */
+/** The stages of a template with their approvers (what a new event or task snapshots). */
+async function templateStages(templateId: string): Promise<{ name: string; approvers: ApproverToken[] }[]> {
+  return db
+    .select({ name: stageTemplateStages.name, approvers: stageTemplateStages.approvers })
+    .from(stageTemplateStages)
+    .where(eq(stageTemplateStages.templateId, templateId))
+    .orderBy(stageTemplateStages.position);
+}
+
+/**
+ * Round 3 (stage approvals): one event on the "Shoot with client sign-off" template sitting on its Client Review stage with a
+ * pending request for the CLIENT (try it on the portal), and one task on "Reel edit (approvals)" sitting on stage 4 with a
+ * pending request for an SMM or the Admin. Reused by (client, title) / (assignee, title).
+ */
+async function seedApprovals(templates: Map<string, { id: string; stages: string[] }>): Promise<void> {
+  const probe = await db.execute(sql`select to_regclass('public.stage_approvals') is not null as ok`);
+  if ((probe.rows[0] as { ok: boolean } | undefined)?.ok !== true) {
+    logger.warn("seed: stage_approvals table missing (migration 20261104000001 not applied yet) -- approvals skipped");
+    return;
+  }
+  const people = await db
+    .select({ id: profiles.id, email: profiles.email })
+    .from(profiles)
+    .where(inArray(profiles.email, ["rohan.smm@hok.test", "meera.editor@hok.test"]));
+  const rohan = people.find((p) => p.email === "rohan.smm@hok.test")?.id;
+  const meera = people.find((p) => p.email === "meera.editor@hok.test")?.id;
+  const [client] = await db
+    .select({ id: clients.id, name: clients.businessName, timeZone: clients.timeZone, ownerId: clients.ownerId })
+    .from(clients)
+    .where(eq(clients.businessName, "Chai Point Cafe"))
+    .limit(1);
+  if (!rohan || !meera || !client) return;
+  const today = Math.floor(Date.now() / DAY) * DAY;
+
+  // -- the event waiting for the client --
+  const eventTemplate = templates.get("Shoot with client sign-off");
+  const eventTitle = `${client.name}: Sign-off shoot`;
+  const [existingEvent] = await db.select({ id: events.id }).from(events).where(and(eq(events.clientId, client.id), eq(events.title, eventTitle))).limit(1);
+  if (eventTemplate && !existingEvent) {
+    const stages = await templateStages(eventTemplate.id);
+    const target = stages.findIndex((s) => s.approvers.includes("client"));
+    const startsAt = new Date(today + 3 * DAY + 10 * 3600_000);
+    await db.transaction(async (tx) => {
+      const [event] = await tx
+        .insert(events)
+        .values({
+          clientId: client.id,
+          title: eventTitle,
+          type: "shoot",
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 4 * 3600_000),
+          timeZone: client.timeZone,
+          location: "Client premises",
+          templateId: eventTemplate.id,
+          templateName: "Shoot with client sign-off",
+          stageCount: stages.length,
+          state: "active",
+          createdBy: client.ownerId,
+        })
+        .returning({ id: events.id });
+      const rows = await tx
+        .insert(eventStages)
+        .values(stages.map((st, pos) => ({ eventId: event!.id, position: pos + 1, name: st.name, approvers: st.approvers })))
+        .returning({ id: eventStages.id, position: eventStages.position });
+      rows.sort((a, b) => a.position - b.position);
+      await tx.update(events).set({ currentStageId: rows[target]!.id }).where(eq(events.id, event!.id));
+      const base = Date.now() - (target + 1) * 60_000;
+      await tx.insert(eventStageHistory).values([
+        { eventId: event!.id, fromStageId: null, toStageId: rows[0]!.id, changedBy: client.ownerId, createdAt: new Date(base) },
+        ...rows.slice(1, target + 1).map((st, k) => ({ eventId: event!.id, fromStageId: rows[k]!.id, toStageId: st.id, changedBy: client.ownerId, createdAt: new Date(base + (k + 1) * 60_000) })),
+      ]);
+      await tx.insert(stageApprovals).values({
+        eventId: event!.id,
+        eventStageId: rows[target]!.id,
+        requestNote: "The final edit is ready for your sign-off.",
+        requestLink: "https://drive.google.com/drive/folders/hok-seed-signoff",
+        requestedBy: client.ownerId,
+      });
+    });
+    logger.info({ title: eventTitle }, "seed: event waiting for the client's approval created");
+  }
+
+  // -- the task waiting for an SMM or the Admin --
+  const taskTemplate = templates.get("Reel edit (approvals)");
+  const taskTitle = "Cut the festive reel (needs approval)";
+  const [existingTask] = await db.select({ id: staffTasks.id }).from(staffTasks).where(and(eq(staffTasks.assigneeId, meera), eq(staffTasks.title, taskTitle))).limit(1);
+  if (taskTemplate && !existingTask) {
+    const stages = await templateStages(taskTemplate.id);
+    const target = stages.findIndex((s) => s.approvers.length > 0);
+    const stageIds = stages.map(() => randomUUID());
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(staffTasks)
+        .values({
+          title: taskTitle,
+          description: "Festive reel for Chai Point Cafe: ready for a look before delivery.",
+          assigneeId: meera,
+          assignedBy: rohan,
+          clientId: client.id,
+          dueAt: new Date(today + 5 * DAY + 18 * 3600_000),
+          priority: "high",
+          status: "in_progress",
+          templateId: taskTemplate.id,
+          templateName: "Reel edit (approvals)",
+          stageCount: stages.length,
+          currentStageId: stageIds[target],
+          version: 1 + target,
+        })
+        .returning({ id: staffTasks.id });
+      const taskId = row!.id;
+      await tx.insert(taskStages).values(stages.map((st, i) => ({ id: stageIds[i]!, taskId, position: i + 1, name: st.name, approvers: st.approvers })));
+      const at = (i: number) => new Date(Date.now() - (target + 2 - i) * 60_000);
+      await tx.insert(staffTaskUpdates).values([
+        { taskId, authorId: rohan, kind: "created" as const, toStatus: "todo" as const, toAssigneeId: meera, toStageId: stageIds[0]!, createdAt: at(0) },
+        ...stageIds.slice(1, target + 1).map((id, k) => ({
+          taskId,
+          authorId: meera,
+          kind: "stage" as const,
+          fromStatus: k === 0 ? ("todo" as const) : ("in_progress" as const),
+          toStatus: "in_progress" as const,
+          fromStageId: stageIds[k]!,
+          toStageId: id,
+          createdAt: at(k + 1),
+        })),
+      ]);
+      await tx.insert(stageApprovals).values({
+        taskId,
+        taskStageId: stageIds[target]!,
+        requestNote: "Ready for your look.",
+        requestLink: "https://drive.google.com/drive/folders/hok-seed-reel-final",
+        requestedBy: meera,
+      });
+    });
+    logger.info({ title: taskTitle }, "seed: task waiting for approval created");
+  }
+}
+
 async function seedPersonalEvents(): Promise<void> {
   const managers = await db
     .select({ id: profiles.id, email: profiles.email, timeZone: profiles.timeZone })
@@ -658,6 +801,7 @@ async function main(): Promise<void> {
   await seedPersonalEvents();
   await seedAssets();
   await seedStaffTasks(adminRow?.id, templates);
+  await seedApprovals(templates);
   await seedTodos();
   logger.info(`seed: done. Every seeded account uses the password ${SEED_PASSWORD}`);
 }

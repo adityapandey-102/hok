@@ -4,6 +4,7 @@ import { AppError } from "../../../common/errors/app-error";
 import type { AuditEvent } from "../../../common/audit/audit-logger";
 import type { Role } from "../../../domain";
 import type { StageTemplateEntity } from "../domain/stage-template.entity";
+import type { NormalizedStage } from "../domain/stage-template.rules";
 import type { StageTemplateDecision, StageTemplateListFilters, StageTemplatesRepositoryPort } from "./ports/stage-templates-repository.port";
 
 const ADMIN: StageTemplatesCaller = { userId: "admin", role: "admin" };
@@ -18,8 +19,8 @@ function template(o: Partial<StageTemplateEntity> = {}): StageTemplateEntity {
     kind: "event",
     roles: [],
     stages: [
-      { id: "s1", position: 1, name: "Planned" },
-      { id: "s2", position: 2, name: "Shoot" },
+      { id: "s1", position: 1, name: "Planned", approvers: [] },
+      { id: "s2", position: 2, name: "Shoot", approvers: [] },
     ],
     version: 1,
     createdAt: "2026-10-14T00:00:00.000Z",
@@ -45,8 +46,8 @@ class FakeRepo implements StageTemplatesRepositoryPort {
   findById(id: string) {
     return Promise.resolve(this.rows.get(id) ?? null);
   }
-  create(r: { name: string; stages: string[]; kind: "event" | "task"; roles: Role[] }) {
-    const t = template({ id: "t3", name: r.name, kind: r.kind, roles: r.roles, stages: r.stages.map((name, i) => ({ id: `n${i}`, position: i + 1, name })) });
+  create(r: { name: string; stages: NormalizedStage[]; kind: "event" | "task"; roles: Role[] }) {
+    const t = template({ id: "t3", name: r.name, kind: r.kind, roles: r.roles, stages: r.stages.map((s, i) => ({ id: `n${i}`, position: i + 1, ...s })) });
     this.rows.set(t.id, t);
     return Promise.resolve(t);
   }
@@ -59,7 +60,7 @@ class FakeRepo implements StageTemplatesRepositoryPort {
       ...(c.name ? { name: c.name } : {}),
       ...(c.active !== undefined ? { active: c.active } : {}),
       ...(c.roles ? { roles: c.roles } : {}),
-      ...(c.stages ? { stages: c.stages.map((name, i) => ({ id: `u${i}`, position: i + 1, name })) } : {}),
+      ...(c.stages ? { stages: c.stages.map((s, i) => ({ id: `u${i}`, position: i + 1, ...s })) } : {}),
       version: current.version + 1,
     };
     this.rows.set(id, next);
@@ -156,5 +157,47 @@ describe("task templates (round 2)", () => {
     expect(t.roles).toEqual(["editor", "developer"]);
     expect(await codeOf(service.update("t1", { roles: ["editor"], version: 1 }))).toBe("STAGE_TEMPLATE_ROLES_INVALID");
     expect(await codeOf(service.update("k1", { roles: [], version: 2 }))).toBeNull();
+  });
+});
+
+describe("approvers on stages (round 3)", () => {
+  let repo: FakeRepo;
+  let service: StageTemplatesService;
+
+  beforeEach(() => {
+    repo = new FakeRepo();
+    service = new StageTemplatesService(repo, { record: () => Promise.resolve() });
+  });
+
+  it("a plain string stage means no approvers; an object carries them", async () => {
+    const t = await service.create(ADMIN, {
+      name: "Reel edit (approvals)",
+      kind: "task",
+      stages: ["Brief", "Rough cut", { name: "Review", approvers: ["social_media_manager", "admin"] }, { name: "Final", approvers: ["admin"] }],
+    });
+    expect(t.stages.map((s) => s.approvers)).toEqual([[], [], ["social_media_manager", "admin"], ["admin"]]);
+  });
+
+  it("the client can approve only on an event template (400 STAGE_TEMPLATE_APPROVERS_INVALID otherwise)", async () => {
+    const ok = await service.create(ADMIN, { name: "Shoot", kind: "event", stages: ["Plan", { name: "Client review", approvers: ["client"] }] });
+    expect(ok.stages[1]!.approvers).toEqual(["client"]);
+    expect(await codeOf(service.create(ADMIN, { name: "Task", kind: "task", stages: [{ name: "Review", approvers: ["client"] }] }))).toBe("STAGE_TEMPLATE_APPROVERS_INVALID");
+  });
+
+  it("refuses an unknown token and a repeated one", async () => {
+    expect(await codeOf(service.create(ADMIN, { name: "X", kind: "task", stages: [{ name: "A", approvers: ["nobody"] }] }))).toBe("STAGE_TEMPLATE_APPROVERS_INVALID");
+    expect(await codeOf(service.create(ADMIN, { name: "X", kind: "task", stages: [{ name: "A", approvers: ["admin", "admin"] }] }))).toBe("STAGE_TEMPLATE_APPROVERS_INVALID");
+  });
+
+  it("an edit judges the client approver against the locked template's kind and audits stages", async () => {
+    expect(await codeOf(service.update("k1", { stages: [{ name: "A", approvers: ["client"] }], version: 1 }))).toBe("STAGE_TEMPLATE_APPROVERS_INVALID");
+    const t = await service.update("t1", { stages: [{ name: "Planned" }, { name: "Review", approvers: ["client", "team_managers"] }], version: 1 });
+    expect(t.stages.map((s) => s.approvers)).toEqual([[], ["client", "team_managers"]]);
+  });
+
+  it("a plain-string edit clears the approvers (the old shape means none)", async () => {
+    await service.update("t1", { stages: [{ name: "Planned" }, { name: "Review", approvers: ["admin"] }], version: 1 });
+    const t = await service.update("t1", { stages: ["Planned", "Review"], version: 2 });
+    expect(t.stages.map((s) => s.approvers)).toEqual([[], []]);
   });
 });

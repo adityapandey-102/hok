@@ -1,6 +1,6 @@
 import { BadRequestError, ConflictError, NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
-import { rangeProblem, spanProblem } from "../../../domain";
+import { rangeProblem, spanProblem, type ApproverToken } from "../../../domain";
 import type { EventStage, EventState } from "./event.entity";
 
 /**
@@ -29,6 +29,8 @@ export interface EventTemplate {
   /** Templates are for events or for staff tasks (round 2); an event can only start from an event template. */
   kind: "event" | "task";
   stageNames: string[];
+  /** Round 3: each stage's approvers, in the same order as `stageNames`; copied onto the event with them. */
+  stageApprovers?: ApproverToken[][];
 }
 
 export function assertEventVisible<T extends { teamIds: readonly string[] }>(scope: EventScope, event: T | null): T {

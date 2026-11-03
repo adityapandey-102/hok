@@ -1,6 +1,6 @@
 import { BadRequestError, ConflictError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
-import type { Role } from "../../../domain";
+import { assertApproversValid, type ApproverToken, type Role } from "../../../domain";
 import type { TemplateKind } from "./stage-template.entity";
 
 /**
@@ -25,6 +25,28 @@ export function normalizeStageNames(names: readonly string[]): string[] {
     seen.add(key);
     return name;
   });
+}
+
+/** A stage as sent by a client: a plain name (no approvers), or a name with approvers. */
+export type StageInput = string | { name: string; approvers?: readonly string[] };
+
+/** A stage as stored: trimmed name, validated approvers. */
+export interface NormalizedStage {
+  name: string;
+  approvers: ApproverToken[];
+}
+
+/**
+ * The template's ordered stages: names as in normalizeStageNames, approvers validated against the template's
+ * kind (round 3: 'client' only on an event template; 400 STAGE_TEMPLATE_APPROVERS_INVALID). A plain string
+ * means no approvers.
+ */
+export function normalizeStages(kind: TemplateKind, stages: readonly StageInput[]): NormalizedStage[] {
+  const names = normalizeStageNames(stages.map((s) => (typeof s === "string" ? s : s.name)));
+  return stages.map((s, i) => ({
+    name: names[i]!,
+    approvers: typeof s === "string" ? [] : assertApproversValid(kind, s.approvers ?? []),
+  }));
 }
 
 /**

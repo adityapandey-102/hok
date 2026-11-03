@@ -1,6 +1,9 @@
-import type { Role, StageTemplate, TemplateKind } from "../../../lib/domain";
+import type { ApproverToken, Role, StageTemplate, TemplateKind } from "../../../lib/domain";
 import { apiFetch } from "../../../lib/api/client";
 import { SEARCH_SELECT_LIMIT, type SelectOption } from "../../../lib/api/options";
+
+/** A stage as sent to the API: a plain name (no approvers) or a name with who approves it. */
+export type StageInput = string | { name: string; approvers?: ApproverToken[] };
 
 export interface TemplateListResult {
   templates: StageTemplate[];
@@ -45,14 +48,14 @@ export const templatesApi = {
     return page.templates.filter((t) => t.active).map((t) => ({ id: t.id, label: t.name, hint: `${t.stages.length} stages`, data: t }));
   },
 
-  create(payload: { name: string; stages: string[]; kind?: TemplateKind; roles?: Role[] }): Promise<{ template: StageTemplate }> {
+  create(payload: { name: string; stages: StageInput[]; kind?: TemplateKind; roles?: Role[] }): Promise<{ template: StageTemplate }> {
     return apiFetch("/stage-templates", { method: "POST", body: JSON.stringify(payload) });
   },
 
   /** `kind` can never change after creation, so it is not part of the update. */
   update(
     id: string,
-    payload: { name?: string; stages?: string[]; active?: boolean; roles?: Role[]; version: number },
+    payload: { name?: string; stages?: StageInput[]; active?: boolean; roles?: Role[]; version: number },
   ): Promise<{ template: StageTemplate }> {
     return apiFetch(`/stage-templates/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
   },
