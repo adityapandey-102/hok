@@ -157,12 +157,18 @@ let repo: FakeRepo;
 let audit: AuditEvent[];
 let notifier: RecordingNotifier;
 let service: ApprovalsService;
+/** Round 4: items the service asked the work-tree notifier to look at (an approved event may have finished a part). */
+let changedChildren: { kind: string; id: string; actorId: string | null }[];
 
 beforeEach(() => {
   repo = new FakeRepo();
   audit = [];
   notifier = new RecordingNotifier();
-  service = new ApprovalsService(repo, { record: (e) => (audit.push(e), Promise.resolve()) }, notifier);
+  changedChildren = [];
+  service = new ApprovalsService(repo, { record: (e) => (audit.push(e), Promise.resolve()) }, notifier, {
+    stageMayBeClear: () => Promise.resolve(),
+    childChanged: (kind, id, actorId) => (changedChildren.push({ kind, id, actorId }), Promise.resolve()),
+  });
 });
 
 const ask = (caller: ApprovalsCaller, subject: "event" | "task" = "task") => service.request(caller, { subject, subjectId: "t1", note: "Please check", link: "https://x.test/v" });
@@ -290,6 +296,21 @@ describe("decide", () => {
     await decide(SARA);
     expect(notifier.decisions[0]!.recipientIds.sort()).toEqual(["rohan", "sara"]);
   });
+
+  it("round 4: approving an event asks the work-tree notifier to look at it (it may have finished a part); changes and tasks do not", async () => {
+    repo.rows.set("a1", row({ subject: "event", subjectId: "e1", approvers: ["team_managers"], requestedById: "rohan" }, { teamIds: ["sara"], assigneeId: null, assignedBy: null }));
+    await decide(SARA);
+    expect(changedChildren).toEqual([{ kind: "event", id: "e1", actorId: "sara" }]);
+
+    changedChildren.length = 0;
+    repo.rows.set("a1", row({ subject: "event", subjectId: "e1", approvers: ["team_managers"], requestedById: "rohan" }, { teamIds: ["sara"], assigneeId: null, assignedBy: null }));
+    await decide(SARA, { decision: "changes", comment: "Recut it" });
+    expect(changedChildren).toEqual([]);
+
+    repo.rows.set("a1", row()); // a task approval (the default row)
+    await decide(ROHAN);
+    expect(changedChildren).toEqual([]);
+  });
 });
 
 describe("cancel", () => {
@@ -348,6 +369,8 @@ describe("the client's decision from the portal", () => {
     expect(audit[0]!.actorId).toBeUndefined();
     expect(notifier.decisions[0]).toMatchObject({ via: "portal", actorId: null });
     expect(notifier.decisions[0]!.recipientIds.sort()).toEqual(["rohan", "sara"]);
+    // Round 4: the client's approval may have finished a part (the actor is null: no staff user).
+    expect(changedChildren).toEqual([{ kind: "event", id: "e1", actorId: null }]);
   });
 
   it("changes need a comment (400); with one it is stored as given", async () => {

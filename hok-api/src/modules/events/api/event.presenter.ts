@@ -11,7 +11,14 @@ export type EventSummaryResponseDto = EventSummaryEntity;
 
 export function toEventDetailResponseDto(e: EventDetail): EventDetailResponseDto {
   const { teamIds: _internal, ...rest } = e;
-  return { ...rest, stages: [...e.stages], history: [...e.history], team: [...e.team], assignedTeam: [...e.assignedTeam] };
+  return {
+    ...rest,
+    stages: [...e.stages],
+    history: [...e.history],
+    team: [...e.team],
+    assignedTeam: [...e.assignedTeam],
+    children: [...e.children],
+  };
 }
 
 export function toEventSummaryResponseDto(e: EventSummaryEntity): EventSummaryResponseDto {

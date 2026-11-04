@@ -62,7 +62,7 @@ tags:
   - name: Activity
     description: "The Admin activity log (FR-SYS-02, FR-RPT-05): who did what, newest first."
   - name: Approvals
-    description: "Stage approvals (round 3). A stage of any template can list approvers (`admin`, `team_managers`, `client` on event templates, or a role); an item (event or task) can enter such a stage but not move past it, forward or by completing, until the stage has an `approved` approval in the current visit (`409 STAGE_APPROVAL_REQUIRED`). Whoever may MOVE the item asks; any ONE eligible approver who can see the item approves or requests changes (the requester never decides their own request, the Admin excepted). Moving back to a stage supersedes the approvals from there on. The client approves from the portal. Every staff role has an inbox (`staff_tasks:read`); the service enforces who may do what."
+    description: "Stage approvals (round 3). A stage of any template can list approvers (`admin`, `team_managers`, `client` on event templates, or a role); an item (event or task) can enter such a stage but not move past it, forward or by completing, until the stage has an `approved` approval in the current visit (`409 STAGE_APPROVAL_REQUIRED`). Whoever may MOVE the item asks; any ONE eligible approver who can see the item approves or requests changes (the requester never decides their own request, the Admin excepted). Moving back to a stage supersedes the approvals from there on. The client approves from the portal. (Round 4 adds a second reason a stage can hold an item: unfinished parts, `409 STAGE_CHILDREN_OPEN`; when both apply the approval is reported first.) Every staff role has an inbox (`staff_tasks:read`); the service enforces who may do what."
   - name: Client comments
     description: Comments clients post on their portal, worked by the owning manager (comments:read / comments:manage).
 paths:
@@ -907,6 +907,19 @@ paths:
         `timeZone` defaults to the client's. Ends on/after start, at most 31
         days (`400 EVENT_TIMES_INVALID`). Team members must be active staff
         (`400 EVENT_TEAM_INVALID`).
+
+        **As a part (round 4):** send `parent` to make this event a child of a stage of
+        another event or of a task. The caller must be able to MOVE the parent
+        (events: `events:write` on its team, or Admin; tasks: assignee, creator or Admin).
+        The client is the parent's: a different `clientId` is `400
+        WORK_CHILD_CLIENT_MISMATCH`, and a parent task with no client is `400
+        WORK_CHILD_EVENT_NEEDS_CLIENT`. Checked in this order: a parent the caller can't see
+        `404` (`EVENT_NOT_FOUND` / `STAFF_TASK_NOT_FOUND`), a task parent they see but can't
+        move `403 STAFF_TASK_FORBIDDEN`, the parent's state (`409 EVENT_NOT_ACTIVE`
+        for a cancelled or postponed event, `409 STAFF_TASK_DONE` for a done task), the stage
+        (`400 WORK_PARENT_STAGE_INVALID`), the depth (`409 WORK_TOO_DEEP`: at most 3 levels),
+        then the client rules (`409 CLIENT_ARCHIVED`). The parent row is read FOR SHARE in the
+        creating transaction. The audit entry's metadata gains `parent`.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -916,6 +929,7 @@ paths:
               type: object
               required: [clientId, templateId, title, type, startsAt, endsAt]
               properties:
+                parent: { $ref: "#/components/schemas/WorkParentInput" }
                 clientId: { type: string, format: uuid }
                 templateId: { type: string, format: uuid }
                 title: { type: string, minLength: 1, maxLength: 160 }
@@ -931,8 +945,8 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/ClientNotFound" }
-        "409": { $ref: "#/components/responses/ClientConflict" }
+        "404": { description: "`CLIENT_NOT_FOUND` (no such client, or not the caller's), or with `parent`: `EVENT_NOT_FOUND` / `STAFF_TASK_NOT_FOUND` (a parent the caller can't see).", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: "`CLIENT_ARCHIVED`; or with `parent`: `EVENT_NOT_ACTIVE`, `STAFF_TASK_DONE` or `WORK_TOO_DEEP`.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /api/v1/events/{id}:
     parameters:
       - $ref: "#/components/parameters/EventId"
@@ -995,6 +1009,12 @@ paths:
         and no `approved` approval is `409 STAGE_APPROVAL_REQUIRED` (the message
         names the stage); moving onto that stage is free. A back move to a stage
         supersedes the approved requests from there on and cancels the waiting ones.
+        **Parts gate (round 4):** the same rule for unfinished parts: a forward move
+        past a stage that still has unfinished parts (child events or tasks, whether
+        or not the caller sees them) is `409 STAGE_CHILDREN_OPEN` ("<stage> has N
+        unfinished parts"). When a stage lacks an approval too, the approval is
+        reported first (`STAGE_APPROVAL_REQUIRED`). The parts' count per stage is one
+        grouped read per kind.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/EventId"
@@ -1813,6 +1833,16 @@ paths:
         alone links its client (`400 STAFF_TASK_CLIENT_INVALID` /
         `STAFF_TASK_EVENT_INVALID`). Starts as `todo` at stage 1, with a "created"
         timeline entry.
+
+        **As a part (round 4):** send `parent` to make this task a child of a stage of an
+        event or another task. The caller must be able to MOVE the parent, and the normal
+        create rules still apply (the role ladder, `staff_tasks:assign`, the template role
+        check). A task part of an event defaults its `clientId` and `eventId` to the event's
+        when neither is sent. Refusals, in order: a parent the caller can't see `404`
+        (`EVENT_NOT_FOUND` / `STAFF_TASK_NOT_FOUND`), a task parent they see but can't move `403
+        STAFF_TASK_FORBIDDEN`, the parent's state (`409 EVENT_NOT_ACTIVE` / `STAFF_TASK_DONE`),
+        the stage (`400 WORK_PARENT_STAGE_INVALID`), the depth (`409 WORK_TOO_DEEP`), an archived
+        client (`409 CLIENT_ARCHIVED`). The audit entry's metadata gains `parent`.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1824,6 +1854,7 @@ paths:
                 - type: object
                   required: [title, assigneeId, templateId]
                   properties:
+                    parent: { $ref: "#/components/schemas/WorkParentInput" }
                     assigneeId: { type: string, format: uuid }
                     templateId: { type: string, format: uuid, description: "An active task template offered for the assignee's role." }
                     links:
@@ -1841,6 +1872,8 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: "With `parent`: `EVENT_NOT_FOUND` / `STAFF_TASK_NOT_FOUND` (a parent the caller can't see).", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: "With `parent`: `EVENT_NOT_ACTIVE`, `STAFF_TASK_DONE`, `WORK_TOO_DEEP` or `CLIENT_ARCHIVED`.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /api/v1/staff-tasks/{id}:
     parameters:
       - $ref: "#/components/parameters/StaffTaskId"
@@ -1918,6 +1951,11 @@ paths:
         approvers and no `approved` approval is `409 STAGE_APPROVAL_REQUIRED`; moving onto
         that stage is free. A back move supersedes the approved requests from the target
         stage on and cancels the waiting ones.
+        **Parts gate (round 4):** the same for unfinished parts: a forward move, or
+        completing, past a stage that still has unfinished parts (child events or tasks,
+        seen or not) is `409 STAGE_CHILDREN_OPEN`. When a stage lacks an approval too,
+        `STAGE_APPROVAL_REQUIRED` comes first. Completing the last unfinished part of a stage
+        notifies the parent's people (`stage_children_finished`).
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/StaffTaskId"
@@ -2839,7 +2877,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     EventConflict:
-      description: "`EVENT_MODIFIED` (stale version), `EVENT_STAGE_UNCHANGED`, `EVENT_NOT_ACTIVE`, `STAGE_APPROVAL_REQUIRED` (a forward move past an unapproved approval stage) or `CLIENT_ARCHIVED` (the client is archived: its events are read-only)."
+      description: "`EVENT_MODIFIED` (stale version), `EVENT_STAGE_UNCHANGED`, `EVENT_NOT_ACTIVE`, `STAGE_APPROVAL_REQUIRED` (a forward move past an unapproved approval stage), `STAGE_CHILDREN_OPEN` (a forward move past a stage with unfinished parts) or `CLIENT_ARCHIVED` (the client is archived: its events are read-only)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -2879,7 +2917,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     StaffTaskConflict:
-      description: "`STAFF_TASK_MODIFIED` (stale version), `STAFF_TASK_STAGE_UNCHANGED`, `STAFF_TASK_NOT_AT_LAST_STAGE`, `STAFF_TASK_ALREADY_BLOCKED`, `STAFF_TASK_NOT_BLOCKED`, `STAFF_TASK_DONE` (reopen first), `STAFF_TASK_NOT_DONE`, `STAFF_TASK_LINKS_LIMIT`, `STAFF_TASK_LINK_ALREADY_SHARED`, `STAFF_TASK_NO_EVENT` or `STAGE_APPROVAL_REQUIRED` (a forward move or completion past an unapproved approval stage)."
+      description: "`STAFF_TASK_MODIFIED` (stale version), `STAFF_TASK_STAGE_UNCHANGED`, `STAFF_TASK_NOT_AT_LAST_STAGE`, `STAFF_TASK_ALREADY_BLOCKED`, `STAFF_TASK_NOT_BLOCKED`, `STAFF_TASK_DONE` (reopen first), `STAFF_TASK_NOT_DONE`, `STAFF_TASK_LINKS_LIMIT`, `STAFF_TASK_LINK_ALREADY_SHARED`, `STAFF_TASK_NO_EVENT` `STAGE_APPROVAL_REQUIRED` (a forward move or completion past an unapproved approval stage) or `STAGE_CHILDREN_OPEN` (the same, past a stage with unfinished parts)."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -3558,11 +3596,48 @@ components:
     NextBlockedBy:
       type: object
       nullable: true
-      description: "The approval stage that currently stops forward moves (and completing) of the item, or null. The web uses it to explain a disabled button."
-      required: [stageId, stageName]
+      description: "The stage that currently stops forward moves (and completing) of the item, or null: it needs an approval, or it has unfinished parts (round 4). The web uses it to explain a disabled button."
+      required: [stageId, stageName, reason, openChildren]
       properties:
         stageId: { type: string, format: uuid }
         stageName: { type: string }
+        reason: { type: string, enum: [approval, children], description: "`approval` when the stage lacks an approval (reported first even if parts are also open); `children` when only unfinished parts hold it." }
+        openChildren: { type: integer, minimum: 0, description: "Unfinished parts at that stage (all of them, including ones the caller can't see)." }
+    WorkParentInput:
+      type: object
+      description: "Round 4: makes the new event or task a part (child) of one stage of a parent. The stage must be one of the parent's own."
+      required: [kind, id, stageId]
+      properties:
+        kind: { type: string, enum: [event, task] }
+        id: { type: string, format: uuid, description: The parent event or task. }
+        stageId: { type: string, format: uuid, description: "A stage of the parent (`400 WORK_PARENT_STAGE_INVALID` otherwise)." }
+    WorkParent:
+      type: object
+      nullable: true
+      description: "\"Part of: <title> > <stage>\". Null for a top-level item, and also when the caller can't see the parent (nothing about it leaks)."
+      required: [kind, id, title, stageId, stageName]
+      properties:
+        kind: { type: string, enum: [event, task] }
+        id: { type: string, format: uuid }
+        title: { type: string }
+        stageId: { type: string, format: uuid }
+        stageName: { type: string }
+    WorkChild:
+      type: object
+      required: [kind, id, title, stageId, stageName, currentStageName, currentPosition, stageCount, status, state, finished, assigneeName]
+      properties:
+        kind: { type: string, enum: [event, task] }
+        id: { type: string, format: uuid }
+        title: { type: string }
+        stageId: { type: string, format: uuid, description: The parent's stage this part hangs on. }
+        stageName: { type: string, description: That parent stage's name. }
+        currentStageName: { type: string, description: The part's own current stage. }
+        currentPosition: { type: integer, minimum: 1 }
+        stageCount: { type: integer }
+        status: { type: string, enum: [todo, in_progress, blocked, done], nullable: true, description: Tasks only. }
+        state: { type: string, enum: [active, cancelled, postponed], nullable: true, description: Events only. }
+        finished: { type: boolean, description: "A task: done. An event: active, on its last stage and, if that stage needs approval, approved. A cancelled event is not finished, but does not block." }
+        assigneeName: { type: string, nullable: true, description: Tasks only. }
     StageTemplate:
       type: object
       required: [id, name, active, kind, roles, stages, version, createdAt, updatedAt]
@@ -3605,6 +3680,7 @@ components:
         position: { type: integer, minimum: 1 }
         name: { type: string }
         approvers: { type: array, items: { $ref: "#/components/schemas/ApproverToken" }, description: "On the event detail: this stage's approvers, copied from the template at creation (empty = none)." }
+        openChildren: { type: integer, minimum: 0, description: "On the event detail: unfinished parts hanging on this stage (all of them, seen or not). A stage with any blocks forward moves." }
     EventSummary:
       type: object
       required: [id, clientId, clientName, ownerId, title, type, startsAt, endsAt, timeZone, location, state, templateName, currentStageId, currentStageName, currentStagePosition, stageCount, version]
@@ -3630,7 +3706,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/EventSummary"
         - type: object
-          required: [clientStatus, description, assignedTeam, templateId, createdAt, updatedAt, stages, history, team, approvals, nextBlockedBy]
+          required: [clientStatus, description, assignedTeam, templateId, createdAt, updatedAt, stages, history, team, approvals, nextBlockedBy, parent, children, hiddenChildren]
           properties:
             clientStatus: { $ref: "#/components/schemas/ClientStatus" }
             description: { type: string, nullable: true }
@@ -3656,6 +3732,9 @@ components:
                   createdAt: { type: string, format: date-time }
             approvals: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/Approval" }, description: "Every approval round on this event, newest first, one query." }
             nextBlockedBy: { $ref: "#/components/schemas/NextBlockedBy" }
+            parent: { $ref: "#/components/schemas/WorkParent" }
+            children: { type: array, maxItems: 400, items: { $ref: "#/components/schemas/WorkChild" }, description: "The parts (child events and tasks) the caller can see, by parent stage then creation; at most 200 per kind, two queries in all." }
+            hiddenChildren: { type: integer, minimum: 0, description: "Parts the caller can't see (the total minus the listed ones), counted and never described. The move gate counts them too." }
             team:
               type: array
               items:
@@ -3835,6 +3914,7 @@ components:
         name: { type: string }
         position: { type: integer, minimum: 1 }
         approvers: { type: array, items: { $ref: "#/components/schemas/ApproverToken" }, description: "On the task detail's stages list: this stage's approvers (empty = none)." }
+        openChildren: { type: integer, minimum: 0, description: "On the task detail's stages list: unfinished parts hanging on this stage (all of them, seen or not)." }
     TaskLink:
       type: object
       required: [id, kind, url, label, stageId, stageName, addedById, addedByName, createdAt, sharedAssetId]
@@ -3886,7 +3966,7 @@ components:
         canManage: { type: boolean, description: "The caller may edit, reassign, reopen and delete this task: the Admin, or its creator while they hold staff_tasks:assign." }
     StaffTaskDetail:
       type: object
-      required: [id, title, description, brief, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedBy, assignedById, assignedByName, clientId, clientName, eventId, eventTitle, templateName, stageCount, currentStage, stages, blockedReason, links, completedAt, version, createdAt, updatedAt, canManage, canShare, updates, approvals, nextBlockedBy]
+      required: [id, title, description, brief, status, priority, dueAt, assigneeId, assigneeName, assigneeRole, assignedBy, assignedById, assignedByName, clientId, clientName, eventId, eventTitle, templateName, stageCount, currentStage, stages, blockedReason, links, completedAt, version, createdAt, updatedAt, canManage, canShare, updates, approvals, nextBlockedBy, parent, children, hiddenChildren]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -3919,6 +3999,9 @@ components:
         canShare: { type: boolean, description: "The task has an event and the caller may share its delivered links with the client (the Admin, or a client manager on that client's team)." }
         approvals: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/Approval" }, description: "Every approval round on this task, newest first, one query." }
         nextBlockedBy: { $ref: "#/components/schemas/NextBlockedBy" }
+        parent: { $ref: "#/components/schemas/WorkParent" }
+        children: { type: array, maxItems: 400, items: { $ref: "#/components/schemas/WorkChild" }, description: "The parts (child events and tasks) the caller can see; at most 200 per kind." }
+        hiddenChildren: { type: integer, minimum: 0, description: "Parts the caller can't see, counted and never described. The move gate counts them too." }
         updates:
           type: array
           description: The timeline, newest first, at most 100.
@@ -3967,8 +4050,8 @@ components:
         todo: { $ref: "#/components/schemas/Todo" }
     NotificationType:
       type: string
-      description: "The trigger (FR-NTF-03). todo_reminder is the owner's own to-do reminder (link /app/todos). approval_requested goes to everyone who could decide a new request (never the requester); approval_decided to the requester, the task's assignee and creator or the event's team (link: the item's page)."
-      enum: [client_reassigned, task_assigned, task_status_changed, task_commented, client_comment, event_reminder, task_due_reminder, todo_reminder, approval_requested, approval_decided]
+      description: "The trigger (FR-NTF-03). todo_reminder is the owner's own to-do reminder (link /app/todos). approval_requested goes to everyone who could decide a new request (never the requester); approval_decided to the requester, the task's assignee and creator or the event's team (link: the item's page). stage_children_finished (round 4, \"Parts finished\") goes to the parent's movers (an event's notified team, a task's assignee and creator; never the actor) when the last unfinished part under one of its stages finishes, is cancelled or is deleted; it is sent at least once, so two parts finishing at the same moment may notify twice."
+      enum: [client_reassigned, task_assigned, task_status_changed, task_commented, client_comment, event_reminder, task_due_reminder, todo_reminder, approval_requested, approval_decided, stage_children_finished]
     Notification:
       type: object
       required: [id, type, title, body, url, data, actorName, readAt, createdAt]

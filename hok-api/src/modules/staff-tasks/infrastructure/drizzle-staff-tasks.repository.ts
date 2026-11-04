@@ -18,6 +18,16 @@ import { stageTemplateStages, stageTemplates } from "../../stage-templates/infra
 import { assets } from "../../assets/infrastructure/assets.schema";
 import { approvedStageIds, supersedeFrom } from "../../approvals/infrastructure/approval-gate";
 import { selectItemApprovals } from "../../approvals/infrastructure/approval-queries";
+// Round 4 (parent and child work): the open-children gate read, the children list, the parent facts.
+import {
+  openChildCounts,
+  parentColumns,
+  parentRefOf,
+  selectChildren,
+  selectParentFacts,
+  selectParentRecord,
+} from "../../work-tree/infrastructure/work-tree-gate";
+import type { ParentFacts, WorkKind } from "../../../domain";
 import { staffTaskLinks, staffTaskUpdates, staffTasks, taskStages } from "./staff-tasks.schema";
 import type { StaffTaskDetail, StaffTaskEntity, StaffTaskLink, StaffTaskSummaryEntity, StaffTaskUpdate, TaskStageFull } from "../domain/staff-task.entity";
 import type { AssigneeCandidate, TaskClientRef, TaskEventRef, TaskTemplate } from "../domain/staff-task.rules";
@@ -75,6 +85,11 @@ const TASK_SELECT = {
   currentStagePosition: currentStage.position,
   blockedReason: staffTasks.blockedReason,
   completedAt: staffTasks.completedAt,
+  parentEventId: staffTasks.parentEventId,
+  parentTaskId: staffTasks.parentTaskId,
+  parentEventStageId: staffTasks.parentEventStageId,
+  parentTaskStageId: staffTasks.parentTaskStageId,
+  depth: staffTasks.depth,
   version: staffTasks.version,
   createdAt: staffTasks.createdAt,
   updatedAt: staffTasks.updatedAt,
@@ -128,9 +143,10 @@ function taskQuery(ex: Executor, id: string) {
 type TaskRow = Awaited<ReturnType<typeof taskQuery>>[number];
 
 function toEntity(row: TaskRow): StaffTaskEntity {
-  const { currentStageId, currentStageName, currentStagePosition, ...rest } = row;
+  const { currentStageId, currentStageName, currentStagePosition, parentEventId, parentTaskId, parentEventStageId, parentTaskStageId, ...rest } = row;
   return {
     ...rest,
+    parentRef: parentRefOf({ parentEventId, parentTaskId, parentEventStageId, parentTaskStageId }),
     currentStage: { id: currentStageId, name: currentStageName, position: currentStagePosition },
     dueAt: iso(row.dueAt),
     completedAt: iso(row.completedAt),
@@ -289,11 +305,13 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
 
   findDetail(id: string) {
     return guarded("load the task", async (): Promise<StaffTaskDetail | null> => {
-      const [task, stages, links, approvalRecords, updates] = await Promise.all([
+      const [task, stages, links, approvalRecords, children, updates] = await Promise.all([
         selectTask(db, id),
         selectStages(db, id),
         selectLinks(db, id),
         selectItemApprovals(db, "task", id),
+        // Round 4: the children (2 statements: events, tasks -- they also carry each stage's unfinished count).
+        selectChildren(db, "task", id),
         db
           .select({
             id: staffTaskUpdates.id,
@@ -320,13 +338,20 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
           .limit(UPDATES_LIMIT),
       ]);
       if (!task) return null;
-      const event = task.eventId ? await selectEvent(task.eventId) : null;
+      // The event title and the parent stub: independent reads, only for a task that has them.
+      const [event, parentRecord] = await Promise.all([
+        task.eventId ? selectEvent(task.eventId) : Promise.resolve(null),
+        task.parentRef ? selectParentRecord(db, task.parentRef) : Promise.resolve(null),
+      ]);
       return {
         ...task,
         eventTitle: event?.title ?? null,
-        stages,
+        stages: stages.map((s) => ({ ...s, openChildren: children.openByStage.get(s.id) ?? 0 })),
         links,
         approvalRecords,
+        parentRecord,
+        childRows: children.rows,
+        childTotal: children.total,
         updates: updates.map((u): StaffTaskUpdate => ({ ...u, createdAt: u.createdAt.toISOString() })),
       };
     });
@@ -371,9 +396,26 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
     });
   }
 
-  create(record: NewStaffTaskRecord) {
+  findParent(kind: WorkKind, id: string) {
+    return guarded("load the parent", () => selectParentFacts(db, kind, id, false));
+  }
+
+  create(record: NewStaffTaskRecord, guardParent?: (parent: ParentFacts) => void) {
     return guarded("create the task", () =>
       db.transaction(async (tx) => {
+        // Round 4: a child reads its parent FOR SHARE, so a move of the parent (FOR UPDATE) waits for this insert and then counts
+        // the new child; the depth comes from the locked row, not from the earlier read.
+        let parentCols = parentColumns(null, 0);
+        if (record.parent) {
+          const parent = await selectParentFacts(tx, record.parent.kind, record.parent.id, true);
+          if (!parent) {
+            throw record.parent.kind === "task"
+              ? new NotFoundError("Task not found", ERROR_CODES.STAFF_TASK_NOT_FOUND)
+              : new NotFoundError("Event not found", ERROR_CODES.EVENT_NOT_FOUND);
+          }
+          guardParent?.(parent);
+          parentCols = parentColumns(record.parent, parent.depth);
+        }
         // The stage ids are made here so the task can name its first stage in the same INSERT
         // (the composite FK is deferred to commit, like an event's).
         const stageIds = record.stageNames.map(() => randomUUID());
@@ -393,6 +435,7 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
             templateName: record.templateName,
             stageCount: record.stageNames.length,
             currentStageId: stageIds[0],
+            ...parentCols,
           })
           .returning({ id: staffTasks.id });
         const id = row!.id;
@@ -424,7 +467,7 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
     );
   }
 
-  update(id: string, decide: StaffTaskChangeDecision) {
+  update(id: string, decide: StaffTaskChangeDecision, options: { openChildrenGate?: boolean } = {}) {
     return guarded("update the task", () =>
       db.transaction(async (tx): Promise<SupersededCounts> => {
         const current = await selectTask(tx, id, true);
@@ -433,7 +476,10 @@ export class DrizzleStaffTasksRepository implements StaffTasksRepositoryPort {
         // Round 3: only a task with approval stages pays for the extra read (one indexed query, on the locked row).
         const hasApprovals = stages.some((s) => s.approvers.length > 0);
         const approved = hasApprovals ? await approvedStageIds(tx, "task", id) : new Set<string>();
-        const changes = decide(current, stages, approved);
+        // Round 4: ALL unfinished children per stage (visible or not), one grouped statement, on the locked row; only a stage move or
+        // a completion needs it.
+        const openChildren = options.openChildrenGate ? await openChildCounts(tx, "task", id) : new Map<string, number>();
+        const changes = decide(current, stages, approved, openChildren);
 
         const { dueAt, brief, ...fields } = changes.fields ?? {};
         const set: Partial<typeof staffTasks.$inferInsert> = { ...fields };

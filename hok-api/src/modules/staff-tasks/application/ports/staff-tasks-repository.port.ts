@@ -1,4 +1,4 @@
-import type { ApproverToken, Role } from "../../../../domain";
+import type { ApproverToken, ParentFacts, ParentRef, Role, WorkKind } from "../../../../domain";
 import type {
   StaffTaskDetail,
   StaffTaskEntity,
@@ -64,6 +64,8 @@ export interface NewStaffTaskRecord extends StaffTaskFields {
   stageNames: string[];
   /** Round 3: each stage's approvers (same order as `stageNames`); a missing entry means none. */
   stageApprovers?: ApproverToken[][];
+  /** Round 4: this task is a part of this parent stage (validated by the service, re-checked under the parent's lock). */
+  parent?: ParentRef;
   /** Brief links added at creation. */
   links: { url: string; label: string | null }[];
 }
@@ -106,9 +108,15 @@ export interface SupersededCounts {
 
 /**
  * Guard callback: given the row as it stands after the lock (and its stages, with their approvers, and the ids of the
- * stages holding an approved approval -- the move gate's input), throw or return the changes.
+ * stages holding an approved approval, and -- round 4 -- per stage how many unfinished child events/tasks hang on it,
+ * ALL of them whether or not the caller sees them: the move gate's input), throw or return the changes.
  */
-export type StaffTaskChangeDecision = (current: StaffTaskEntity, stages: TaskStageFull[], approvedStageIds: ReadonlySet<string>) => StaffTaskChanges;
+export type StaffTaskChangeDecision = (
+  current: StaffTaskEntity,
+  stages: TaskStageFull[],
+  approvedStageIds: ReadonlySet<string>,
+  openChildren: ReadonlyMap<string, number>,
+) => StaffTaskChanges;
 
 /** What a link write sees under the task's lock. */
 export interface LinkWriteContext {
@@ -157,10 +165,18 @@ export interface StaffTasksRepositoryPort {
   findEvent(eventId: string): Promise<TaskEventRef | null>;
   /** The stage template (any kind) with its stage names, or null. */
   findTemplate(templateId: string): Promise<TaskTemplate | null>;
-  /** One transaction: insert the task, its stages, its brief links and its "created" timeline entry. Returns the new id. */
-  create(record: NewStaffTaskRecord): Promise<string>;
-  /** One transaction: lock the task (FOR UPDATE), `decide`, apply, bump the version, append `entry`; a back move / reopen also supersedes approvals. */
-  update(id: string, decide: StaffTaskChangeDecision): Promise<SupersededCounts>;
+  /** Round 4: the parent an event or task child is created under, as the child rules need it (not locked); null if missing. */
+  findParent(kind: WorkKind, id: string): Promise<ParentFacts | null>;
+  /**
+   * One transaction: insert the task, its stages, its brief links and its "created" timeline entry. Returns the new id.
+   * Round 4: for a child (`record.parent`) the parent row is read FOR SHARE first and passed to `guardParent`
+   * (re-checked after the lock); the depth and the parent columns are written in the same insert.
+   */
+  create(record: NewStaffTaskRecord, guardParent?: (parent: ParentFacts) => void): Promise<string>;
+  /** One transaction: lock the task (FOR UPDATE), `decide`, apply, bump the version, append `entry`; a back move / reopen also supersedes approvals.
+   *  `openChildrenGate` (round 4, stage moves and completing only) also reads the per-stage unfinished-children counts under the lock
+   *  (one grouped statement) and passes them to `decide`; otherwise `decide` gets an empty map. */
+  update(id: string, decide: StaffTaskChangeDecision, options?: { openChildrenGate?: boolean }): Promise<SupersededCounts>;
   /** Appends a comment (no version bump). `guard` sees the task first (scope check). */
   addComment(id: string, guard: (current: StaffTaskEntity) => void, authorId: string, comment: string): Promise<void>;
   /** Lock, `guard`, delete (the timeline cascades). Returns the deleted row as it was. */

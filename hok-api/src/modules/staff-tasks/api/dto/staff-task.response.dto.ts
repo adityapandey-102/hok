@@ -1,5 +1,5 @@
-import type { Approval, Role } from "../../../../domain";
-import type { StaffTaskPriority, StaffTaskStatus, StaffTaskUpdateKind, TaskLinkKind, TaskStage, TaskStageFull } from "../../domain/staff-task.entity";
+import type { Approval, Role, WorkChild, WorkParent } from "../../../../domain";
+import type { StaffTaskPriority, StaffTaskStatus, StaffTaskUpdateKind, TaskLinkKind, TaskStage, TaskStageView } from "../../domain/staff-task.entity";
 
 /** One row of GET /staff-tasks (and a board card). */
 export interface StaffTaskSummaryResponseDto {
@@ -83,8 +83,8 @@ export interface StaffTaskDetailResponseDto {
   templateName: string;
   stageCount: number;
   currentStage: TaskStage;
-  /** Every stage of the task, in order, with the tokens that can approve it (empty = no approval needed). */
-  stages: TaskStageFull[];
+  /** Every stage of the task, in order, with the tokens that can approve it (empty = no approval needed) and its unfinished-parts count. */
+  stages: TaskStageView[];
   blockedReason: string | null;
   /** Oldest first, at most 50. */
   links: StaffTaskLinkResponseDto[];
@@ -98,8 +98,14 @@ export interface StaffTaskDetailResponseDto {
   canShare: boolean;
   /** Every approval round on this task, newest first, at most 100, with what the caller may do. */
   approvals: Approval[];
-  /** The approval stage that stops forward moves right now (and completing), or null. */
-  nextBlockedBy: { stageId: string; stageName: string } | null;
+  /** The stage that stops forward moves right now (and completing): it needs an approval, or has unfinished parts. Or null. */
+  nextBlockedBy: { stageId: string; stageName: string; reason: "approval" | "children"; openChildren: number } | null;
+  /** "Part of: <parent> > <stage>"; null for a top-level task or when the caller can't see the parent. */
+  parent: WorkParent | null;
+  /** The parts (child events and tasks) the caller can see, in parent-stage order, at most 200 per kind. */
+  children: WorkChild[];
+  /** How many more parts exist that the caller can't see (counted, never described). */
+  hiddenChildren: number;
   /** Newest first, at most 100. */
   updates: StaffTaskUpdateResponseDto[];
 }

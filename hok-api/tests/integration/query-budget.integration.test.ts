@@ -229,7 +229,8 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
   });
 
   // Round 2: a task's detail reads the task, its stages, its links and its timeline -- one query each, in parallel --
-  // however many stages, links and updates it has (auth profile + 4 reads; round 3 adds the approvals read = 6).
+  // however many stages, links and updates it has (auth profile + 4 reads; round 3 adds the approvals read = 6; round 4 adds the
+  // children of each kind -- events, tasks, which also carry the per-stage unfinished counts -- = 8, and 1 more for a task that is itself a part).
   it("task detail: stages, links and timeline are one query each, however many there are", async (ctx) => {
     if (!staffTasksReady) ctx.skip();
     const [bare, busy] = await db.select({ id: staffTasks.id }).from(staffTasks).where(eq(staffTasks.assigneeId, admin.id)).orderBy(staffTasks.title).limit(2);
@@ -239,7 +240,7 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     count = 0;
     const heavy = await queriesFor(`/api/v1/staff-tasks/${busy!.id}`);
     expect(heavy, `task detail: ${base} queries bare, ${heavy} with 30 links and 12 comments`).toBe(base);
-    expect(base).toBeLessThanOrEqual(6);
+    expect(base).toBeLessThanOrEqual(8);
   });
 
   // Round 3: an event's detail reads the event, its stages, its history and its approvals (+ the client's team) -- one query
@@ -251,7 +252,7 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     await db.insert(stageApprovals).values(Array.from({ length: 25 }, () => ({ eventId: busy!.id, eventStageId: stage!.id, status: "superseded" as const, requestedBy: admin.id })));
     const heavy = await queriesFor(`/api/v1/events/${busy!.id}`);
     expect(heavy, `event detail: ${base} queries bare, ${heavy} with 25 approval rounds`).toBe(base);
-    expect(base).toBeLessThanOrEqual(7); // auth profile + event + stages + history + approvals (+ the client's team)
+    expect(base).toBeLessThanOrEqual(7); // auth profile + event + stages + history + approvals + children (events, tasks) (+ the client's team)
     expect(await queriesFor("/api/v1/approvals/count")).toBe(2); // auth profile + one count
   });
 

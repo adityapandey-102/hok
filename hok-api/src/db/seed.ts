@@ -9,7 +9,8 @@
  * editor, tasks due on fixed days of the current month, and 3 private to-dos per
  * person. Round 2 (2026-11-03) adds task templates (two for roles, one for any role),
  * gives every task a template and its stages, brief links on the editor tasks, one
- * delivered link, and one asset the client can see on the portal.
+ * delivered link, and one asset the client can see on the portal. Round 4 (2026-11-05) adds
+ * a batch event with 3 child events and a task with 1 child task (see seedParts).
  *
  * Deliberately calls the AuthProvider directly, not an Application service --
  * seeding is an administrative bypass of RBAC (the same way migrations and the
@@ -175,6 +176,8 @@ const TEMPLATES: { name: string; stages: string[]; kind: "event" | "task"; roles
   { name: "Shoot with client sign-off", kind: "event", roles: [], stages: ["Planned", "Shoot", "Editing", "Client Review", "Completed"], approvers: { 3: ["client"] } },
   // The example from the team feedback: stage 4 by an SMM or the Admin, stage 5 by the Admin only.
   { name: "Reel edit (approvals)", kind: "task", roles: ["editor"], stages: ["Brief received", "Rough cut", "Review", "Final cut", "Delivery"], approvers: { 3: ["social_media_manager", "admin"], 4: ["admin"] } },
+  // Round 4 (parts): the parent of a batch of child events; its "Production" stage can't be passed until they are finished.
+  { name: "Reel batch", kind: "event", roles: [], stages: ["Brief", "Production", "Delivery"] },
 ];
 
 /** The task template each seeded task uses, by its assignee's role. */
@@ -703,6 +706,147 @@ async function seedApprovals(templates: Map<string, { id: string; stages: string
   }
 }
 
+/**
+ * Round 4 (parents and parts), for Chai Point Cafe: the event "Brand X: 10 reels" sits on its "Production" stage with 3 child events
+ * made from the "Reel Production" template (one finished, two still open, so the parent can't move on), and the task "Deliver the
+ * Chai Point reel pack" sits on "Rough cut" with 1 child task for the content writer (open). Reused by (client, title) / (assignee, title).
+ */
+async function seedParts(templates: Map<string, { id: string; stages: string[] }>): Promise<void> {
+  const probe = await db.execute(sql`select exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'events' and column_name = 'parent_event_id') as ok`);
+  if ((probe.rows[0] as { ok: boolean } | undefined)?.ok !== true) {
+    logger.warn("seed: parent/child columns missing (migration 20261105000001 not applied yet) -- parts skipped");
+    return;
+  }
+  const people = await db
+    .select({ id: profiles.id, email: profiles.email })
+    .from(profiles)
+    .where(inArray(profiles.email, ["rohan.smm@hok.test", "meera.editor@hok.test", "isha.writer@hok.test"]));
+  const rohan = people.find((p) => p.email === "rohan.smm@hok.test")?.id;
+  const meera = people.find((p) => p.email === "meera.editor@hok.test")?.id;
+  const isha = people.find((p) => p.email === "isha.writer@hok.test")?.id;
+  const [client] = await db
+    .select({ id: clients.id, name: clients.businessName, timeZone: clients.timeZone, ownerId: clients.ownerId })
+    .from(clients)
+    .where(eq(clients.businessName, "Chai Point Cafe"))
+    .limit(1);
+  const batch = templates.get("Reel batch");
+  const reel = templates.get("Reel Production");
+  if (!rohan || !meera || !isha || !client || !batch || !reel) return;
+  const today = Math.floor(Date.now() / DAY) * DAY;
+
+  /** One event at stage `target` (0-based) of `template`, with its history; `parent` hangs it under a stage of another event. */
+  const makeEvent = async (title: string, templateName: string, template: { id: string; stages: string[] }, target: number, parent?: { eventId: string; stageId: string }) => {
+    const startsAt = new Date(today + 4 * DAY + 10 * 3600_000);
+    return db.transaction(async (tx) => {
+      const [event] = await tx
+        .insert(events)
+        .values({
+          clientId: client.id,
+          title,
+          type: "content_posting",
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 3 * 3600_000),
+          timeZone: client.timeZone,
+          location: "Online",
+          templateId: template.id,
+          templateName,
+          stageCount: template.stages.length,
+          state: "active",
+          createdBy: client.ownerId,
+          ...(parent ? { parentEventId: parent.eventId, parentEventStageId: parent.stageId, depth: 2 } : {}),
+        })
+        .returning({ id: events.id });
+      const rows = await tx
+        .insert(eventStages)
+        .values(template.stages.map((name, pos) => ({ eventId: event!.id, position: pos + 1, name })))
+        .returning({ id: eventStages.id, position: eventStages.position });
+      rows.sort((a, b) => a.position - b.position);
+      await tx.update(events).set({ currentStageId: rows[target]!.id }).where(eq(events.id, event!.id));
+      const base = Date.now() - (target + 1) * 60_000;
+      await tx.insert(eventStageHistory).values([
+        { eventId: event!.id, fromStageId: null, toStageId: rows[0]!.id, changedBy: client.ownerId, createdAt: new Date(base) },
+        ...rows.slice(1, target + 1).map((st, k) => ({ eventId: event!.id, fromStageId: rows[k]!.id, toStageId: st.id, changedBy: client.ownerId, createdAt: new Date(base + (k + 1) * 60_000) })),
+      ]);
+      return { id: event!.id, stageIds: rows.map((r) => r.id) };
+    });
+  };
+
+  // -- the batch event and its 3 reels --
+  const parentTitle = "Brand X: 10 reels";
+  const [existingParent] = await db.select({ id: events.id }).from(events).where(and(eq(events.clientId, client.id), eq(events.title, parentTitle))).limit(1);
+  if (!existingParent) {
+    const parent = await makeEvent(parentTitle, "Reel batch", batch, 1);
+    // Reel 1 is on its last stage (finished); Reel 2 is editing; Reel 3 is at the script.
+    for (const [i, target] of [reel.stages.length - 1, 3, 1].entries()) {
+      await makeEvent(`Brand X: Reel ${i + 1}`, "Reel Production", reel, target, { eventId: parent.id, stageId: parent.stageIds[1]! });
+    }
+    logger.info({ title: parentTitle }, "seed: parent event with 3 parts created");
+  }
+
+  // -- the parent task and its part --
+  const parentTaskTemplate = templates.get("Reel edit");
+  const partTaskTemplate = templates.get("Caption writing");
+  const taskTitle = "Deliver the Chai Point reel pack";
+  const partTitle = "Write the reel pack captions";
+  const [existingTask] = await db.select({ id: staffTasks.id }).from(staffTasks).where(and(eq(staffTasks.assigneeId, meera), eq(staffTasks.title, taskTitle))).limit(1);
+  if (parentTaskTemplate && partTaskTemplate && !existingTask) {
+    const stages = await templateStages(parentTaskTemplate.id);
+    const partStages = await templateStages(partTaskTemplate.id);
+    const stageIds = stages.map(() => randomUUID());
+    const partStageIds = partStages.map(() => randomUUID());
+    const target = 1; // "Rough cut"
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(staffTasks)
+        .values({
+          title: taskTitle,
+          description: "Cut and hand over the reel pack. Captions come first (see its part).",
+          assigneeId: meera,
+          assignedBy: rohan,
+          clientId: client.id,
+          dueAt: new Date(today + 6 * DAY + 18 * 3600_000),
+          priority: "medium",
+          status: "in_progress",
+          templateId: parentTaskTemplate.id,
+          templateName: "Reel edit",
+          stageCount: stages.length,
+          currentStageId: stageIds[target],
+          version: 1 + target,
+        })
+        .returning({ id: staffTasks.id });
+      const taskId = row!.id;
+      await tx.insert(taskStages).values(stages.map((st, i) => ({ id: stageIds[i]!, taskId, position: i + 1, name: st.name, approvers: st.approvers })));
+      await tx.insert(staffTaskUpdates).values([
+        { taskId, authorId: rohan, kind: "created" as const, toStatus: "todo" as const, toAssigneeId: meera, toStageId: stageIds[0]!, createdAt: new Date(Date.now() - 2 * 60_000) },
+        { taskId, authorId: meera, kind: "stage" as const, fromStatus: "todo" as const, toStatus: "in_progress" as const, fromStageId: stageIds[0]!, toStageId: stageIds[target]!, createdAt: new Date(Date.now() - 60_000) },
+      ]);
+      const [part] = await tx
+        .insert(staffTasks)
+        .values({
+          title: partTitle,
+          description: "Captions for the reel pack.",
+          assigneeId: isha,
+          assignedBy: rohan,
+          clientId: client.id,
+          dueAt: new Date(today + 3 * DAY + 18 * 3600_000),
+          priority: "medium",
+          status: "todo",
+          templateId: partTaskTemplate.id,
+          templateName: "Caption writing",
+          stageCount: partStages.length,
+          currentStageId: partStageIds[0],
+          parentTaskId: taskId,
+          parentTaskStageId: stageIds[target],
+          depth: 2,
+        })
+        .returning({ id: staffTasks.id });
+      await tx.insert(taskStages).values(partStages.map((st, i) => ({ id: partStageIds[i]!, taskId: part!.id, position: i + 1, name: st.name, approvers: st.approvers })));
+      await tx.insert(staffTaskUpdates).values({ taskId: part!.id, authorId: rohan, kind: "created" as const, toStatus: "todo" as const, toAssigneeId: isha, toStageId: partStageIds[0]!, createdAt: new Date(Date.now() - 30_000) });
+    });
+    logger.info({ title: taskTitle }, "seed: parent task with 1 part created");
+  }
+}
+
 async function seedPersonalEvents(): Promise<void> {
   const managers = await db
     .select({ id: profiles.id, email: profiles.email, timeZone: profiles.timeZone })
@@ -802,6 +946,7 @@ async function main(): Promise<void> {
   await seedAssets();
   await seedStaffTasks(adminRow?.id, templates);
   await seedApprovals(templates);
+  await seedParts(templates);
   await seedTodos();
   logger.info(`seed: done. Every seeded account uses the password ${SEED_PASSWORD}`);
 }

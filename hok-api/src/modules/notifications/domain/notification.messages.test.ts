@@ -3,6 +3,7 @@ import {
   approvalDecidedPayload,
   approvalRequestedPayload,
   eventReminderPayload,
+  stageChildrenFinishedPayload,
   taskDueReminderPayload,
   taskStatusChangedPayload,
   timeUntilWords,
@@ -93,5 +94,17 @@ describe("approval notifications (round 3)", () => {
     const base = { subject: "event" as const, itemId: "e1", itemTitle: "Shoot", stageName: "Client Review", approvalId: "a2" };
     expect(approvalDecidedPayload({ ...base, decision: "approve", via: "portal" })).toMatchObject({ title: "Approved: Client Review", body: "The client approved Shoot." });
     expect(approvalDecidedPayload({ ...base, decision: "changes", via: "staff" })).toMatchObject({ title: "Changes requested: Client Review", body: "An approver asked for changes on Shoot." });
+  });
+});
+
+describe("stage_children_finished (round 4)", () => {
+  it("names the stage and links to the parent's page; the data carries ids only", () => {
+    expect(stageChildrenFinishedPayload({ subject: "event", itemId: "e1", itemTitle: "10 reels", stageName: "Production" })).toMatchObject({
+      title: "Parts finished: Production",
+      body: '10 reels can move on from "Production".',
+      url: "/app/events/e1",
+      data: { eventId: "e1", stageName: "Production" },
+    });
+    expect(stageChildrenFinishedPayload({ subject: "task", itemId: "t1", itemTitle: "Edit", stageName: "Cut" })).toMatchObject({ url: "/app/tasks/t1", data: { taskId: "t1" } });
   });
 });

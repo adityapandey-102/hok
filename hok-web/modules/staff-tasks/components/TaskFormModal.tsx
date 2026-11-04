@@ -6,6 +6,9 @@ import {
   STAFF_TASK_PRIORITY_LABELS,
   TASK_BRIEF_LINKS_MAX_ON_CREATE,
   buildStaffTaskPayload,
+  bulkTitles,
+  createdSummary,
+  creatingLabel,
   isoToZonedInput,
   type Role,
   staffTaskFormSchema,
@@ -20,6 +23,7 @@ import { eventsApi } from "../../events/api/eventsApi";
 import { clientsApi } from "../../clients/api/clientsApi";
 import { staffTasksApi } from "../api/staffTasksApi";
 import { describeTaskError } from "./taskUi";
+import type { PartContext } from "../../work-tree/partContext";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel, Input } from "../../../components/ui/Field";
@@ -27,7 +31,7 @@ import { Select, Textarea } from "../../../components/ui/Select";
 import { SearchSelect } from "../../../components/ui/SearchSelect";
 import { Icon } from "../../../components/ui/Icon";
 
-function initialValues(task: StaffTask | undefined, zone: string, defaultDue: string): StaffTaskFormValues {
+function initialValues(task: StaffTask | undefined, zone: string, defaultDue: string, part?: PartContext): StaffTaskFormValues {
   return {
     title: task?.title ?? "",
     description: task?.description ?? "",
@@ -36,8 +40,8 @@ function initialValues(task: StaffTask | undefined, zone: string, defaultDue: st
     templateId: "",
     priority: task?.priority ?? "medium",
     due: task ? (task.dueAt ? isoToZonedInput(task.dueAt, zone) : "") : defaultDue,
-    clientId: task?.clientId ?? "",
-    eventId: task?.eventId ?? "",
+    clientId: task?.clientId ?? part?.clientId ?? "",
+    eventId: task?.eventId ?? part?.eventId ?? "",
     links: [],
   };
 }
@@ -77,23 +81,33 @@ export function TaskFormModal({
   task,
   zone,
   defaultDue = "",
+  part,
   onClose,
   onSaved,
+  onPartsDone,
 }: {
   open: boolean;
   /** Present = edit. */
   task?: StaffTask;
   zone: string;
   defaultDue?: string;
+  /** Round 4: create child tasks (`part.count` of them, one request each) under a stage of a parent. */
+  part?: PartContext;
   onClose: () => void;
   onSaved: (task: StaffTask) => void;
+  /** Part mode: called once with how many were made when the run finishes (`failure` set if it stopped early; the modal stays until closed). */
+  onPartsDone?: (made: number, total: number, failure?: string) => void;
 }) {
   const titleId = useId();
   const editing = !!task;
-  const [v, setV] = useState<StaffTaskFormValues>(() => initialValues(task, zone, defaultDue));
+  const [v, setV] = useState<StaffTaskFormValues>(() => initialValues(task, zone, defaultDue, part));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Part mode: how many are made so far, and whether a run stopped halfway (then the form is closed, never resubmitted, to avoid duplicates).
+  const [made, setMade] = useState(0);
+  const [stopped, setStopped] = useState(false);
+  const total = part?.count ?? 1;
   const set = <K extends keyof StaffTaskFormValues>(k: K, value: StaffTaskFormValues[K]) => setV((s) => ({ ...s, [k]: value }));
 
   // The assignee picker searches the API; the picked person's role decides which task templates are offered.
@@ -117,6 +131,28 @@ export function TaskFormModal({
     setSaving(true);
     try {
       const payload = buildStaffTaskPayload(v, zone, editing);
+      if (part && !editing) {
+        const titles = bulkTitles(v.title, total);
+        let count = 0;
+        try {
+          for (const title of titles) {
+            await staffTasksApi.create({ ...payload, title, parent: part.parent });
+            count += 1;
+            setMade(count);
+          }
+        } catch (err) {
+          const reason = describeTaskError(err, "Failed to save the task");
+          if (count === 0) {
+            setFormError(reason);
+          } else {
+            setFormError(createdSummary(count, total, reason));
+            setStopped(true);
+          }
+          return;
+        }
+        onPartsDone?.(count, total);
+        return;
+      }
       const { task: saved } = editing
         ? await staffTasksApi.update(task!.id, { ...payload, version: task!.version })
         : await staffTasksApi.create(payload);
@@ -128,14 +164,28 @@ export function TaskFormModal({
     }
   }
 
+  // Closing after a run that stopped halfway still tells the parent to reload, because some parts exist.
+  function close() {
+    if (stopped) onPartsDone?.(made, total, formError ?? "stopped");
+    else onClose();
+  }
+
   return (
-    <Modal open={open} onClose={onClose} labelledBy={titleId} panelClassName="max-h-[92vh] sm:max-w-2xl">
+    <Modal open={open} onClose={close} labelledBy={titleId} panelClassName="max-h-[92vh] sm:max-w-2xl">
       <form onSubmit={handleSubmit} className="flex min-h-0 flex-col">
         <div className="flex items-center justify-between border-b border-border-light px-5 py-4">
-          <h2 id={titleId} className="font-serif text-lg text-text-primary">
-            {editing ? "Edit task" : "New task"}
-          </h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="rounded-app-sm p-1 text-text-muted hover:bg-accent-bg">
+          <div className="min-w-0">
+            <h2 id={titleId} className="font-serif text-lg text-text-primary">
+              {editing ? "Edit task" : part ? (total > 1 ? `New parts (${total} tasks)` : "New part (task)") : "New task"}
+            </h2>
+            {part && !editing && (
+              <p className="truncate text-xs text-text-muted">
+                Part of {part.parentTitle} › {part.stageName}
+                {total > 1 ? `. Titles get 1 to ${total} added, e.g. “${bulkTitles(v.title || "Title", total)[0]}”.` : ""}
+              </p>
+            )}
+          </div>
+          <button type="button" onClick={close} aria-label="Close" className="rounded-app-sm p-1 text-text-muted hover:bg-accent-bg">
             <Icon name="x" size={18} />
           </button>
         </div>
@@ -249,7 +299,7 @@ export function TaskFormModal({
               id="tf-client"
               placeholder="Search clients…"
               value={v.clientId || null}
-              selectedLabel={task?.clientName ?? undefined}
+              selectedLabel={task?.clientName ?? part?.clientName ?? undefined}
               clearable
               load={clientsApi.searchOptions}
               onChange={(id) => {
@@ -266,7 +316,7 @@ export function TaskFormModal({
               placeholder={v.clientId ? "None" : "Pick a client first"}
               emptyText="No events"
               value={v.eventId || null}
-              selectedLabel={task?.eventTitle ?? undefined}
+              selectedLabel={task?.eventTitle ?? part?.eventTitle ?? undefined}
               clearable
               disabled={!v.clientId}
               loadKey={v.clientId}
@@ -315,12 +365,13 @@ export function TaskFormModal({
         </div>
 
         <div className="flex flex-col-reverse gap-2 border-t border-border-light px-5 py-4 sm:flex-row sm:items-center sm:justify-end">
-          {formError && <p className="text-sm text-error sm:mr-auto">{formError}</p>}
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
+          {formError && <p role="alert" className="text-sm text-error sm:mr-auto">{formError}</p>}
+          {saving && part && total > 1 && <p role="status" className="text-sm text-text-secondary sm:mr-auto">{creatingLabel(made, total)}</p>}
+          <Button type="button" variant="outline" onClick={close}>
+            {stopped ? "Close" : "Cancel"}
           </Button>
-          <Button type="submit" disabled={saving}>
-            {saving ? "Saving…" : editing ? "Save changes" : "Create task"}
+          <Button type="submit" disabled={saving || stopped}>
+            {saving ? "Saving…" : editing ? "Save changes" : part ? (total > 1 ? `Create ${total} tasks` : "Create task") : "Create task"}
           </Button>
         </div>
       </form>

@@ -1,4 +1,4 @@
-import type { Role, StaffTask, StaffTaskPriority, StaffTaskStatus, StaffTaskSummary, TaskLinkKind } from "../../../lib/domain";
+import type { Role, StaffTask, StaffTaskPriority, StaffTaskStatus, StaffTaskSummary, TaskLinkKind, WorkParentRef } from "../../../lib/domain";
 import { apiFetch } from "../../../lib/api/client";
 
 export type TaskRelation = "assigned" | "created" | "team";
@@ -41,6 +41,8 @@ export interface StaffTaskPayload {
   templateId?: string;
   /** Create only: brief links. */
   links?: { url: string; label?: string }[];
+  /** Create only (round 4): make the new task a part of a stage of an event or another task. */
+  parent?: WorkParentRef;
 }
 
 /** All HTTP calls the Staff Tasks module makes against hok-api. Every write returns the fresh task. */

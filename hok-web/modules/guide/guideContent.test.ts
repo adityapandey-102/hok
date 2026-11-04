@@ -45,3 +45,11 @@ describe("guide (round 3: approvals)", () => {
     expect(searchGuide(GUIDE, "approvers").map((a) => a.id)).toContain("templates");
   });
 });
+
+describe("guide (round 4: parts)", () => {
+  it("is found by its words, for every staff role", () => {
+    expect(GUIDE.find((a) => a.id === "parts")?.requires).toBe("staff_tasks:read");
+    expect(searchGuide(GUIDE, "child parent").map((a) => a.id)).toContain("parts");
+    expect(searchGuide(GUIDE, "waiting for parts").map((a) => a.id)).toContain("parts");
+  });
+});

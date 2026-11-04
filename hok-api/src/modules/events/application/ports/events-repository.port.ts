@@ -1,4 +1,4 @@
-import type { ApproverToken } from "../../../../domain";
+import type { ApproverToken, ParentFacts, ParentRef, WorkKind } from "../../../../domain";
 import type { EventDetailRecord, EventEntity, EventStage, EventState, EventSummaryEntity, EventType } from "../../domain/event.entity";
 import type { EventClient, EventTemplate } from "../../domain/event.rules";
 
@@ -34,6 +34,8 @@ export interface NewEventRecord {
   stageNames: string[];
   /** Round 3: each stage's approvers (same order as `stageNames`); a missing entry means none. */
   stageApprovers?: ApproverToken[][];
+  /** Round 4: this event is a part of this parent stage (validated by the service, re-checked under the parent's lock). */
+  parent?: ParentRef;
   createdBy: string;
 }
 
@@ -72,24 +74,30 @@ export interface EventsRepositoryPort {
   findTemplate(templateId: string): Promise<EventTemplate | null>;
   /** Which of these ids are active staff accounts. */
   findActiveProfileIds(ids: readonly string[]): Promise<Set<string>>;
+  /** Round 4: the parent an event or task child is created under, as the child rules need it (not locked); null if missing. */
+  findParent(kind: WorkKind, id: string): Promise<ParentFacts | null>;
   /**
    * One transaction: lock the client row (FOR SHARE) and pass it to `guard`
    * (scope / archived re-checked after the lock), insert the event, copy the
    * stages, set the first as current, write the first history entry.
+   * Round 4: for a child (`record.parent`) the parent row is also read FOR SHARE and passed to `guardParent`
+   * (re-checked after the lock); the depth and the parent columns are written in the same insert.
    */
-  create(record: NewEventRecord, guard: (client: EventClient) => void): Promise<string>;
+  create(record: NewEventRecord, guard: (client: EventClient) => void, guardParent?: (parent: ParentFacts) => void): Promise<string>;
   /** Lock the event (FOR UPDATE), let `decide` check it and return the changes, apply them + bump the version. */
   update(id: string, decide: (current: EventEntity) => EventChanges): Promise<void>;
   /**
    * Lock the event, let `decide` check it against its stages and return the
    * target stage, then set it as current, bump the version and append the
    * history entry -- all in one transaction. `approvedStageIds` (round 3) = the stages
-   * holding an approved approval, for the move gate. A BACK move also supersedes the
+   * holding an approved approval, for the move gate. `openChildren` (round 4) = per stage, how many
+   * unfinished child events/tasks hang on it (ALL of them, visible to the caller or not), read in one
+   * grouped statement on the locked row. A BACK move also supersedes the
    * approvals of the stages from the target on, in the same transaction; the counts come back.
    */
   moveStage(
     id: string,
-    decide: (current: EventEntity, stages: EventStage[], approvedStageIds: ReadonlySet<string>) => EventStage,
+    decide: (current: EventEntity, stages: EventStage[], approvedStageIds: ReadonlySet<string>, openChildren: ReadonlyMap<string, number>) => EventStage,
     entry: StageMoveEntry,
   ): Promise<SupersededCounts>;
 }

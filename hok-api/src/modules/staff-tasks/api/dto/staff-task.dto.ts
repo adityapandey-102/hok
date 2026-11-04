@@ -66,6 +66,14 @@ export const createStaffTaskDtoSchema = z.object({
     .array(z.object({ url: httpUrl, label: linkLabel }))
     .max(TASK_CREATE_LINKS_MAX, `At most ${TASK_CREATE_LINKS_MAX} links`)
     .optional(),
+  /** Round 4: make this task a part (child) of a stage of an event or another task. */
+  parent: z
+    .object({
+      kind: z.enum(["event", "task"]),
+      id: z.string().uuid("parent.id must be an event or task id"),
+      stageId: z.string().uuid("parent.stageId must be a stage id"),
+    })
+    .optional(),
 });
 export type CreateStaffTaskDto = z.infer<typeof createStaffTaskDtoSchema>;
 

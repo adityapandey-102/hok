@@ -27,6 +27,8 @@ import { TaskFormModal } from "./TaskFormModal";
 import { TaskLinksPanel } from "./TaskLinksPanel";
 import { ShareLinkModal } from "./ShareLinkModal";
 import { StageTracker } from "../../events/components/StageTracker";
+import { PartOf } from "../../work-tree/components/PartOf";
+import { PartsSection } from "../../work-tree/components/PartsSection";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { Panel } from "../../../components/ui/Panel";
@@ -87,6 +89,11 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
   const nextBlocked = next ? isMoveBlocked(blockedBy, currentPos, next.position) : false;
   const completeBlocked = isMoveBlocked(blockedBy, currentPos, null);
   const share = done ? 100 : task.stageCount > 0 ? Math.round((task.currentStage.position / task.stageCount) * 100) : 0;
+  // Parts (round 4): whoever may move the task adds them. An event part needs events:write and a client on the task; a task part needs staff_tasks:assign.
+  const mayMakeEvent = hasCapability(role, "events:write");
+  const canEventPart = mayMakeEvent && !!task.clientId;
+  const canTaskPart = hasCapability(role, "staff_tasks:assign");
+  const partCount = task.children.length + task.hiddenChildren;
 
   async function run(action: () => Promise<{ task: StaffTask }>, success: string, fallback: string): Promise<boolean> {
     setBusy(true);
@@ -139,7 +146,8 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
   }
 
   async function handleDelete() {
-    const ok = await confirm({ title: `Delete "${task.title}"?`, body: "The task and its timeline are removed for good.", confirmLabel: "Delete", danger: true });
+    const stay = partCount > 0 ? ` ${partCount} ${partCount === 1 ? "part" : "parts"} will stay as separate items.` : "";
+    const ok = await confirm({ title: `Delete "${task.title}"?`, body: `The task and its timeline are removed for good.${stay}`, confirmLabel: "Delete", danger: true });
     if (!ok) return;
     setBusy(true);
     try {
@@ -160,6 +168,7 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
         </Link>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
+            <PartOf parent={task.parent} />
             <h1 className="page-title break-words">{task.title}</h1>
             <div className="flex flex-wrap items-center gap-2">
               <TaskStatusPill status={task.status} />
@@ -238,6 +247,25 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
           <StageTracker stages={task.stages} currentStageId={task.currentStage.id} label="Task stages" done={done} approvedStageIds={approvedStageIds(task.approvals)} />
         </div>
       </Card>
+
+      <div className="mb-5 empty:hidden">
+        <PartsSection
+          kind="task"
+          itemId={task.id}
+          itemTitle={task.title}
+          stages={task.stages}
+          parts={task.children}
+          hiddenParts={task.hiddenChildren}
+          canAdd={canWork && !done}
+          canEvent={canEventPart}
+          canTask={canTaskPart}
+          eventNeedsClient={mayMakeEvent && !task.clientId}
+          client={task.clientId && task.clientName ? { id: task.clientId, name: task.clientName } : null}
+          event={task.eventId && task.eventTitle ? { id: task.eventId, title: task.eventTitle } : null}
+          zone={zone}
+          onChanged={() => void reload()}
+        />
+      </div>
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-12">
         <div className="flex min-w-0 flex-col gap-5 lg:col-span-7">

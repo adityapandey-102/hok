@@ -1,4 +1,4 @@
-import type { Approval, ApprovalRecord, ApproverToken, Role } from "../../../domain";
+import type { Approval, ApprovalRecord, ApproverToken, ParentRef, Role, WorkChild, WorkChildRow, WorkParent, WorkParentRecord } from "../../../domain";
 
 /**
  * Pure domain shapes for staff tasks (REQUIREMENTS §5.9). Instants are ISO
@@ -57,6 +57,11 @@ export interface TaskStageFull extends TaskStage {
   approvers: ApproverToken[];
 }
 
+/** A stage as a detail lists it: with how many unfinished child events/tasks hang on it (round 4). */
+export interface TaskStageView extends TaskStageFull {
+  openChildren: number;
+}
+
 /** The fields the Admin or creator edits (create + PATCH). */
 export interface StaffTaskFields {
   title: string;
@@ -88,6 +93,10 @@ export interface StaffTaskEntity extends StaffTaskFields {
   blockedReason: string | null;
   status: StaffTaskStatus;
   completedAt: string | null;
+  /** Round 4: the parent this task is a part of and the stage it hangs on; null for a top-level task. Internal. */
+  parentRef: ParentRef | null;
+  /** 1 = top level, up to 3. Internal. */
+  depth: number;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -128,9 +137,13 @@ export interface StaffTaskLink {
 export interface StaffTaskDetail extends StaffTaskEntity {
   /** Null when there's no event, or the events table isn't there yet. */
   eventTitle: string | null;
-  stages: TaskStageFull[];
+  stages: TaskStageView[];
   /** Round 3: every approval round, newest first, capped. Becomes `approvals` (with the caller's flags) in the view. */
   approvalRecords: ApprovalRecord[];
+  /** Round 4: the parent (with what visibility needs), the children (up to 200 per kind) and how many the database counted in all. */
+  parentRecord: WorkParentRecord | null;
+  childRows: WorkChildRow[];
+  childTotal: number;
   /** Oldest first, at most TASK_LINKS_MAX. */
   links: StaffTaskLink[];
   updates: StaffTaskUpdate[];
@@ -167,11 +180,16 @@ export interface StaffTaskSummaryEntity {
  * staff_tasks:assign) and whether they may share its delivered links with the
  * client, so the web needs no role logic of its own.
  */
-export type StaffTaskDetailView = Omit<StaffTaskDetail, "approvalRecords"> & {
+export type StaffTaskDetailView = Omit<StaffTaskDetail, "approvalRecords" | "parentRef" | "depth" | "parentRecord" | "childRows" | "childTotal"> & {
   canManage: boolean;
   canShare: boolean;
   approvals: Approval[];
-  /** The approval stage that stops forward moves right now, or null. */
-  nextBlockedBy: { stageId: string; stageName: string } | null;
+  /** The stage that stops forward moves right now (it needs an approval, or has unfinished parts), or null. */
+  nextBlockedBy: { stageId: string; stageName: string; reason: "approval" | "children"; openChildren: number } | null;
+  /** "Part of: <parent> > <stage>": null for a top-level task, or when the caller can't see the parent. */
+  parent: WorkParent | null;
+  /** The child events and tasks the caller can see (parent-stage order), and how many more exist that they can't. */
+  children: WorkChild[];
+  hiddenChildren: number;
 };
 export type StaffTaskSummaryView = StaffTaskSummaryEntity & { canManage: boolean };

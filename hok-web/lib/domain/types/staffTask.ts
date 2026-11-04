@@ -1,5 +1,6 @@
 import type { Role } from "../constants/roles";
 import type { Approval, ApproverToken, NextBlockedBy } from "./approval";
+import type { WorkChild, WorkParent } from "./work";
 
 /** Staff task types. Mirror hok-api's staff-tasks module responses (REQUIREMENTS §5.9, round 2 contract §7). */
 
@@ -38,6 +39,8 @@ export interface TaskStage {
   position: number;
   /** Who may approve this stage (round 3); empty = no approval needed. */
   approvers: ApproverToken[];
+  /** Unfinished parts hanging on this stage (round 4). */
+  openChildren?: number;
 }
 
 export type TaskLinkKind = "brief" | "delivered";
@@ -117,6 +120,12 @@ export interface StaffTask extends StaffTaskSummary {
   links: TaskLink[];
   /** The caller may share a delivered link with the client: the task has an event and they manage that client (Admin or on its team). Decided by the API. */
   canShare: boolean;
+  /** Round 4: the item this one is a part of (null when top-level or not visible to the caller). */
+  parent: WorkParent | null;
+  /** The parts the caller can see, in parent-stage order. */
+  children: WorkChild[];
+  /** Parts that exist but the caller cannot see (they still hold the parent's stage). */
+  hiddenChildren: number;
   updatedAt: string;
   /** Newest first, at most 100. */
   updates: StaffTaskUpdate[];

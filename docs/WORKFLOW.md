@@ -66,6 +66,47 @@ The plan-spec-build-review loop: Opus writes `docs/specs/round-N.md`, two Sonnet
 - Big risky rounds (approvals, parent/child): split the API work into two sequential helpers (data plus domain and service, then routes plus tests) rather than one 500k-token helper.
 - Main session: edit docs with the Edit tool, never regex scripts. A `String.replace` with an empty match once dumped rows at the top of REQUIREMENTS.md.
 
+### Round 3 lessons (2026-11-04)
+
+- **Progress files paid off.** The usage limit stopped both helpers again. The replacement API helper skipped the 3 finished parts. The web helper had finished its code, so the main session ran its last checks itself in a few minutes, with no new helper.
+- **Smaller helpers.** API-A (348k) and API-B (278k), with no bugs left for B to find. That beats one 530k helper.
+- **Order helpers so nobody waits.** The web helper couldn't run e2e because the API wasn't ready, so its last step was lost. From round 4: **API first, alone**. Then **web and API-B in parallel**, against a working API. The main session runs the final gates and e2e.
+- **The usage limit hit both helpers at once.** Start a round's helpers early in a fresh 5-hour window. Don't run 2 heavy helpers when the window is half used.
+- **E2E test rules for every spec:**
+  - never assume a random day or list is empty, because earlier runs leave data;
+  - assert your own item by its unique title, and use `\d+` for counts;
+  - after a helper function navigates away (e.g. to make a portal link), `goto` the saved URL; never `reload()`.
+- **The main session:** no `sed` on code with regex or backslashes (it dropped a `\`). Use the Edit tool. Check the summary PDF page count with `grep -ao "/Count [0-9]*"` rather than reading the PDF (cheaper).
+
+### One home per kind of information (2026-11-04)
+
+| Information | Its one home | Others only link to it |
+|---|---|---|
+| Where we are, next steps, local DB state | `docs/STATUS.md` | CLAUDE.md §4 links here |
+| What the product must do | `docs/REQUIREMENTS.md` (+ summary PDF for the user) | specs cite FR ids |
+| Why we decided something, history | `docs/DECISIONS.md` | |
+| How one round is built (contract, rules) | `docs/specs/round-N.md` (frozen once the round is committed) | |
+| What a helper finished | `docs/specs/round-N-progress-*.md` (scratch for that round only) | |
+| How we work | this file | memory points here |
+| Engineering rules | `.claude/skills/hok-practices/SKILL.md` | |
+
+CLAUDE.md holds only stable context (roles, stack, rules) and is updated when a capability changes, never with round status.
+
+### Cost per round (fill in at each commit)
+
+| Round | Helper tokens (approx.) | Restarts | Defects found in review / final checks | Spec → verified |
+|---|---|---|---|---|
+| 1 | ~670k (+ a stopped pair) | 1 (user stop) | 1 UI gap (creator couldn't reopen), fixed by helper; 0 security | ~1 day |
+| 2 | ~770k (+ a stopped pair) | 1 (usage limit) | 0 app bugs; 1 flaky e2e; 1 doc slip (mine) | ~1 day |
+| 3 | ~630k + web (stopped after finishing) | 1 (usage limit) | 1 SQL scoping bug (caught by helper), 2 e2e test bugs, 0 security | ~1 day |
+| 4 | ~900k (API-A 413k, API-B 215k, web 273k) | **0** | 0 app bugs; 1 loose RBAC check pinned; Windows test-runner crash fixed (`pool: "threads"`); bundle at 300/300 KB | ~half a day |
+
+Round 4 confirmed the order *API alone → web + API-B in parallel → main session gates*: no restarts, no waiting, e2e green first time.
+
+**Test-selection tip (from an outside review, 2026-11-05):** while working, run `npx vitest related <changed files> --run` instead of guessing which test files matter. The full run at the end of a round stays. When GitHub CI is fixed (deferred item), add `cache: npm` to `actions/setup-node`.
+
+Goal: the most **verified** work per token and per hour, not the fewest tokens.
+
 ## When parallel agents *are* worth it
 
 Two modules with no shared tables and no shared screens (e.g. M10 dashboards UI while M8 portal UI is built), both specified up front. Otherwise sequential is cheaper and nearly as fast, because the main session wastes nothing on coordination.

@@ -39,8 +39,11 @@ export interface Approval {
   canCancel: boolean;
 }
 
-/** The approval stage that currently stops forward moves (events and tasks). */
+/** The stage that currently stops forward moves (events and tasks): it needs an approval, or has unfinished parts (round 4). */
 export interface NextBlockedBy {
   stageId: string;
   stageName: string;
+  reason: "approval" | "children";
+  /** Unfinished parts at that stage (0 when the reason is an approval only). */
+  openChildren: number;
 }

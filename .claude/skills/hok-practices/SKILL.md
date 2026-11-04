@@ -37,6 +37,7 @@ the repos. Read the relevant one before changing code:
 11. Account and business events go through `AUDIT_ACTIONS` (`common/audit/audit-actions.ts`); never log passwords, tokens, portal tokens or client contact details.
 12. Migrations: hand-written SQL in `hok-api/supabase/migrations/`, new timestamped files only, never edit an applied one. **Writing** the file is fine; **applying** it (`npx supabase@2.119.0 migration up`, `db reset`) needs the user's go-ahead. Production only when the user asks, via `db push --dry-run`, then `db push`.
 13. Every route change updates `openapi.yaml` (the drift test fails on an undocumented route) and the README's route map in the same change.
+14. **Drizzle pitfall** (found in round 3): a single-table select with no join renders columns unqualified, so `client_id` inside `notifiedTeamIdsOf()`/`teamIdsOf()` can bind to the subquery's own `client_members`. Always join `clients` and pass `clients.id` to those helpers.
 
 **Web**
 1. hok-web never calls Supabase directly. It calls hok-api only, and session cookies are set by its own route handlers.

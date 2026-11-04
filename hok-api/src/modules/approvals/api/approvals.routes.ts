@@ -7,6 +7,7 @@ import { uuidParam } from "../../../common/http/uuid-param";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { auditLogger } from "../../../common/audit/drizzle-audit-logger";
 import { approvalDecidedPayload, approvalRequestedPayload, notifier } from "../../notifications/notifications.module";
+import { workTreeNotifier } from "../../work-tree/work-tree.module";
 import { ApprovalsService, type ApprovalsCaller } from "../application/approvals.service";
 import type { ApprovalNotifier } from "../application/ports/approval-notifier.port";
 import { DrizzleApprovalsRepository } from "../infrastructure/drizzle-approvals.repository";
@@ -49,7 +50,7 @@ const approvalNotifier: ApprovalNotifier = {
 };
 
 /** Composition root for the Approvals module (shared with the portal route, which makes the client's decision). */
-export const approvalsService = new ApprovalsService(new DrizzleApprovalsRepository(), auditLogger, approvalNotifier);
+export const approvalsService = new ApprovalsService(new DrizzleApprovalsRepository(), auditLogger, approvalNotifier, workTreeNotifier);
 
 export const approvalsRouter = Router();
 

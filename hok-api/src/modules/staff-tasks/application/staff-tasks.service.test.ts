@@ -3,7 +3,7 @@ import { StaffTasksService, type StaffTasksCaller } from "./staff-tasks.service"
 import { AppError, ConflictError, NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import type { AuditEvent } from "../../../common/audit/audit-logger";
-import type { ApprovalRecord, Role } from "../../../domain";
+import type { ApprovalRecord, ParentFacts, ParentRef, Role, WorkChildRow, WorkKind, WorkParentRecord, WorkTreeNotifier } from "../../../domain";
 import type { StaffTaskDetail, StaffTaskEntity, StaffTaskLink, TaskStageFull } from "../domain/staff-task.entity";
 import type { AssigneeCandidate, TaskEventRef, TaskTemplate } from "../domain/staff-task.rules";
 import type {
@@ -95,9 +95,30 @@ function task(o: Partial<StaffTaskEntity> = {}): StaffTaskEntity {
     currentStage: STAGES[0]!,
     blockedReason: null,
     completedAt: null,
+    parentRef: null,
+    depth: 1,
     version: 1,
     createdAt: "2026-10-14T00:00:00.000Z",
     updatedAt: "2026-10-14T00:00:00.000Z",
+    ...o,
+  };
+}
+
+/** The parent an event or task part is created under (round 4). */
+function parentFacts(o: Partial<ParentFacts> = {}): ParentFacts {
+  return {
+    kind: "task",
+    id: "t1",
+    title: "Edit the Diwali reel",
+    depth: 1,
+    state: "in_progress",
+    clientId: null,
+    clientStatus: null,
+    teamIds: [],
+    assigneeId: "meera",
+    assignedBy: "rohan",
+    stageIds: ["s1", "s2", "s3"],
+    parent: null,
     ...o,
   };
 }
@@ -118,6 +139,12 @@ class FakeRepo implements StaffTasksRepositoryPort {
   stages: TaskStageFull[] = STAGES;
   approved = new Set<string>();
   rounds: ApprovalRecord[] = [];
+  /** Round 4: unfinished children per stage id, the parents a part can be created under, and what the detail lists. */
+  open = new Map<string, number>();
+  parents = new Map<string, ParentFacts>();
+  parentRecord: WorkParentRecord | null = null;
+  childRows: WorkChildRow[] = [];
+  childTotal = 0;
   people = new Map<string, AssigneeCandidate>(
     (
       [
@@ -160,7 +187,24 @@ class FakeRepo implements StaffTasksRepositoryPort {
   }
   findDetail(id: string): Promise<StaffTaskDetail | null> {
     const t = this.tasks.get(id);
-    return Promise.resolve(t ? { ...t, eventTitle: null, stages: this.stages, links: this.links.get(id) ?? [], approvalRecords: this.rounds, updates: [] } : null);
+    return Promise.resolve(
+      t
+        ? {
+            ...t,
+            eventTitle: null,
+            stages: this.stages.map((s) => ({ ...s, openChildren: this.open.get(s.id) ?? 0 })),
+            links: this.links.get(id) ?? [],
+            approvalRecords: this.rounds,
+            parentRecord: this.parentRecord,
+            childRows: this.childRows,
+            childTotal: this.childTotal,
+            updates: [],
+          }
+        : null,
+    );
+  }
+  findParent(kind: WorkKind, id: string) {
+    return Promise.resolve(this.parents.get(`${kind}:${id}`) ?? null);
   }
   findAssigneeCandidate(id: string) {
     return Promise.resolve(this.people.get(id) ?? null);
@@ -175,13 +219,15 @@ class FakeRepo implements StaffTasksRepositoryPort {
   findTemplate(id: string) {
     return Promise.resolve(this.templates.get(id) ?? null);
   }
-  create(record: NewStaffTaskRecord) {
+  create(record: NewStaffTaskRecord, guardParent?: (parent: ParentFacts) => void) {
+    // The repository re-reads the parent under its lock and runs the guard on that row.
+    if (record.parent) guardParent?.(this.parents.get(`${record.parent.kind}:${record.parent.id}`)!);
     this.created.push(record);
     const p = this.people.get(record.assigneeId)!;
-    const { links, stageNames, templateId: _templateId, ...rest } = record;
+    const { links, stageNames, templateId: _templateId, parent, ...rest } = record;
     this.tasks.set(
       "new",
-      task({ ...rest, id: "new", assigneeRole: p.role, assigneeName: p.id, stageCount: stageNames.length, currentStage: { id: "n1", position: 1, name: stageNames[0]! } }),
+      task({ ...rest, parentRef: parent ?? null, id: "new", assigneeRole: p.role, assigneeName: p.id, stageCount: stageNames.length, currentStage: { id: "n1", position: 1, name: stageNames[0]! } }),
     );
     this.links.set(
       "new",
@@ -189,12 +235,12 @@ class FakeRepo implements StaffTasksRepositoryPort {
     );
     return Promise.resolve("new");
   }
-  update(id: string, decide: StaffTaskChangeDecision) {
+  update(id: string, decide: StaffTaskChangeDecision, options: { openChildrenGate?: boolean } = {}) {
     const current = this.tasks.get(id);
     if (!current) return Promise.reject(new AppError(404, "nf", "STAFF_TASK_NOT_FOUND"));
     let c;
     try {
-      c = decide(current, this.stages, this.approved);
+      c = decide(current, this.stages, this.approved, options.openChildrenGate ? this.open : new Map());
     } catch (e) {
       return Promise.reject(e instanceof Error ? e : new Error(String(e)));
     }
@@ -325,14 +371,28 @@ let audits: AuditEvent[];
 let notifier: RecordingNotifier;
 let previews: [string, string][];
 let service: StaffTasksService;
+/** Parents whose stage the service asked the work-tree notifier to re-check. */
+let cleared: { parent: ParentRef; actorId: string | null }[];
 const NOW = new Date("2026-10-14T12:00:00Z");
 
 beforeEach(() => {
   repo = new FakeRepo();
   audits = [];
   previews = [];
+  cleared = [];
   notifier = new RecordingNotifier();
-  service = new StaffTasksService(repo, { record: (e) => (audits.push(e), Promise.resolve()) }, notifier, () => NOW, { refresh: (id, url) => void previews.push([id, url]) });
+  const workTree: WorkTreeNotifier = {
+    stageMayBeClear: (parent, actorId) => (cleared.push({ parent, actorId }), Promise.resolve()),
+    childChanged: () => Promise.resolve(),
+  };
+  service = new StaffTasksService(
+    repo,
+    { record: (e) => (audits.push(e), Promise.resolve()) },
+    notifier,
+    () => NOW,
+    { refresh: (id, url) => void previews.push([id, url]) },
+    workTree,
+  );
 });
 
 describe("list (row scope)", () => {
@@ -649,7 +709,7 @@ describe("stage approvals (round 3)", () => {
     repo.rounds = [round()];
     const asAdmin = await service.get(ADMIN, "t1");
     expect(asAdmin.stages.map((s) => s.approvers)).toEqual([[], ["social_media_manager", "admin"], ["admin"]]);
-    expect(asAdmin.nextBlockedBy).toEqual({ stageId: "s2", stageName: "Cut" });
+    expect(asAdmin.nextBlockedBy).toEqual({ stageId: "s2", stageName: "Cut", reason: "approval", openChildren: 0 });
     expect(asAdmin.approvals[0]).toMatchObject({ canDecide: true, canCancel: true });
     // Meera asked for it herself: she can cancel, not decide.
     const asRequester = await service.get(MEERA, "t1");
@@ -658,7 +718,7 @@ describe("stage approvals (round 3)", () => {
 
   it("an approved stage stops blocking; the next unapproved approval stage does", async () => {
     repo.rounds = [round({ status: "approved" })];
-    expect((await service.get(ADMIN, "t1")).nextBlockedBy).toEqual({ stageId: "s3", stageName: "Review" });
+    expect((await service.get(ADMIN, "t1")).nextBlockedBy).toEqual({ stageId: "s3", stageName: "Review", reason: "approval", openChildren: 0 });
     repo.rounds = [round({ status: "approved" }), round({ id: "a2", stageId: "s3", stageName: "Review", stagePosition: 3, approvers: ["admin"], status: "approved" })];
     expect((await service.get(ADMIN, "t1")).nextBlockedBy).toBeNull();
   });
@@ -814,5 +874,193 @@ describe("links", () => {
       expect(await codeOf(service.shareLink(ROHAN, "t1", "d2", { title: null }))).toBe("STAFF_TASK_NO_EVENT");
       expect(repo.shared).toHaveLength(1);
     });
+  });
+});
+
+// -- round 4: parent and child work -----------------------------------------------------------
+
+describe("the move gate with parts (round 4)", () => {
+  it("can enter a stage with unfinished parts, not pass it or jump over it", async () => {
+    repo.open.set("s2", 2);
+    await service.moveStage(MEERA, "t1", { stageId: "s2", version: 1 });
+    expect(await codeOf(service.moveStage(MEERA, "t1", { stageId: "s3", version: 2 }))).toBe("STAGE_CHILDREN_OPEN");
+    repo.tasks.set("t1", task({ version: 3 }));
+    expect(await codeOf(service.moveStage(MEERA, "t1", { stageId: "s3", version: 3 }))).toBe("STAGE_CHILDREN_OPEN"); // a jump from stage 1
+    expect(repo.tasks.get("t1")?.currentStage.id).toBe("s1");
+  });
+
+  it("moves on once the last part is finished; a back move is never blocked", async () => {
+    repo.open.set("s2", 1);
+    await service.moveStage(MEERA, "t1", { stageId: "s2", version: 1 });
+    repo.open.clear();
+    await service.moveStage(MEERA, "t1", { stageId: "s3", version: 2 });
+    repo.open.set("s3", 5);
+    expect(await codeOf(service.moveStage(MEERA, "t1", { stageId: "s1", version: 3 }))).toBeNull();
+  });
+
+  it("completing is stopped by unfinished parts on the last stage, for the Admin too", async () => {
+    repo.tasks.set("t1", task({ currentStage: STAGES[2]!, status: "in_progress" }));
+    repo.open.set("s3", 3);
+    expect(await codeOf(service.moveStage(MEERA, "t1", { complete: true, version: 1 }))).toBe("STAGE_CHILDREN_OPEN");
+    expect(await codeOf(service.moveStage(ADMIN, "t1", { complete: true, version: 1 }))).toBe("STAGE_CHILDREN_OPEN");
+    repo.open.clear();
+    await service.moveStage(MEERA, "t1", { complete: true, version: 1 });
+    expect(repo.tasks.get("t1")?.status).toBe("done");
+  });
+
+  it("with an unapproved approval AND open parts on one stage the approval error comes first", async () => {
+    repo.stages = GATED_STAGES;
+    repo.open.set("s2", 2);
+    await service.moveStage(MEERA, "t1", { stageId: "s2", version: 1 });
+    expect(await codeOf(service.moveStage(MEERA, "t1", { stageId: "s3", version: 2 }))).toBe("STAGE_APPROVAL_REQUIRED");
+    repo.approved.add("s2");
+    expect(await codeOf(service.moveStage(MEERA, "t1", { stageId: "s3", version: 2 }))).toBe("STAGE_CHILDREN_OPEN");
+  });
+
+  it("the detail reports each stage's count and why the next stop blocks", async () => {
+    repo.open.set("s2", 4);
+    const view = await service.get(MEERA, "t1");
+    expect(view.stages.map((s) => s.openChildren)).toEqual([0, 4, 0]);
+    expect(view.nextBlockedBy).toEqual({ stageId: "s2", stageName: "Cut", reason: "children", openChildren: 4 });
+  });
+
+  it("blocking is not gated by parts", async () => {
+    repo.open.set("s1", 2);
+    await service.block(MEERA, "t1", { reason: "Waiting for footage", version: 1 });
+    expect(repo.tasks.get("t1")?.status).toBe("blocked");
+  });
+});
+
+describe("creating a part of a task or an event (round 4)", () => {
+  const base = { title: "Cut the reel", assigneeId: "meera", templateId: "tpl-reel" };
+  const underTask = { kind: "task" as const, id: "t1", stageId: "s2" };
+  const underEvent = { kind: "event" as const, id: "e1", stageId: "es1" };
+
+  beforeEach(() => {
+    repo.parents.set("task:t1", parentFacts({ assigneeId: "arjun", assignedBy: "rohan" }));
+    repo.parents.set(
+      "event:e1",
+      parentFacts({ kind: "event", id: "e1", title: "Shoot", state: "active", clientId: "c1", clientStatus: "active", teamIds: ["rohan"], assigneeId: null, assignedBy: null, stageIds: ["es1", "es2"] }),
+    );
+  });
+
+  it("a part of an event links to that event and its client by default, and audits the parent", async () => {
+    await service.create(ROHAN, { ...base, parent: underEvent });
+    expect(repo.created[0]).toMatchObject({ clientId: "c1", eventId: "e1", parent: underEvent });
+    expect(audits[0]).toMatchObject({ action: "staff_task.created", metadata: { parent: underEvent } });
+  });
+
+  it("a part of an event keeps a client the body names itself", async () => {
+    await service.create(ADMIN, { ...base, clientId: "c2", parent: underEvent });
+    expect(repo.created[0]).toMatchObject({ clientId: "c2", eventId: null });
+  });
+
+  it("a part of a task: the creator and the Admin may, and the template-role check and the ladder still apply", async () => {
+    await service.create(ROHAN, { ...base, parent: underTask });
+    await service.create(ADMIN, { ...base, parent: underTask });
+    expect(repo.created.map((c) => c.parent)).toEqual([underTask, underTask]);
+    expect(await codeOf(service.create(ROHAN, { ...base, assigneeId: "pia", templateId: "tpl-any", parent: underTask }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
+    expect(await codeOf(service.create(ROHAN, { ...base, assigneeId: "arjun", parent: underTask }))).toBe("STAFF_TASK_TEMPLATE_INVALID"); // the editor-only template
+  });
+
+  it("a manager who sees the parent task but can't move it gets 403; one who can't see it gets 404", async () => {
+    expect(await codeOf(service.create(PIA, { ...base, parent: underTask }))).toBe("STAFF_TASK_NOT_FOUND");
+    repo.parents.set("task:t1", parentFacts({ assigneeId: "arjun", assignedBy: "admin", clientId: "c1", teamIds: ["rohan"] }));
+    expect(await codeOf(service.create(ROHAN, { ...base, parent: underTask }))).toBe("STAFF_TASK_FORBIDDEN");
+    expect(repo.created).toHaveLength(0);
+  });
+
+  it("refuses a done task, a cancelled event, a wrong stage, a missing parent and a parent that is already 3 levels deep", async () => {
+    repo.parents.set("task:t1", parentFacts({ state: "done", assignedBy: "rohan" }));
+    expect(await codeOf(service.create(ROHAN, { ...base, parent: underTask }))).toBe("STAFF_TASK_DONE");
+    repo.parents.set("task:t1", parentFacts({ assignedBy: "rohan" }));
+    expect(await codeOf(service.create(ROHAN, { ...base, parent: { ...underTask, stageId: "elsewhere" } }))).toBe("WORK_PARENT_STAGE_INVALID");
+    repo.parents.set("task:t1", parentFacts({ assignedBy: "rohan", depth: 3 }));
+    expect(await codeOf(service.create(ROHAN, { ...base, parent: underTask }))).toBe("WORK_TOO_DEEP");
+    repo.parents.set(
+      "event:e1",
+      parentFacts({ kind: "event", id: "e1", state: "cancelled", clientId: "c1", teamIds: ["rohan"], assigneeId: null, assignedBy: null, stageIds: ["es1"] }),
+    );
+    expect(await codeOf(service.create(ROHAN, { ...base, parent: underEvent }))).toBe("EVENT_NOT_ACTIVE");
+    expect(await codeOf(service.create(ROHAN, { ...base, parent: { kind: "event", id: "gone", stageId: "es1" } }))).toBe("EVENT_NOT_FOUND");
+    expect(repo.created).toHaveLength(0);
+  });
+
+  it("the parent is checked again on the locked row (it may have been completed meanwhile)", async () => {
+    const orig = repo.create.bind(repo);
+    repo.create = (record, guardParent) => {
+      repo.parents.set("task:t1", parentFacts({ state: "done", assignedBy: "rohan" }));
+      return orig(record, guardParent);
+    };
+    expect(await codeOf(service.create(ROHAN, { ...base, parent: underTask }))).toBe("STAFF_TASK_DONE");
+  });
+});
+
+describe("telling the parent's people (round 4)", () => {
+  const part = { kind: "event" as const, id: "e9", stageId: "es2" };
+
+  it("completing a part asks the work-tree notifier to re-check its parent's stage; a plain stage move does not", async () => {
+    repo.tasks.set("t1", task({ parentRef: part }));
+    await service.moveStage(MEERA, "t1", { stageId: "s2", version: 1 });
+    await service.moveStage(MEERA, "t1", { stageId: "s3", version: 2 });
+    expect(cleared).toEqual([]);
+    await service.moveStage(MEERA, "t1", { complete: true, version: 3 });
+    expect(cleared).toEqual([{ parent: part, actorId: "meera" }]);
+  });
+
+  it("deleting a part asks too (an unfinished part that is deleted no longer blocks)", async () => {
+    repo.tasks.set("t1", task({ parentRef: part }));
+    await service.delete(ADMIN, "t1");
+    expect(cleared).toEqual([{ parent: part, actorId: "admin" }]);
+  });
+
+  it("a top-level task never asks", async () => {
+    await service.moveStage(MEERA, "t1", { stageId: "s3", version: 1 });
+    await service.moveStage(MEERA, "t1", { complete: true, version: 2 });
+    await service.delete(ADMIN, "t2");
+    expect(cleared).toEqual([]);
+  });
+});
+
+describe("parts in the detail (round 4)", () => {
+  const childRow = (o: Partial<WorkChildRow>): WorkChildRow => ({
+    kind: "task",
+    id: "k-1",
+    title: "Cut it",
+    stageId: "s2",
+    stageName: "Cut",
+    stagePosition: 2,
+    currentStageName: "Brief",
+    currentPosition: 1,
+    stageCount: 3,
+    status: "todo",
+    state: null,
+    finished: false,
+    assigneeName: "Meera",
+    createdAt: "2026-11-05T10:00:00.000Z",
+    teamIds: [],
+    assigneeId: "meera",
+    assignedBy: "admin",
+    ...o,
+  });
+
+  it("lists the parts the caller sees, counts the others, and leaks no internal field", async () => {
+    repo.childRows = [childRow({}), childRow({ id: "k-2", title: "Somebody else's secret", assigneeId: "arjun", assignedBy: "rohan" })];
+    repo.childTotal = 2;
+    const view = await service.get(MEERA, "t1");
+    expect(view.children.map((c) => c.id)).toEqual(["k-1"]);
+    expect(view.hiddenChildren).toBe(1);
+    expect(JSON.stringify(view)).not.toContain("secret");
+    expect(view).not.toHaveProperty("childRows");
+    expect(view).not.toHaveProperty("parentRef");
+    expect(view).not.toHaveProperty("depth");
+    // The Admin sees both.
+    expect((await service.get(ADMIN, "t1")).children).toHaveLength(2);
+  });
+
+  it("the parent stub is null when the caller can't see the parent", async () => {
+    repo.parentRecord = { kind: "event", id: "e1", title: "Shoot", stageId: "es1", stageName: "Planned", teamIds: ["rohan"], assigneeId: null, assignedBy: null };
+    expect((await service.get(ADMIN, "t1")).parent).toEqual({ kind: "event", id: "e1", title: "Shoot", stageId: "es1", stageName: "Planned" });
+    expect((await service.get(MEERA, "t1")).parent).toBeNull();
   });
 });

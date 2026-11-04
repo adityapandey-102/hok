@@ -5,6 +5,7 @@ import {
   formatInZone,
   isTaskOverdue,
   stageProgressLabel,
+  workErrorMessage,
   type StaffTaskPriority,
   type StaffTaskStatus,
 } from "../../../lib/domain";
@@ -109,7 +110,7 @@ export function describeTaskError(err: unknown, fallback: string): string {
     case "STAFF_TASK_CLIENT_INVALID":
       return "Choose one of your own clients (or an event of one).";
     default:
-      return err instanceof Error ? err.message : fallback;
+      return workErrorMessage(code) ?? (err instanceof Error ? err.message : fallback);
   }
 }
 

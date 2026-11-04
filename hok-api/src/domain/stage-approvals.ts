@@ -59,13 +59,26 @@ export interface GateStage {
   approvers: readonly string[];
   /** The stage holds an `approved` approval in the current visit. */
   approved: boolean;
+  /**
+   * Round 4: how many child events / tasks hanging on this stage are unfinished (ALL of them, whether or not the
+   * caller can see them -- the gate must not be bypassable by what someone can't see). 0 = none.
+   */
+  openChildren: number;
 }
 
-/** The first stage at or after `currentPosition` that has approvers and isn't approved yet: the item can be moved to it, not past it. */
+/** The stage still waits for an approval (it has approvers and none approved it in this visit). */
+function needsApproval(s: Pick<GateStage, "approvers" | "approved">): boolean {
+  return s.approvers.length > 0 && !s.approved;
+}
+
+/**
+ * The first stage at or after `currentPosition` that blocks: it needs an approval it hasn't got (round 3) or has
+ * unfinished children (round 4). The item can be moved to it, not past it.
+ */
 export function blockingStage<T extends GateStage>(stages: readonly T[], currentPosition: number): T | null {
   let found: T | null = null;
   for (const s of stages) {
-    if (s.position < currentPosition || s.approvers.length === 0 || s.approved) continue;
+    if (s.position < currentPosition || (!needsApproval(s) && s.openChildren <= 0)) continue;
     if (found === null || s.position < found.position) found = s;
   }
   return found;
@@ -82,30 +95,63 @@ export function maxReachablePosition(stages: readonly GateStage[], currentPositi
 }
 
 /**
- * A forward move (or completing, `targetPosition` = completionPosition) past an unapproved approval stage is a
- * 409 STAGE_APPROVAL_REQUIRED naming that stage. Moves back, and moves up to and onto the approval stage, are free.
+ * A forward move (or completing, `targetPosition` = completionPosition) past a blocking stage is a 409 naming that
+ * stage: STAGE_APPROVAL_REQUIRED when it still needs approval (also when it has unfinished children too -- the
+ * approval error comes first), STAGE_CHILDREN_OPEN ("<stage> has N unfinished parts") when children are the only
+ * reason. Moves back, and moves up to and onto the blocking stage, are free.
  */
 export function assertCanPass(stages: readonly (GateStage & { name: string })[], currentPosition: number, targetPosition: number): void {
   if (targetPosition <= currentPosition) return;
   const blocker = blockingStage(stages, currentPosition);
   if (blocker && targetPosition > blocker.position) {
-    throw new ConflictError(`"${blocker.name}" needs approval before this can move on`, ERROR_CODES.STAGE_APPROVAL_REQUIRED);
+    if (needsApproval(blocker)) {
+      throw new ConflictError(`"${blocker.name}" needs approval before this can move on`, ERROR_CODES.STAGE_APPROVAL_REQUIRED);
+    }
+    const n = blocker.openChildren;
+    throw new ConflictError(`"${blocker.name}" has ${n} unfinished ${n === 1 ? "part" : "parts"}`, ERROR_CODES.STAGE_CHILDREN_OPEN);
   }
 }
 
-/** The stages with their `approved` flag filled from the ids that hold an approved approval. */
-export function withApproved<T extends { id: string }>(stages: readonly T[], approvedStageIds: ReadonlySet<string>): (T & { approved: boolean })[] {
-  return stages.map((s) => ({ ...s, approved: approvedStageIds.has(s.id) }));
+/**
+ * The stages with their `approved` flag filled from the ids that hold an approved approval, and (round 4) their
+ * `openChildren` from the per-stage counts (a stage missing from the map has none; stages that already carry
+ * an `openChildren`, as a detail's do, keep it when no map is given).
+ */
+export function withApproved<T extends { id: string }>(
+  stages: readonly T[],
+  approvedStageIds: ReadonlySet<string>,
+  openChildren?: ReadonlyMap<string, number>,
+): (T & { approved: boolean; openChildren: number })[] {
+  return stages.map((s) => ({
+    ...s,
+    approved: approvedStageIds.has(s.id),
+    openChildren: openChildren ? (openChildren.get(s.id) ?? 0) : ((s as { openChildren?: number }).openChildren ?? 0),
+  }));
 }
 
-/** What the detail responses call `nextBlockedBy`: the approval stage that currently stops forward moves, or null. */
+/** Why a stage stops forward moves: it waits for an approval, or has unfinished children. */
+export type BlockedReason = "approval" | "children";
+
+/**
+ * What the detail responses call `nextBlockedBy`: the stage that currently stops forward moves, or null.
+ * `reason` is "approval" when it still needs one (even if it also has open children), else "children";
+ * `openChildren` is that stage's unfinished-children count (0 for a pure approval stop).
+ */
 export function nextBlockedBy(
-  stages: readonly { id: string; name: string; position: number; approvers: readonly string[] }[],
+  stages: readonly { id: string; name: string; position: number; approvers: readonly string[]; openChildren?: number }[],
   approvedStageIds: ReadonlySet<string>,
   currentPosition: number,
-): { stageId: string; stageName: string; stagePosition: number } | null {
-  const blocker = blockingStage(withApproved(stages, approvedStageIds), currentPosition);
-  return blocker ? { stageId: blocker.id, stageName: blocker.name, stagePosition: blocker.position } : null;
+  openChildren?: ReadonlyMap<string, number>,
+): { stageId: string; stageName: string; stagePosition: number; reason: BlockedReason; openChildren: number } | null {
+  const blocker = blockingStage(withApproved(stages, approvedStageIds, openChildren), currentPosition);
+  if (!blocker) return null;
+  return {
+    stageId: blocker.id,
+    stageName: blocker.name,
+    stagePosition: blocker.position,
+    reason: needsApproval(blocker) ? "approval" : "children",
+    openChildren: blocker.openChildren,
+  };
 }
 
 // -- who may decide ----------------------------------------------------------------

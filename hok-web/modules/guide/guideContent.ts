@@ -241,6 +241,33 @@ export const GUIDE: GuideArticle[] = [
     ],
   },
   {
+    id: "parts",
+    title: "Parts (parent and child work)",
+    topic: "Parts",
+    pages: [],
+    keywords: ["parts", "part", "child", "children", "parent", "sub-task", "subtask", "sub task", "sub-event", "nested", "break down", "split", "reels", "unfinished", "waiting for parts"],
+    requires: "staff_tasks:read",
+    summary: "Big work can be split into smaller pieces. From any stage of an event or a task you add parts: child events or child tasks tied to that stage. The big item can’t move past that stage until all its parts are finished.",
+    steps: [
+      "Open the event or task and find the “Parts” section. Next to the stage, press “Add part”.",
+      "Choose Event or Task, then say how many (1 to 20). With more than one, each title gets a number added: “Reel 1”, “Reel 2” and so on, all made in one go.",
+      "Fill in the form once. An event part belongs to the same client as the item it is part of. A task part is given to someone, like any task.",
+      "Each part has its own page and its own stages. It shows “Part of: …” at the top, with a link back.",
+      "When the last unfinished part of a stage is done, the people working on the big item are told, and the stage opens.",
+    ],
+    tips: [
+      "A task part is finished when it is done. An event part is finished when it reaches its last stage (and that stage is approved, if it needs approval).",
+      "Cancelled events and deleted tasks don’t hold the stage back. A postponed event does.",
+      "Parts can go 3 levels deep: a part, and a part of that part.",
+      "Deleting a task that has parts keeps the parts as separate items.",
+      "“+2 you can’t see” means two more parts exist that you don’t have access to. They still count.",
+    ],
+    problems: [
+      { q: "The Move button says “Waiting for 3 parts”", a: "That stage still has unfinished parts. Open the Parts section, finish them (or cancel the event parts you no longer need), and the button works again." },
+      { q: "I can’t add a part", a: "Only people who can move the item can add parts, and the item must be active (not done, cancelled or postponed). An event part needs the right to make events; a task part needs the right to assign tasks. A task with no client can’t have event parts." },
+    ],
+  },
+  {
     id: "notifications",
     title: "Notifications and reminders",
     topic: "Notifications",

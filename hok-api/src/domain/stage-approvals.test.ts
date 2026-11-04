@@ -34,7 +34,14 @@ function codeOf(fn: () => unknown): string | null {
 }
 
 /** The user's example: five stages, stage 4 by SMM or Admin, stage 5 by Admin only. */
-const stage = (position: number, approvers: string[] = [], approved = false) => ({ id: `s${position}`, name: `Stage ${position}`, position, approvers, approved });
+const stage = (position: number, approvers: string[] = [], approved = false, openChildren = 0) => ({
+  id: `s${position}`,
+  name: `Stage ${position}`,
+  position,
+  approvers,
+  approved,
+  openChildren,
+});
 const EXAMPLE = [stage(1), stage(2), stage(3), stage(4, ["social_media_manager", "admin"]), stage(5, ["admin"])];
 
 describe("approver tokens", () => {
@@ -129,8 +136,8 @@ describe("the move gate (the user's example)", () => {
   });
 
   it("reports nextBlockedBy for the web: the approval stage that stops forward moves", () => {
-    expect(nextBlockedBy(EXAMPLE, new Set(), 2)).toEqual({ stageId: "s4", stageName: "Stage 4", stagePosition: 4 });
-    expect(nextBlockedBy(EXAMPLE, new Set(["s4"]), 4)).toEqual({ stageId: "s5", stageName: "Stage 5", stagePosition: 5 });
+    expect(nextBlockedBy(EXAMPLE, new Set(), 2)).toEqual({ stageId: "s4", stageName: "Stage 4", stagePosition: 4, reason: "approval", openChildren: 0 });
+    expect(nextBlockedBy(EXAMPLE, new Set(["s4"]), 4)).toEqual({ stageId: "s5", stageName: "Stage 5", stagePosition: 5, reason: "approval", openChildren: 0 });
     expect(nextBlockedBy(EXAMPLE, new Set(["s4", "s5"]), 5)).toBeNull();
     expect(nextBlockedBy([stage(1), stage(2)], new Set(), 1)).toBeNull();
   });

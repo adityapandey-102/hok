@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, smallint, boolean, timestamp } from "drizzle-orm/pg-core";
 import type { ApproverToken } from "../../../domain";
 import type { EventState, EventType } from "../domain/event.entity";
 
@@ -26,6 +26,15 @@ export const events = pgTable("events", {
   state: text("state").notNull().$type<EventState>().default("active"),
   /** When the 2-hour start reminder went out; cleared when starts_at changes (Phase 2 reminders). */
   remindedAt: timestamp("reminded_at", { withTimezone: true }),
+  /**
+   * Round 4 (20261105000001): the parent this event is a part of -- at most one of the two -- and the parent's stage it hangs on
+   * (the pair is kept together by the API). `depth` 1 = top level; goes stale harmlessly if a parent task is deleted.
+   */
+  parentEventId: uuid("parent_event_id"),
+  parentTaskId: uuid("parent_task_id"),
+  parentEventStageId: uuid("parent_event_stage_id"),
+  parentTaskStageId: uuid("parent_task_stage_id"),
+  depth: smallint("depth").notNull().default(1),
   version: integer("version").notNull().default(1),
   createdBy: uuid("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

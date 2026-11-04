@@ -1,4 +1,4 @@
-import type { EventDetail, EventState, EventSummary, EventType } from "../../../lib/domain";
+import type { EventDetail, EventState, EventSummary, EventType, WorkParentRef } from "../../../lib/domain";
 import { apiFetch } from "../../../lib/api/client";
 import { SEARCH_SELECT_LIMIT, type SelectOption } from "../../../lib/api/options";
 
@@ -31,6 +31,8 @@ export interface CreateEventPayload {
   location?: string | null;
   description?: string | null;
   assignedTeam?: string[];
+  /** Round 4: make the new event a part of a stage of another event or task (same client as the parent). */
+  parent?: WorkParentRef;
 }
 
 export interface UpdateEventPayload {

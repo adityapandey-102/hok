@@ -12,7 +12,7 @@ export function StageRail({
   label = "Stages",
 }: {
   /** `approval`: the stage needs approval (a lock) or has it (a green seal). */
-  stages: { key: string; name: string; approval?: "needed" | "approved" }[];
+  stages: { key: string; name: string; approval?: "needed" | "approved"; /** Unfinished parts (child work) holding this stage. */ parts?: number }[];
   /** Index into `stages` of the current one (-1 if none). */
   currentIndex: number;
   label?: string;
@@ -67,6 +67,14 @@ export function StageRail({
                     className={`ml-1 inline align-[-1px] ${s.approval === "approved" ? "text-success" : "text-text-muted"}`}
                   />
                   <span className="sr-only"> ({s.approval === "approved" ? "approved" : "needs approval"})</span>
+                </>
+              )}
+              {!!s.parts && s.parts > 0 && (
+                <>
+                  <span aria-hidden data-testid="stage-parts-badge" title={`${s.parts} unfinished ${s.parts === 1 ? "part" : "parts"}`} className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-warning-bg px-1 text-[10.5px] font-semibold text-warning-text">
+                    {s.parts}
+                  </span>
+                  <span className="sr-only"> ({s.parts} unfinished {s.parts === 1 ? "part" : "parts"})</span>
                 </>
               )}
               {current && <span className="sr-only"> (current stage)</span>}

@@ -177,3 +177,13 @@ export function approvalDecidedPayload(input: {
     data: { approvalId: input.approvalId, decision: input.decision, [input.subject === "event" ? "eventId" : "taskId"]: input.itemId },
   };
 }
+
+/** stage_children_finished -> the parent's people: the last unfinished part under one of its stages is finished (round 4). */
+export function stageChildrenFinishedPayload(input: { subject: "event" | "task"; itemId: string; itemTitle: string; stageName: string }): NotificationPayload {
+  return {
+    title: `Parts finished: ${input.stageName}`,
+    body: `${input.itemTitle} can move on from "${input.stageName}".`,
+    url: approvalItemUrl(input.subject, input.itemId),
+    data: { [input.subject === "event" ? "eventId" : "taskId"]: input.itemId, stageName: input.stageName },
+  };
+}

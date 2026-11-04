@@ -18,7 +18,7 @@ import { Input } from "../../../components/ui/Field";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../../../lib/hooks/useDebouncedValue";
 import { Pager } from "../../../components/ui/Pager";
 import { StatusPill, type PillTone } from "../../../components/ui/StatusPill";
-import { StageProgressBar } from "./StageTracker";
+import { StageProgressBar } from "./StageProgressBar";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { Panel } from "../../../components/ui/Panel";
 

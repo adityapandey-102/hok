@@ -9,6 +9,8 @@ export default defineConfig({
     include: ["tests/integration/**/*.test.ts"],
     environment: "node",
     fileParallelism: false,
+    // Forked workers lost their IPC channel on Windows (ERR_IPC_CHANNEL_CLOSED) in round 4; threads run the same 345 tests cleanly.
+    pool: "threads",
     // Same as CI's `.env` for this job. Every request's pino line otherwise
     // streams through the worker's IPC channel; on Windows that volume
     // occasionally ended a run with tinypool's "Channel closed"

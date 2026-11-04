@@ -56,4 +56,5 @@ export {
   todoReminderPayload,
   approvalRequestedPayload,
   approvalDecidedPayload,
+  stageChildrenFinishedPayload,
 } from "./domain/notification.messages";

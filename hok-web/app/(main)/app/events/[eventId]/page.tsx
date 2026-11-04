@@ -14,5 +14,5 @@ export default async function EventDetailPage({ params }: { params: Promise<{ ev
     throw err;
   });
 
-  return <EventDetailClient initialEvent={result.event} viewerTimeZone={profile.timeZone} isAdmin={profile.role === "admin"} />;
+  return <EventDetailClient initialEvent={result.event} viewerTimeZone={profile.timeZone} isAdmin={profile.role === "admin"} role={profile.role} />;
 }

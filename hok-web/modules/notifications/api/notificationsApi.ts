@@ -8,7 +8,8 @@ export type NotificationType =
   | "client_comment"
   | "todo_reminder"
   | "approval_requested"
-  | "approval_decided";
+  | "approval_decided"
+  | "stage_children_finished";
 
 export interface AppNotification {
   id: string;

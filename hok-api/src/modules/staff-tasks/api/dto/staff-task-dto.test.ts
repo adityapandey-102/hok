@@ -18,6 +18,15 @@ const paths = (r: { success: boolean; error?: { issues: { path: PropertyKey[] }[
   r.success ? [] : r.error!.issues.map((i) => i.path.map(String).join("."));
 
 describe("createStaffTaskDtoSchema", () => {
+  it("round 4: an optional parent needs a kind, an id and a stage id; PATCH takes none", () => {
+    const body = { title: "x", assigneeId: ID, templateId: TPL };
+    expect(createStaffTaskDtoSchema.safeParse({ ...body, parent: { kind: "task", id: ID, stageId: TPL } }).success).toBe(true);
+    expect(createStaffTaskDtoSchema.safeParse({ ...body, parent: { kind: "event", id: ID, stageId: TPL } }).success).toBe(true);
+    expect(paths(createStaffTaskDtoSchema.safeParse({ ...body, parent: { kind: "todo", id: ID, stageId: TPL } }))).toContain("parent.kind");
+    expect(paths(createStaffTaskDtoSchema.safeParse({ ...body, parent: { kind: "task", id: ID } }))).toContain("parent.stageId");
+    expect(updateStaffTaskDtoSchema.safeParse({ parent: { kind: "task", id: ID, stageId: TPL }, version: 1 }).success).toBe(false);
+  });
+
   it("needs a title, an assignee and a template; trims, blank optional text becomes null", () => {
     const r = createStaffTaskDtoSchema.safeParse({ title: "  Edit reel ", assigneeId: ID, templateId: TPL, description: "", brief: "" });
     expect(r.success && r.data).toMatchObject({ title: "Edit reel", description: null, brief: null });

@@ -19,6 +19,7 @@ export const NOTIFICATION_TYPES = [
   "todo_reminder",
   "approval_requested",
   "approval_decided",
+  "stage_children_finished",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -83,6 +84,11 @@ export const NOTIFICATION_TYPE_INFO: Record<NotificationType, NotificationTypeIn
   approval_decided: {
     label: "Approval decisions",
     description: "A stage you asked to have approved is approved, or changes are requested.",
+    live: true,
+  },
+  stage_children_finished: {
+    label: "Parts finished",
+    description: "Every part (child event or task) under a stage of your event or task is finished, so it can move on.",
     live: true,
   },
 };

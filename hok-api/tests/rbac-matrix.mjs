@@ -856,6 +856,141 @@ async function main() {
   for (const c of [apprClient, otherClient]) if (c) await req(`/clients/${c.id}/archive`, { method: "POST", body: "{}" }, admin.token);
   for (const t of [apprTaskTpl, apprEventTpl]) if (t.body?.template?.id) await req(`/stage-templates/${t.body.template.id}`, { method: "PATCH", body: JSON.stringify({ active: false, version: t.body.template.version }) }, admin.token);
 
+  console.log("\n--- parent and child work (round 4: whoever may MOVE the parent adds a part; the normal create rules still apply; a stage with unfinished parts can't be passed) ---");
+  {
+    const partsEventTpl = await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC parts event tpl ${stamp}`, stages: ["Plan", "Production", "Delivery"] }) }, admin.token);
+    const partsTaskTpl = await req("/stage-templates", { method: "POST", body: JSON.stringify({ name: `RBAC parts task tpl ${stamp}`, kind: "task", stages: ["Brief", "Work", "Review"] }) }, admin.token);
+    check("POST /stage-templates (event and task, for parts) as admin -> 201", partsEventTpl.status === 201 && partsTaskTpl.status === 201, true);
+    const partsClient = (await req("/clients", { method: "POST", body: newClient("parts-client") }, smm.token)).body?.client;
+    const otherPartsClient = (await req("/clients", { method: "POST", body: newClient("parts-other-client") }, pm.token)).body?.client;
+    check("PUT /clients/:id/team (SMM lead + MM + PM) as admin -> 200", (await req(`/clients/${partsClient?.id}/team`, { method: "PUT", body: JSON.stringify({ leadId: smm.id, memberIds: [mm.id, pm.id] }) }, admin.token)).status, 200);
+    const partsTasks = []; // fixture tasks, deleted at the end
+    const evBody = (clientId, parent, extra = {}) => JSON.stringify({ clientId, templateId: partsEventTpl.body?.template?.id, title: `RBAC part event ${stamp}`, type: "shoot", startsAt: "2031-05-01T10:00:00Z", endsAt: "2031-05-01T12:00:00Z", ...(parent ? { parent } : {}), ...extra });
+    const mkEvent = (token, parent, clientId = partsClient?.id, extra = {}) => req("/events", { method: "POST", body: evBody(clientId, parent, extra) }, token);
+    const mkTask = async (token, parent, extra = {}) => {
+      const r = await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: `RBAC part task ${stamp}`, assigneeId: target.id, templateId: partsTaskTpl.body?.template?.id, ...(parent ? { parent } : {}), ...extra }) }, token);
+      if (r.body?.task?.id) partsTasks.push(r.body.task.id);
+      return r;
+    };
+    const ev = async (id, token = admin.token) => (await req(`/events/${id}`, {}, token)).body?.event;
+    const tk = async (id, token = admin.token) => (await req(`/staff-tasks/${id}`, {}, token)).body?.task;
+    const evMove = async (id, pos, token) => {
+      const e = await ev(id);
+      return req(`/events/${id}/stage`, { method: "POST", body: JSON.stringify({ stageId: e?.stages?.[pos - 1]?.id, version: e?.version }) }, token);
+    };
+    const tkMove = async (id, pos, token) => {
+      const t = await tk(id);
+      return req(`/staff-tasks/${id}/stage`, { method: "POST", body: JSON.stringify(pos === "complete" ? { complete: true, version: t?.version } : { stageId: t?.stages?.[pos - 1]?.id, version: t?.version }) }, token);
+    };
+
+    // -- an event parent: events:write on the team (Admin: any); task-only roles can't create events at all --
+    const E = (await mkEvent(smm.token, null, partsClient?.id, { title: `RBAC parent event ${stamp}` })).body?.event;
+    check("POST /events (a parent) as SMM -> 201", E?.id ? 201 : 0, 201);
+    const eParent = { kind: "event", id: E?.id, stageId: E?.stages?.[0]?.id };
+    check("POST /events (a part) without a token -> 401", (await req("/events", { method: "POST", body: evBody(partsClient?.id, eParent) })).status, 401);
+    const eKids = [];
+    for (const [role, token] of everyone) {
+      const expected = role === "admin" || MANAGERS.includes(role) ? 201 : 403;
+      const r = await mkEvent(token, eParent);
+      check(`POST /events (a part of an event) as ${role} -> ${expected}`, r.status, expected);
+      if (r.status === 201) eKids.push(r.body.event.id);
+    }
+    check("... the part names its parent and stage", (await ev(eKids[0]))?.parent?.id === E?.id && (await ev(eKids[0]))?.parent?.stageName === "Plan", true);
+    check("POST /events (a part, another client than the parent's) as SMM -> 400", (await mkEvent(smm.token, eParent, otherPartsClient?.id)).status, 400);
+    check("... the refusal is WORK_CHILD_CLIENT_MISMATCH", (await mkEvent(smm.token, eParent, otherPartsClient?.id)).body?.code, "WORK_CHILD_CLIENT_MISMATCH");
+    check("POST /events (a part, a stage of another event) as SMM -> 400", (await mkEvent(smm.token, { ...eParent, stageId: "00000000-0000-4000-8000-000000000000" })).status, 400);
+    check("... the refusal is WORK_PARENT_STAGE_INVALID", (await mkEvent(smm.token, { ...eParent, stageId: "00000000-0000-4000-8000-000000000000" })).body?.code, "WORK_PARENT_STAGE_INVALID");
+    check("POST /events (a part, a bad parent kind) as SMM -> 400", (await mkEvent(smm.token, { ...eParent, kind: "client" })).status, 400);
+    check("POST /events (a part, no stage) as SMM -> 400", (await mkEvent(smm.token, { kind: "event", id: E?.id })).status, 400);
+    check("POST /events (a part of a missing event) as SMM -> 404", (await mkEvent(smm.token, { ...eParent, id: "00000000-0000-4000-8000-000000000000" })).status, 404);
+    // A parent on a client whose team the caller isn't on: the same 404 as a missing one.
+    const strangerEvent = (await mkEvent(pm.token, null, otherPartsClient?.id, { title: `RBAC stranger event ${stamp}` })).body?.event;
+    for (const [role, token] of [["social_media_manager", smm.token], ["marketing_manager", mm.token]]) {
+      const r = await mkEvent(token, { kind: "event", id: strangerEvent?.id, stageId: strangerEvent?.stages?.[0]?.id }, otherPartsClient?.id);
+      check(`POST /events (a part of an event of a client not on your team) as ${role} -> 404`, r.status, 404);
+      check(`... the refusal is EVENT_NOT_FOUND (${role})`, r.body?.code, "EVENT_NOT_FOUND");
+    }
+    check("POST /events (a part of any event) as admin -> 201", (await mkEvent(admin.token, { kind: "event", id: strangerEvent?.id, stageId: strangerEvent?.stages?.[0]?.id }, otherPartsClient?.id)).status, 201);
+
+    // -- the move gate --
+    const blocked = await ev(E?.id, mm.token);
+    check("GET /events/:id lists the parts and says why it is blocked", blocked?.children?.length === eKids.length && blocked?.nextBlockedBy?.reason === "children" && blocked?.nextBlockedBy?.openChildren === eKids.length, true);
+    check("... and stages[].openChildren counts them", blocked?.stages?.[0]?.openChildren, eKids.length);
+    for (const [role, token] of [["social_media_manager", smm.token], ["admin", admin.token]]) {
+      check(`POST /events/:id/stage past a stage with unfinished parts as ${role} -> 409`, (await evMove(E?.id, 2, token)).status, 409);
+    }
+    check("... the refusal is STAGE_CHILDREN_OPEN", (await evMove(E?.id, 2, smm.token)).body?.code, "STAGE_CHILDREN_OPEN");
+    check("POST /events/:id/stage jumping over the stage as SMM -> 409", (await evMove(E?.id, 3, smm.token)).status, 409);
+    for (const id of eKids) await evMove(id, 3, admin.token); // every part to its last stage
+    check("GET /events/:id after every part reached its last stage: no block", (await ev(E?.id, smm.token))?.nextBlockedBy, null);
+    check("POST /events/:id/stage once the parts are finished as SMM -> 200", (await evMove(E?.id, 2, smm.token)).status, 200);
+
+    // -- a task parent: the assignee, the creator or the Admin may add parts; the ladder still decides who can be assigned --
+    const T = (await mkTask(smm.token, null, { clientId: partsClient?.id, title: `RBAC parent task ${stamp}` })).body?.task;
+    check("POST /staff-tasks (a parent) as SMM -> 201", T?.id ? 201 : 0, 201);
+    const tParent = { kind: "task", id: T?.id, stageId: T?.stages?.[0]?.id };
+    check("POST /staff-tasks (a part) without a token -> 401", (await req("/staff-tasks", { method: "POST", body: "{}" })).status, 401);
+    const tKids = [];
+    for (const [role, token, expected] of [["admin", admin.token, 201], ["social_media_manager", smm.token, 201], ["marketing_manager", mm.token, 403], ["project_manager", pm.token, 403], ["editor", target.token, 403]]) {
+      const r = await mkTask(token, tParent);
+      check(`POST /staff-tasks (a part of a task) as ${role} -> ${expected}`, r.status, expected);
+      if (r.status === 201) tKids.push(r.body.task.id);
+    }
+    check("... a team manager who isn't the creator is refused with STAFF_TASK_FORBIDDEN", (await mkTask(mm.token, tParent)).body?.code, "STAFF_TASK_FORBIDDEN");
+    for (const role of ["marketing_agent", "developer", "content_writer"]) {
+      const r = await mkTask(staff[role].token, tParent);
+      // Task-only roles hold no staff_tasks:assign, so the route refuses them before any visibility check.
+      check(`POST /staff-tasks (a part of a task you can't see) as ${role} -> 403`, r.status, 403);
+    }
+    check("POST /staff-tasks (a part, the ladder: SMM assigns an MM) -> 400", (await mkTask(smm.token, tParent, { assigneeId: mm.id })).status, 400);
+    check("POST /staff-tasks (a part of a missing task) as SMM -> 404", (await mkTask(smm.token, { ...tParent, id: "00000000-0000-4000-8000-000000000000" })).status, 404);
+    check("POST /staff-tasks (a part, a stage of another task) as SMM -> 400", (await mkTask(smm.token, { ...tParent, stageId: "00000000-0000-4000-8000-000000000000" })).status, 400);
+    check("... the refusal is WORK_PARENT_STAGE_INVALID", (await mkTask(smm.token, { ...tParent, stageId: "00000000-0000-4000-8000-000000000000" })).body?.code, "WORK_PARENT_STAGE_INVALID");
+    // A child event of a task parent: the task's client is used; the caller must be able to move the task.
+    for (const [role, token, expected] of [["admin", admin.token, 201], ["social_media_manager", smm.token, 201], ["marketing_manager", mm.token, 403], ["editor", target.token, 403]]) {
+      const r = await mkEvent(token, tParent);
+      check(`POST /events (a part of a task) as ${role} -> ${expected}`, r.status, expected);
+      if (r.status === 201) eKids.push(r.body.event.id);
+    }
+    const noClientTask = (await mkTask(smm.token, null, { title: `RBAC no-client task ${stamp}` })).body?.task;
+    const ncr = await mkEvent(smm.token, { kind: "task", id: noClientTask?.id, stageId: noClientTask?.stages?.[0]?.id });
+    check("POST /events (a part of a task with no client) as SMM -> 400", ncr.status, 400);
+    check("... the refusal is WORK_CHILD_EVENT_NEEDS_CLIENT", ncr.body?.code, "WORK_CHILD_EVENT_NEEDS_CLIENT");
+
+    // -- what each role sees on the parent task, and the gate for the assignee --
+    const asEditor = await tk(T?.id, target.token);
+    check("GET /staff-tasks/:id as the editor lists the part assigned to them and counts the rest as hidden", asEditor?.children?.some((c) => c.kind === "task") && asEditor?.hiddenChildren >= 1, true);
+    check("... a hidden part is counted, not described (no event title among the children)", asEditor?.children?.every((c) => c.kind === "task"), true);
+    check("GET /staff-tasks/:id of a part as the editor: its parent is shown (they can see it)", (await tk(tKids[0], target.token))?.parent?.id, T?.id);
+    check("POST /staff-tasks/:id/stage 1 -> 2 with unfinished parts at stage 1 as editor -> 409", (await tkMove(T?.id, 2, target.token)).status, 409);
+    check("... the refusal is STAGE_CHILDREN_OPEN", (await tkMove(T?.id, 2, target.token)).body?.code, "STAGE_CHILDREN_OPEN");
+    // The editor finishes their part tasks; the Admin moves the part events (made above for this task) to their last stage.
+    for (const id of tKids) {
+      await tkMove(id, 3, target.token);
+      await tkMove(id, "complete", target.token);
+    }
+    for (const id of eKids.slice(-2)) await evMove(id, 3, admin.token);
+    check("POST /staff-tasks/:id/stage 1 -> 2 once its parts are finished as editor -> 200", (await tkMove(T?.id, 2, target.token)).status, 200);
+    // Now add a part on stage 2, which the task is on.
+    const onTwo = await mkTask(smm.token, { kind: "task", id: T?.id, stageId: T?.stages?.[1]?.id });
+    check("POST /staff-tasks (a part on the stage the task is on) as SMM -> 201", onTwo.status, 201);
+    check("POST /staff-tasks/:id/stage 2 -> 3 with an unfinished part as editor -> 409", (await tkMove(T?.id, 3, target.token)).status, 409);
+    check("... the refusal is STAGE_CHILDREN_OPEN", (await tkMove(T?.id, 3, target.token)).body?.code, "STAGE_CHILDREN_OPEN");
+    check("... Admin is held back too", (await tkMove(T?.id, 3, admin.token)).status, 409);
+    await tkMove(onTwo.body?.task?.id, 3, target.token);
+    check("POST /staff-tasks/:id/stage complete on the part as editor -> 200", (await tkMove(onTwo.body?.task?.id, "complete", target.token)).status, 200);
+    check("POST /staff-tasks/:id/stage 2 -> 3 once the part is done as editor -> 200", (await tkMove(T?.id, 3, target.token)).status, 200);
+    // A done parent takes no new parts.
+    check("POST /staff-tasks/:id/stage complete on the parent as editor -> 200", (await tkMove(T?.id, "complete", target.token)).status, 200);
+    check("POST /staff-tasks (a part of a done task) as SMM -> 409", (await mkTask(smm.token, tParent)).status, 409);
+    check("... the refusal is STAFF_TASK_DONE", (await mkTask(smm.token, tParent)).body?.code, "STAFF_TASK_DONE");
+
+    // Fixtures: tasks deleted (a parent's parts stay as top-level items), clients archived, templates deactivated.
+    for (const id of partsTasks) await req(`/staff-tasks/${id}`, { method: "DELETE" }, admin.token);
+    for (const c of [partsClient, otherPartsClient]) if (c) await req(`/clients/${c.id}/archive`, { method: "POST", body: "{}" }, admin.token);
+    for (const t of [partsEventTpl, partsTaskTpl]) if (t.body?.template?.id) await req(`/stage-templates/${t.body.template.id}`, { method: "PATCH", body: JSON.stringify({ active: false, version: t.body.template.version }) }, admin.token);
+  }
+
   console.log("\n--- my to-dos (round 1: todos:manage is own for every role; nobody, the Admin included, reaches another person's) ---");
   check("GET /todos without a token -> 401", (await req("/todos")).status, 401);
   const myTodos = {};

@@ -39,6 +39,14 @@ export const createEventDtoSchema = z.object({
   location: optionalText(500),
   description: optionalText(5000),
   assignedTeam: team.optional(),
+  /** Round 4: make this event a part (child) of a stage of another event or task. Its client must be the parent's. */
+  parent: z
+    .object({
+      kind: z.enum(["event", "task"]),
+      id: z.string().uuid("parent.id must be an event or task id"),
+      stageId: z.string().uuid("parent.stageId must be a stage id"),
+    })
+    .optional(),
 });
 export type CreateEventDto = z.infer<typeof createEventDtoSchema>;
 

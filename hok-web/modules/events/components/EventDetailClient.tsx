@@ -10,8 +10,11 @@ import {
   EVENT_STATE_LABELS,
   EVENT_TYPE_LABELS,
   formatDate,
+  hasCapability,
   isMoveBlocked,
+  workErrorMessage,
   type EventDetail,
+  type Role,
 } from "../../../lib/domain";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { eventsApi } from "../api/eventsApi";
@@ -29,16 +32,20 @@ import { useConfirm } from "../../../components/ui/ConfirmDialog";
 import { EventForm, type EventFormValues } from "./EventForm";
 import { EVENT_STATE_TONES } from "./EventsTab";
 import { StageTracker } from "./StageTracker";
+import { PartOf } from "../../work-tree/components/PartOf";
+import { PartsSection } from "../../work-tree/components/PartsSection";
 
-/** Event detail: stage tracker, move stage with a note, history, edit / reschedule, cancel / postpone. */
+/** Event detail: stage tracker, move stage with a note, parts (child work), history, edit / reschedule, cancel / postpone. */
 export function EventDetailClient({
   initialEvent,
   viewerTimeZone,
   isAdmin,
+  role,
 }: {
   initialEvent: EventDetail;
   viewerTimeZone: string;
   isAdmin: boolean;
+  role: Role;
 }) {
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -70,7 +77,8 @@ export function EventDetailClient({
     if (isApiErrorCode(err, "EVENT_NOT_ACTIVE")) return "A cancelled or postponed event can not change stage. Reactivate it first.";
     if (isApiErrorCode(err, "EVENT_STAGE_UNCHANGED")) return "The event is already at that stage.";
     if (isApiErrorCode(err, "EVENT_TIMES_INVALID")) return "Check the times: the end must not be before the start, and an event lasts at most 31 days.";
-    return err instanceof Error ? err.message : fallback;
+    const code = (err as { code?: string } | null)?.code;
+    return workErrorMessage(code) ?? (err instanceof Error ? err.message : fallback);
   }
 
   async function reload() {
@@ -165,6 +173,7 @@ export function EventDetailClient({
           <Icon name="chevron-left" size={17} className="shrink-0" /> <span className="truncate">{event.clientName}</span>
         </Link>
         <div className="min-w-0">
+          <PartOf parent={event.parent} />
           <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
             <h1 className="page-title break-words">{event.title}</h1>
             <span className="mt-2.5 lg:mt-3.5"><StatusPill label={EVENT_STATE_LABELS[event.state]} tone={EVENT_STATE_TONES[event.state]} /></span>
@@ -247,6 +256,22 @@ export function EventDetailClient({
               onChanged={() => void reload()}
             />
           )}
+
+          <PartsSection
+            kind="event"
+            itemId={event.id}
+            itemTitle={event.title}
+            stages={event.stages}
+            parts={event.children}
+            hiddenParts={event.hiddenChildren}
+            canAdd={canMove}
+            canEvent={hasCapability(role, "events:write")}
+            canTask={hasCapability(role, "staff_tasks:assign")}
+            client={{ id: event.clientId, name: event.clientName }}
+            event={{ id: event.id, title: event.title }}
+            zone={viewerTimeZone}
+            onChanged={() => void reload()}
+          />
 
           <div className="grid grid-cols-1 items-start gap-x-6 gap-y-7 lg:grid-cols-12">
             <Panel icon="calendar" title="When and where" subtitle={`Times in ${viewerTimeZone}`} className="lg:col-span-7">

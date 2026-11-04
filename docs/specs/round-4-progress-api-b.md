@@ -1,0 +1,4 @@
+- API-B part 1 done: tests/integration/parts.integration.test.ts (22 tests: the 3-reels example, gate enter/pass/jump, cancelled/postponed, hidden, depth, client rules, ladder, both reasons, concurrent finish, query budgets).
+- API-B part 2 done: openapi.yaml (parent body on both creates, parent/children/hiddenChildren/openChildren, nextBlockedBy reason/openChildren, notification type, error codes, parts gate text); openapi.test green.
+- API-B part 3 done: seed (seedParts: 'Brand X: 10 reels' with 3 child events, one finished; task 'Deliver the Chai Point reel pack' with 1 child task; re-run reuses) and the RBAC matrix section (parent and child work).
+- API-B part 4 done: final run. lint + tsc clean; unit 974; integration 345 (single run, no IPC flake); seed twice ok; rbac 1013/1013.

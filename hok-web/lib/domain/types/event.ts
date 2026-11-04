@@ -1,5 +1,6 @@
 import type { Role } from "../constants/roles";
 import type { Approval, ApproverToken, NextBlockedBy } from "./approval";
+import type { WorkChild, WorkParent } from "./work";
 
 /** Stage templates and client events (M4). Mirror hok-api's stage-templates and events modules. */
 export const EVENT_TYPES = ["shoot", "campaign", "meeting", "content_posting", "other"] as const;
@@ -26,6 +27,8 @@ export interface StageRef {
   name: string;
   /** Who may approve this stage (round 3); empty = no approval needed. */
   approvers: ApproverToken[];
+  /** Unfinished parts hanging on this stage (round 4; only on an event's or task's own stages, not a template's). */
+  openChildren?: number;
 }
 
 /** What a stage template is for (round 2): the stages of a client event, or of a staff task. */
@@ -90,4 +93,10 @@ export interface EventDetail extends EventSummary {
   nextBlockedBy: NextBlockedBy | null;
   history: EventHistoryEntry[];
   team: { id: string; fullName: string }[];
+  /** Round 4: the item this one is a part of (null when top-level or not visible to the caller). */
+  parent: WorkParent | null;
+  /** The parts the caller can see, in parent-stage order. */
+  children: WorkChild[];
+  /** Parts that exist but the caller cannot see (they still hold the parent's stage). */
+  hiddenChildren: number;
 }

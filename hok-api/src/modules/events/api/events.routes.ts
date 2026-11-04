@@ -7,6 +7,8 @@ import { uuidParam } from "../../../common/http/uuid-param";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import { EventsService, type EventsCaller } from "../application/events.service";
 import { DrizzleEventsRepository } from "../infrastructure/drizzle-events.repository";
+import { auditLogger } from "../../../common/audit/drizzle-audit-logger";
+import { workTreeNotifier } from "../../work-tree/work-tree.module";
 import { toEventDetailResponseDto, toEventSummaryResponseDto } from "./event.presenter";
 import {
   createEventDtoSchema,
@@ -20,7 +22,7 @@ import {
 } from "./dto/event.dto";
 
 /** Composition root for the Events module. */
-const service = new EventsService(new DrizzleEventsRepository());
+const service = new EventsService(new DrizzleEventsRepository(), auditLogger, workTreeNotifier);
 
 export const eventsRouter = Router();
 

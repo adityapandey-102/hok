@@ -26,6 +26,15 @@ describe("createEventDtoSchema", () => {
     expect(paths(createEventDtoSchema, { ...base, type: "party" })).toContain("type");
   });
 
+  it("round 4: an optional parent needs a kind, an id and a stage id", () => {
+    const stageId = "2f71448d-d7d2-4367-a22e-9de10f990cd6";
+    expect(createEventDtoSchema.safeParse({ ...base, parent: { kind: "event", id: base.clientId, stageId } }).success).toBe(true);
+    expect(createEventDtoSchema.safeParse({ ...base, parent: { kind: "task", id: base.clientId, stageId } }).success).toBe(true);
+    expect(paths(createEventDtoSchema, { ...base, parent: { kind: "client", id: base.clientId, stageId } })).toContain("parent.kind");
+    expect(paths(createEventDtoSchema, { ...base, parent: { kind: "event", id: "nope", stageId } })).toContain("parent.id");
+    expect(paths(createEventDtoSchema, { ...base, parent: { kind: "event", id: base.clientId } })).toContain("parent.stageId");
+  });
+
   it("de-duplicates the team and caps it at 20", () => {
     const id = base.clientId;
     const r = createEventDtoSchema.safeParse({ ...base, assignedTeam: [id, id] });

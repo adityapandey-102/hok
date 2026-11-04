@@ -64,7 +64,7 @@ describe("approval stage counts", () => {
 });
 
 describe("isMoveBlocked", () => {
-  const blocked = { stageId: "s4", stageName: "Review", position: 4 };
+  const blocked = { stageId: "s4", stageName: "Review", reason: "approval" as const, openChildren: 0, position: 4 };
   it("never blocks without a blocking stage", () => {
     expect(isMoveBlocked(null, 2, 5)).toBe(false);
     expect(isMoveBlocked(null, 5, null)).toBe(false);
@@ -85,13 +85,21 @@ describe("isMoveBlocked", () => {
 });
 
 describe("blocked reason and position", () => {
-  it("names the stage", () => {
-    expect(blockedReason({ stageId: "s4", stageName: "Review" })).toBe("Needs approval at Review");
+  it("names the stage for an approval", () => {
+    expect(blockedReason({ stageName: "Review", reason: "approval", openChildren: 0 })).toBe("Needs approval at Review");
+  });
+  it("counts the parts when parts are the reason", () => {
+    expect(blockedReason({ stageName: "Production", reason: "children", openChildren: 3 })).toBe("Waiting for 3 parts at Production");
+    expect(blockedReason({ stageName: "Production", reason: "children", openChildren: 1 })).toBe("Waiting for 1 part at Production");
+  });
+  it("shows the approval reason when the API says approval, even with parts open", () => {
+    expect(blockedReason({ stageName: "Review", reason: "approval", openChildren: 2 })).toBe("Needs approval at Review");
   });
   it("finds the stage position, or null", () => {
     const stages = [{ id: "s1", position: 1 }, { id: "s4", position: 4 }];
-    expect(blockedByWithPosition({ stageId: "s4", stageName: "Review" }, stages)).toEqual({ stageId: "s4", stageName: "Review", position: 4 });
-    expect(blockedByWithPosition({ stageId: "zz", stageName: "X" }, stages)).toBeNull();
+    const at = (stageId: string) => ({ stageId, stageName: "Review", reason: "approval" as const, openChildren: 0 });
+    expect(blockedByWithPosition(at("s4"), stages)).toEqual({ ...at("s4"), position: 4 });
+    expect(blockedByWithPosition(at("zz"), stages)).toBeNull();
     expect(blockedByWithPosition(null, stages)).toBeNull();
   });
 });

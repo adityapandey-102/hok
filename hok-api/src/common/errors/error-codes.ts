@@ -237,6 +237,18 @@ export const ERROR_CODES = {
   /** Public: no such approval for this portal's client, it doesn't ask the client, or it is already decided -- always the same 404. */
   PORTAL_APPROVAL_NOT_FOUND: "PORTAL_APPROVAL_NOT_FOUND",
 
+  // -- Parent and child work (round 4) ---------------------------------------------
+  /** A forward move or completion would pass a stage that still has unfinished child events or tasks (409). */
+  STAGE_CHILDREN_OPEN: "STAGE_CHILDREN_OPEN",
+  /** A child of an item that is already a grandchild: at most 3 levels (409). */
+  WORK_TOO_DEEP: "WORK_TOO_DEEP",
+  /** The chosen stage isn't one of the parent's stages (400). */
+  WORK_PARENT_STAGE_INVALID: "WORK_PARENT_STAGE_INVALID",
+  /** A child event of a task that has no client (400). */
+  WORK_CHILD_EVENT_NEEDS_CLIENT: "WORK_CHILD_EVENT_NEEDS_CLIENT",
+  /** A child event names a client other than its parent's (400). */
+  WORK_CHILD_CLIENT_MISMATCH: "WORK_CHILD_CLIENT_MISMATCH",
+
   // -- Notifications (M9) -----------------------------------------------------------
   /** No such notification, or someone else's (the same 404). */
   NOTIFICATION_NOT_FOUND: "NOTIFICATION_NOT_FOUND",

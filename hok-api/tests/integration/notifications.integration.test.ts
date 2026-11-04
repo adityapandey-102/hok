@@ -179,6 +179,7 @@ describe("preferences", () => {
       { type: "todo_reminder", push: true, inApp: true },
       { type: "approval_requested", push: true, inApp: true },
       { type: "approval_decided", push: true, inApp: true },
+      { type: "stage_children_finished", push: true, inApp: true },
     ]);
   });
 

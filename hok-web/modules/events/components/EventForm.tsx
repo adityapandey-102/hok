@@ -46,6 +46,8 @@ export function EventForm({
   defaultTemplate,
   canPickTeam = false,
   submitLabel,
+  progress,
+  titleHint,
   onSubmit,
   onCancel,
 }: {
@@ -56,6 +58,10 @@ export function EventForm({
   defaultTemplate?: SelectOption;
   canPickTeam?: boolean;
   submitLabel: string;
+  /** Shown beside the buttons while saving ("Creating 3 of 10…"). */
+  progress?: string | null;
+  /** A line under the title field (how several parts get numbered). */
+  titleHint?: (title: string) => string | null;
   onSubmit: (values: EventFormValues) => Promise<string | null>;
   onCancel?: () => void;
 }) {
@@ -109,6 +115,7 @@ export function EventForm({
             Title
           </FieldLabel>
           <Input id="ev-title" value={title} maxLength={160} onChange={(e) => setTitle(e.target.value)} />
+          {titleHint && titleHint(title) && <p className="mt-1.5 text-xs text-text-muted">{titleHint(title)}</p>}
         </div>
         <div>
           <FieldLabel htmlFor="ev-type">Type</FieldLabel>
@@ -201,6 +208,11 @@ export function EventForm({
 
       <div>
         <FieldError>{error}</FieldError>
+        {saving && progress && (
+          <p role="status" className="mt-1.5 text-sm text-text-secondary">
+            {progress}
+          </p>
+        )}
         <div className="mt-3 flex flex-wrap gap-2">
           <Button type="submit" disabled={saving}>
             {saving ? "Saving…" : submitLabel}

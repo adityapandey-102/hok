@@ -4,7 +4,7 @@ import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "../../../common/audit/audit-actio
 import { auditLogger as defaultAuditLogger } from "../../../common/audit/drizzle-audit-logger";
 import type { AuditLogger } from "../../../common/audit/audit-logger";
 import type { PortalContext } from "../../../common/database/portal-links";
-import { approvalFromRow, type Approval, type ApprovalRow, type Role } from "../../../domain";
+import { approvalFromRow, noopWorkTreeNotifier, type Approval, type ApprovalRow, type Role, type WorkTreeNotifier } from "../../../domain";
 import {
   assertApprovalVersion,
   assertApprovalVisible,
@@ -43,6 +43,8 @@ export class ApprovalsService {
     private readonly repo: ApprovalsRepositoryPort,
     private readonly audit: AuditLogger = defaultAuditLogger,
     private readonly notifier: ApprovalNotifier = noopApprovalNotifier,
+    /** Round 4: an approved last stage can finish a part (child event), which may clear its parent's stage. */
+    private readonly workTree: WorkTreeNotifier = noopWorkTreeNotifier,
   ) {}
 
   // -- reading ------------------------------------------------------------------
@@ -107,6 +109,7 @@ export class ApprovalsService {
       metadata: { decision: dto.decision, subject: seen.row?.record.subject, subjectId: seen.row?.record.subjectId },
     });
     if (seen.row) await this.notifyDecided(seen.row, dto.decision, "staff", caller.userId);
+    if (seen.row && dto.decision === "approve") await this.afterApproved(seen.row, caller.userId);
     return this.respond(caller, id);
   }
 
@@ -149,6 +152,7 @@ export class ApprovalsService {
       metadata: { decision: dto.decision, via: "portal", linkId: ctx.linkId },
     });
     if (seen.row) await this.notifyDecided(seen.row, dto.decision, "portal", null);
+    if (seen.row && dto.decision === "approve") await this.afterApproved(seen.row, null);
     return { ok: true };
   }
 
@@ -169,6 +173,14 @@ export class ApprovalsService {
     } catch {
       // The notifier already logs; a lookup failure must not undo a committed request.
     }
+  }
+
+  /**
+   * Round 4: approving an event's stage may have finished it (it sat on its last stage), which may clear its parent's stage.
+   * The work-tree notifier checks all that itself and never throws; a task is finished by being done, not approved.
+   */
+  private async afterApproved(row: ApprovalRow, actorId: string | null): Promise<void> {
+    if (row.record.subject === "event") await this.workTree.childChanged("event", row.record.subjectId, actorId);
   }
 
   /** The requester, plus the task's assignee and creator, or the event's team. The dispatcher skips the actor. */

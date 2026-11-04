@@ -53,8 +53,15 @@ export function blockedByWithPosition(blockedBy: NextBlockedBy | null, stages: r
   return stage ? { ...blockedBy, position: stage.position } : null;
 }
 
-/** The reason shown beside a disabled forward button. */
-export function blockedReason(blockedBy: NextBlockedBy): string {
+/**
+ * The reason shown beside a disabled forward button: an approval, or unfinished parts (round 4).
+ * When both apply the API says "approval" first, and so does this.
+ */
+export function blockedReason(blockedBy: Pick<NextBlockedBy, "stageName" | "reason" | "openChildren">): string {
+  if (blockedBy.reason === "children") {
+    const n = blockedBy.openChildren;
+    return `Waiting for ${n} ${n === 1 ? "part" : "parts"} at ${blockedBy.stageName}`;
+  }
   return `Needs approval at ${blockedBy.stageName}`;
 }
 

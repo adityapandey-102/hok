@@ -4,7 +4,7 @@
 |---|---|
 | **Version** | 0.4 — team feedback round 1: task ladder, calendar for everyone, day pop-up, My to-dos (0.3: portfolio website + needleye design system) |
 | **Date** | 2026-11-03 (0.3: 2026-10-13) |
-| **Changes from 0.3** | Admin and managers assign tasks down a role ladder (FR-TSK-01/05); everyone sees tasks they're assigned, created, or (managers) on their clients; calendar for every role with tasks and to-dos, counts per day and a day pop-up (FR-CAL-09/10); private My to-dos with urgency reminders (§5.14); editor raw-files link no longer required. **Round 2 (2026-11-04):** task templates and stages (FR-TSK-03/04/12), Links on every task (FR-TSK-10), "Show to client" assets in the portal (FR-AST-07, FR-POR-10). **Round 3 (2026-11-04):** stage approvals in event and task templates, client approval in the portal (FR-EVT-01c, FR-APR-01..07, FR-POR-11). Plan: [PLAN-team-feedback-2026-11.md](PLAN-team-feedback-2026-11.md) |
+| **Changes from 0.3** | Admin and managers assign tasks down a role ladder (FR-TSK-01/05); everyone sees tasks they're assigned, created, or (managers) on their clients; calendar for every role with tasks and to-dos, counts per day and a day pop-up (FR-CAL-09/10); private My to-dos with urgency reminders (§5.14); editor raw-files link no longer required. **Round 2 (2026-11-04):** task templates and stages (FR-TSK-03/04/12), Links on every task (FR-TSK-10), "Show to client" assets in the portal (FR-AST-07, FR-POR-10). **Round 3 (2026-11-04):** stage approvals in event and task templates, client approval in the portal (FR-EVT-01c, FR-APR-01..07, FR-POR-11). **Round 4 (2026-11-05):** parts — parent and child events/tasks, stage locked until parts finish (FR-WRK-01..05). Plan: [PLAN-team-feedback-2026-11.md](PLAN-team-feedback-2026-11.md) |
 | **Status** | Requirements agreed in principle; architecture draft in [ARCHITECTURE.md](ARCHITECTURE.md) |
 | **Changes from 0.1** | Open questions answered (§10); Marketing Agent → tasks only; stage templates; editor task fields; multiple time zones; plain portal branding; assignee closes own task; client portal moved into Phase 1 |
 
@@ -248,6 +248,16 @@ Tasks the **Admin** assigns to staff — the **only** module available to Market
 | FR-APR-05 | Moving an item back to a stage, or earlier, means those stages need approving again (the old approvals stay in the history as "superseded"). |
 | FR-APR-06 | Notifications: approvers when a request is made; the requester and the item's people when it is decided. An **Approvals** page (To decide / I requested) and a dashboard card show what's waiting. |
 | FR-APR-07 | Example (the user's): an editing template with 5 stages, where stage 4 is approved by an SMM or the Admin and stage 5 by the Admin only. |
+
+### 5.16 Parts: parent and child work (WRK) — v0.4
+
+| ID | Requirement |
+|---|---|
+| FR-WRK-01 | From any stage of an active event or open task, someone who can move it adds **parts**: child events (same client as the parent; the parent task must have a client) or child tasks (normal assignment rules). "How many?" creates up to 20 at once (e.g. "10 reels"). |
+| FR-WRK-02 | A stage with **unfinished parts can't be passed** or skipped (same lock as approvals; the reason is shown). A task part is finished when done; an event part when it sits on its last stage, approved if that stage needs approval. Cancelled events and deleted tasks don't block; postponed events do. |
+| FR-WRK-03 | At most **3 levels** (parent → part → sub-part). |
+| FR-WRK-04 | The parent lists its parts by stage with progress ("+N you can't see" for hidden ones; the lock still counts them). A part shows "Part of: parent › stage". |
+| FR-WRK-05 | When the last unfinished part of a stage finishes, the parent's people are notified ("Parts finished"). |
 | FR-TSK-11 | *(Phase 2)* Due-date reminder: notify the assignee **2 hours before** the task is due. |
 
 ### 5.10 Notifications (NTF)

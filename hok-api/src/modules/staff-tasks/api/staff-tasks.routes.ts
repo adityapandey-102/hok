@@ -10,6 +10,7 @@ import { DrizzleStaffTasksRepository } from "../infrastructure/drizzle-staff-tas
 import { auditLogger } from "../../../common/audit/drizzle-audit-logger";
 import { notifier, taskAssignedPayload, taskCommentedPayload, taskStatusChangedPayload } from "../../notifications/notifications.module";
 import type { StaffTaskNotifier } from "../application/ports/staff-task-notifier.port";
+import { workTreeNotifier } from "../../work-tree/work-tree.module";
 import { HttpLinkPreviewer, NoLinkPreviewer } from "../../assets/infrastructure/http-link-previewer";
 import { toStaffTaskDetailResponseDto, toStaffTaskSummaryResponseDto } from "./staff-task.presenter";
 import {
@@ -57,7 +58,7 @@ const taskNotifier: StaffTaskNotifier = {
 /** Composition root for the Staff Tasks module. */
 // "Share with client" creates an asset, so it queues the same background link preview asset creation does (never in tests).
 const previewer = process.env.NODE_ENV === "test" || process.env.LINK_PREVIEWS === "off" ? new NoLinkPreviewer() : new HttpLinkPreviewer();
-const service = new StaffTasksService(new DrizzleStaffTasksRepository(), auditLogger, taskNotifier, undefined, previewer);
+const service = new StaffTasksService(new DrizzleStaffTasksRepository(), auditLogger, taskNotifier, undefined, previewer, workTreeNotifier);
 
 export const staffTasksRouter = Router();
 

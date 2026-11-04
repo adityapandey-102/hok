@@ -36,7 +36,7 @@ export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 }
 
 /** The icon that says what kind of notification this is. */
-export function notificationIcon(type: string): "message" | "clipboard" | "refresh" | "users" | "bell" | "shield" {
+export function notificationIcon(type: string): "message" | "clipboard" | "refresh" | "users" | "bell" | "shield" | "layers" {
   switch (type) {
     case "client_comment":
     case "task_commented":
@@ -50,6 +50,8 @@ export function notificationIcon(type: string): "message" | "clipboard" | "refre
     case "approval_requested":
     case "approval_decided":
       return "shield";
+    case "stage_children_finished":
+      return "layers";
     default:
       return "bell";
   }

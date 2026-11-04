@@ -16,6 +16,16 @@ import { type EventDetailRecord, type EventEntity, type EventStage, type EventSu
 // Round 3 (stage approvals): the move gate and the detail's approval rounds, Infrastructure-to-Infrastructure (ADR 0003).
 import { approvedStageIds, supersedeFrom } from "../../approvals/infrastructure/approval-gate";
 import { selectItemApprovals } from "../../approvals/infrastructure/approval-queries";
+// Round 4 (parent and child work): the open-children gate read, the children list, the parent facts.
+import {
+  openChildCounts,
+  parentColumns,
+  parentRefOf,
+  selectChildren,
+  selectParentFacts,
+  selectParentRecord,
+} from "../../work-tree/infrastructure/work-tree-gate";
+import type { ParentFacts, WorkKind } from "../../../domain";
 import type { EventClient, EventTemplate } from "../domain/event.rules";
 import type {
   EventChanges,
@@ -54,6 +64,11 @@ const EVENT_SELECT = {
   currentStageId: events.currentStageId,
   stageCount: events.stageCount,
   state: events.state,
+  parentEventId: events.parentEventId,
+  parentTaskId: events.parentTaskId,
+  parentEventStageId: events.parentEventStageId,
+  parentTaskStageId: events.parentTaskStageId,
+  depth: events.depth,
   version: events.version,
   createdAt: events.createdAt,
   updatedAt: events.updatedAt,
@@ -86,8 +101,10 @@ type EventRow = Awaited<ReturnType<typeof eventQuery>>[number];
 
 /** Row -> entity: Dates to ISO strings. current_stage_id is only null mid-create, inside the creating transaction. */
 function toEntity(row: EventRow): EventEntity {
+  const { parentEventId, parentTaskId, parentEventStageId, parentTaskStageId, ...rest } = row;
   return {
-    ...row,
+    ...rest,
+    parentRef: parentRefOf({ parentEventId, parentTaskId, parentEventStageId, parentTaskStageId }),
     startsAt: row.startsAt.toISOString(),
     endsAt: row.endsAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
@@ -173,7 +190,7 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
     return guarded("load the event", async (): Promise<EventDetailRecord | null> => {
       const event = await selectEvent(db, id);
       if (!event) return null;
-      const [stages, history, team, approvalRecords] = await Promise.all([
+      const [stages, history, team, approvalRecords, children, parentRecord] = await Promise.all([
         selectStages(db, id),
         db
           .select({
@@ -195,11 +212,17 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
           ? db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).where(inArray(profiles.id, event.assignedTeam))
           : Promise.resolve([]),
         selectItemApprovals(db, "event", id),
+        // Round 4: the children (2 statements: events, tasks -- they also carry each stage's unfinished count) and the parent (1, only if it has one).
+        selectChildren(db, "event", id),
+        event.parentRef ? selectParentRecord(db, event.parentRef) : Promise.resolve(null),
       ]);
       return {
         ...event,
-        stages,
+        stages: stages.map((s) => ({ ...s, openChildren: children.openByStage.get(s.id) ?? 0 })),
         approvalRecords,
+        parentRecord,
+        childRows: children.rows,
+        childTotal: children.total,
         history: history.map((h) => ({ ...h, createdAt: h.createdAt.toISOString() })),
         // In the order the event lists them.
         team: event.assignedTeam.flatMap((tid) => team.filter((t) => t.id === tid)),
@@ -246,7 +269,11 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
     });
   }
 
-  create(record: NewEventRecord, guard: (client: EventClient) => void) {
+  findParent(kind: WorkKind, id: string) {
+    return guarded("load the parent", () => selectParentFacts(db, kind, id, false));
+  }
+
+  create(record: NewEventRecord, guard: (client: EventClient) => void, guardParent?: (parent: ParentFacts) => void) {
     return guarded("create the event", () =>
       db.transaction(async (tx) => {
         const [client] = await tx
@@ -256,6 +283,20 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
           .for("share");
         if (!client) throw new NotFoundError("Client not found", ERROR_CODES.CLIENT_NOT_FOUND);
         guard(client);
+
+        // Round 4: a child reads its parent FOR SHARE, so a move of the parent (FOR UPDATE) waits for this insert and then counts
+        // the new child; the depth comes from the locked row, not from the earlier read.
+        let parentCols = parentColumns(null, 0);
+        if (record.parent) {
+          const parent = await selectParentFacts(tx, record.parent.kind, record.parent.id, true);
+          if (!parent) {
+            throw record.parent.kind === "task"
+              ? new NotFoundError("Task not found", ERROR_CODES.STAFF_TASK_NOT_FOUND)
+              : new NotFoundError("Event not found", ERROR_CODES.EVENT_NOT_FOUND);
+          }
+          guardParent?.(parent);
+          parentCols = parentColumns(record.parent, parent.depth);
+        }
 
         const [event] = await tx
           .insert(events)
@@ -272,6 +313,7 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
             templateId: record.templateId,
             templateName: record.templateName,
             stageCount: record.stageNames.length,
+            ...parentCols,
             createdBy: record.createdBy,
           })
           .returning({ id: events.id });
@@ -309,7 +351,11 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
     );
   }
 
-  moveStage(id: string, decide: (current: EventEntity, stages: EventStage[], approvedStageIds: ReadonlySet<string>) => EventStage, entry: StageMoveEntry) {
+  moveStage(
+    id: string,
+    decide: (current: EventEntity, stages: EventStage[], approvedStageIds: ReadonlySet<string>, openChildren: ReadonlyMap<string, number>) => EventStage,
+    entry: StageMoveEntry,
+  ) {
     return guarded("move the event's stage", () =>
       db.transaction(async (tx): Promise<SupersededCounts> => {
         const current = await selectEvent(tx, id, true);
@@ -318,7 +364,9 @@ export class DrizzleEventsRepository implements EventsRepositoryPort {
         // Round 3: only an event with approval stages pays for the extra read (one indexed query, on the locked row).
         const hasApprovals = stages.some((s) => s.approvers.length > 0);
         const approved = hasApprovals ? await approvedStageIds(tx, "event", id) : new Set<string>();
-        const target = decide(current, stages, approved);
+        // Round 4: ALL unfinished children per stage (visible or not), one grouped statement, on the locked row.
+        const openChildren = await openChildCounts(tx, "event", id);
+        const target = decide(current, stages, approved, openChildren);
         await tx
           .update(events)
           .set({ currentStageId: target.id, version: sql`${events.version} + 1` })

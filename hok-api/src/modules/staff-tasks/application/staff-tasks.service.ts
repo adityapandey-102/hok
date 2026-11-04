@@ -5,15 +5,21 @@ import { auditLogger as defaultAuditLogger } from "../../../common/audit/drizzle
 import type { AuditLogger } from "../../../common/audit/audit-logger";
 import {
   approvedStageIds,
+  assertCanAddChild,
   assertCanPass,
   canManageApprovalItem,
   completionPosition,
   getCapabilityScope,
   hasCapability,
   nextBlockedBy,
+  noopWorkTreeNotifier,
   toApproval,
+  visibleChildren,
+  visibleParent,
   withApproved,
+  type ParentFacts,
   type Role,
+  type WorkTreeNotifier,
 } from "../../../domain";
 import {
   assertBlocked,
@@ -107,6 +113,8 @@ export class StaffTasksService {
     private readonly clock: () => Date = () => new Date(),
     /** Background link previews for assets created by "share with client"; a no-op unless the composition root passes one. */
     private readonly previews: AssetPreviewQueue = { refresh: () => undefined },
+    /** Round 4: told after a part of a parent finishes (a task done or deleted), so the parent's people hear that its stage is clear. */
+    private readonly workTree: WorkTreeNotifier = noopWorkTreeNotifier,
   ) {}
 
   /** Who sees which rows; `viaTeam` is for roles that manage clients (a task-only role keeps no team visibility). */
@@ -125,8 +133,10 @@ export class StaffTasksService {
   }
 
   private view(caller: StaffTasksCaller, task: StaffTaskDetail): StaffTaskDetailView {
-    const { approvalRecords, ...rest } = task;
+    const { approvalRecords, parentRecord, childRows, childTotal, parentRef: _parentRef, depth: _depth, ...rest } = task;
     // Round 3: the stored approval rounds get *this caller's* flags (canDecide / canCancel); `nextBlockedBy` names the stage that stops forward moves.
+    // Round 4: that stage blocks for an approval OR unfinished parts; `parent` is the stub only if the caller can see the parent (else null),
+    // and `children` only the parts they can see -- the rest are counted in `hiddenChildren`, never described.
     const item = { subject: "task" as const, teamIds: task.teamIds, assigneeId: task.assigneeId, assignedBy: task.assignedBy };
     const ctx = { teamIds: task.teamIds, canSeeItem: true, canManageItem: canManageApprovalItem(caller, item) };
     const blocker = nextBlockedBy(task.stages, approvedStageIds(approvalRecords), task.currentStage.position);
@@ -135,7 +145,9 @@ export class StaffTasksService {
       canManage: canManageTask(caller, task),
       canShare: canShareWithClient(caller, task),
       approvals: approvalRecords.map((r) => toApproval(r, caller, ctx)),
-      nextBlockedBy: blocker ? { stageId: blocker.stageId, stageName: blocker.stageName } : null,
+      nextBlockedBy: blocker ? { stageId: blocker.stageId, stageName: blocker.stageName, reason: blocker.reason, openChildren: blocker.openChildren } : null,
+      parent: visibleParent(caller, parentRecord),
+      ...visibleChildren(caller, childRows, childTotal),
     };
   }
 
@@ -195,37 +207,52 @@ export class StaffTasksService {
 
   async create(caller: StaffTasksCaller, dto: CreateStaffTaskDto): Promise<StaffTaskDetailView> {
     this.assertAssigner(caller);
+    // Round 4: a part of an event or task. The parent is checked first (404 if unseen, 403 if the caller can't move it, 409 inactive /
+    // too deep, 400 wrong stage); the normal create rules (the ladder, the template-role check) still apply on top.
+    const parent: ParentFacts | undefined = dto.parent
+      ? assertCanAddChild(caller, dto.parent.kind, await this.repo.findParent(dto.parent.kind, dto.parent.id), dto.parent.stageId)
+      : undefined;
+    // A part of an event links to that event and its client unless the body names a client or an event of its own.
+    const inheritFrom = parent?.kind === "event" && !dto.clientId && !dto.eventId ? parent : undefined;
+    const clientId = inheritFrom ? inheritFrom.clientId : (dto.clientId ?? null);
+    const eventId = inheritFrom ? inheritFrom.id : (dto.eventId ?? null);
+
     const assignee = assertValidAssignee(await this.repo.findAssigneeCandidate(dto.assigneeId));
     assertCanAssign(caller.role, assignee.role);
     const [template, client, event] = await Promise.all([
       this.repo.findTemplate(dto.templateId),
-      dto.clientId ? this.repo.findClient(dto.clientId) : Promise.resolve(null),
-      dto.eventId ? this.repo.findEvent(dto.eventId) : Promise.resolve(null),
+      clientId ? this.repo.findClient(clientId) : Promise.resolve(null),
+      eventId ? this.repo.findEvent(eventId) : Promise.resolve(null),
     ]);
     const usable = assertTaskTemplateUsable(template, assignee.role);
     const allowed = restrictLinksToTeam(caller, client, event);
-    const links = resolveTaskLinks(dto.clientId ?? null, allowed.client, dto.eventId ?? null, allowed.event);
+    const links = resolveTaskLinks(clientId, allowed.client, eventId, allowed.event);
 
-    const id = await this.repo.create({
-      title: dto.title,
-      description: dto.description ?? null,
-      brief: dto.brief ?? null,
-      dueAt: dto.dueAt ?? null,
-      priority: dto.priority ?? "medium",
-      ...links,
-      assigneeId: assignee.id,
-      assignedBy: caller.userId,
-      templateId: usable.id,
-      templateName: usable.name,
-      stageNames: usable.stageNames,
-      stageApprovers: usable.stageApprovers,
-      links: (dto.links ?? []).map((l) => ({ url: l.url, label: l.label })),
-    });
+    const id = await this.repo.create(
+      {
+        title: dto.title,
+        description: dto.description ?? null,
+        brief: dto.brief ?? null,
+        dueAt: dto.dueAt ?? null,
+        priority: dto.priority ?? "medium",
+        ...links,
+        assigneeId: assignee.id,
+        assignedBy: caller.userId,
+        templateId: usable.id,
+        templateName: usable.name,
+        stageNames: usable.stageNames,
+        stageApprovers: usable.stageApprovers,
+        parent: dto.parent,
+        links: (dto.links ?? []).map((l) => ({ url: l.url, label: l.label })),
+      },
+      // Re-checked on the parent's locked row (FOR SHARE): it may have been cancelled, finished or moved since the read above.
+      dto.parent ? (locked) => void assertCanAddChild(caller, dto.parent!.kind, locked, dto.parent!.stageId) : undefined,
+    );
     await this.audit.record({
       action: AUDIT_ACTIONS.STAFF_TASK_CREATED,
       entityType: AUDIT_ENTITIES.STAFF_TASK,
       entityId: id,
-      metadata: { assigneeId: assignee.id, templateId: usable.id },
+      metadata: { assigneeId: assignee.id, templateId: usable.id, ...(dto.parent ? { parent: dto.parent } : {}) },
     });
     await this.notifier.taskAssigned({ taskId: id, title: dto.title, assigneeId: assignee.id, actorId: caller.userId });
     return this.detail(caller, id);
@@ -353,6 +380,8 @@ export class StaffTasksService {
       entityId: id,
       metadata: { assigneeId: deleted.assigneeId, status: deleted.status },
     });
+    // Round 4: deleting an unfinished part can clear its parent's stage. Its own parts stay as separate (top-level) items.
+    if (deleted.parentRef) await this.workTree.stageMayBeClear(deleted.parentRef, caller.userId);
   }
 
   // -- moving through the stages (assignee, creator and Admin) ---------------------------
@@ -364,37 +393,45 @@ export class StaffTasksService {
   async moveStage(caller: StaffTasksCaller, id: string, dto: StageMoveDto): Promise<StaffTaskDetailView> {
     const scope = this.scopeOf(caller);
     const seen: { task?: StaffTaskEntity; action?: TaskChangeAction; stage?: string } = {};
-    const dropped = await this.repo.update(id, (current, stages, approved) => {
-      // Visibility first, so a stale version on someone else's task is still a 404.
-      assertTaskVisible(scope, current);
-      assertCanMoveStage(caller, current);
-      assertTaskVersion(current.version, dto.version);
-      seen.task = current;
-      const comment = dto.comment ?? null;
-      if (dto.complete) {
-        assertCanComplete({ status: current.status, currentStagePosition: current.currentStage.position, stageCount: current.stageCount });
-        // Round 3: completing is the move past the last stage, so an unapproved approval stage stops it too.
-        assertCanPass(withApproved(stages, approved), current.currentStage.position, completionPosition(stages));
-        seen.action = "completed";
-        seen.stage = current.currentStage.name;
-        return { status: "done", blockedReason: null, entry: { kind: "completed", authorId: caller.userId, comment } };
-      }
-      const target = assertStageMove({ status: current.status, currentStageId: current.currentStage.id, stages, targetStageId: dto.stageId! });
-      // Round 3: a forward move can enter an approval stage but not pass it until it is approved.
-      assertCanPass(withApproved(stages, approved), current.currentStage.position, target.position);
-      seen.action = "stage";
-      seen.stage = target.name;
-      return {
-        stageId: target.id,
-        status: statusForStage(target.position, current.stageCount),
-        blockedReason: null,
-        entry: { kind: "stage", authorId: caller.userId, comment, toStageId: target.id },
-        // Round 3: a back move drops the approvals of the stages from the target on.
-        ...(target.position < current.currentStage.position ? { supersedeFromPosition: target.position } : {}),
-      };
-    });
+    const dropped = await this.repo.update(
+      id,
+      (current, stages, approved, openChildren) => {
+        // Visibility first, so a stale version on someone else's task is still a 404.
+        assertTaskVisible(scope, current);
+        assertCanMoveStage(caller, current);
+        assertTaskVersion(current.version, dto.version);
+        seen.task = current;
+        const comment = dto.comment ?? null;
+        if (dto.complete) {
+          assertCanComplete({ status: current.status, currentStagePosition: current.currentStage.position, stageCount: current.stageCount });
+          // Round 3: completing is the move past the last stage, so an unapproved approval stage stops it too.
+          // Round 4: ... and so does a last stage with unfinished parts (every part counts, seen by the caller or not).
+          assertCanPass(withApproved(stages, approved, openChildren), current.currentStage.position, completionPosition(stages));
+          seen.action = "completed";
+          seen.stage = current.currentStage.name;
+          return { status: "done", blockedReason: null, entry: { kind: "completed", authorId: caller.userId, comment } };
+        }
+        const target = assertStageMove({ status: current.status, currentStageId: current.currentStage.id, stages, targetStageId: dto.stageId! });
+        // Round 3: a forward move can enter an approval stage but not pass it until it is approved.
+        // Round 4: ... or a stage that still has unfinished parts.
+        assertCanPass(withApproved(stages, approved, openChildren), current.currentStage.position, target.position);
+        seen.action = "stage";
+        seen.stage = target.name;
+        return {
+          stageId: target.id,
+          status: statusForStage(target.position, current.stageCount),
+          blockedReason: null,
+          entry: { kind: "stage", authorId: caller.userId, comment, toStageId: target.id },
+          // Round 3: a back move drops the approvals of the stages from the target on.
+          ...(target.position < current.currentStage.position ? { supersedeFromPosition: target.position } : {}),
+        };
+      },
+      { openChildrenGate: true },
+    );
     await this.auditSuperseded(id, dropped);
     await this.notifyChange(seen.task, seen.action ?? "stage", seen.stage ?? null, null, caller.userId, dto.comment ?? null);
+    // Round 4: a part that is done may have been the last unfinished one under its parent's stage.
+    if (seen.action === "completed" && seen.task?.parentRef) await this.workTree.stageMayBeClear(seen.task.parentRef, caller.userId);
     return this.detail(caller, id);
   }
 

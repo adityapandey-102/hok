@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, smallint, timestamp } from "drizzle-orm/pg-core";
 import type { ApproverToken } from "../../../domain";
 import type { StaffTaskPriority, StaffTaskStatus, StaffTaskUpdateKind, TaskLinkKind } from "../domain/staff-task.entity";
 
@@ -33,6 +33,12 @@ export const staffTasks = pgTable("staff_tasks", {
   currentStageId: uuid("current_stage_id"),
   stageCount: integer("stage_count").notNull().default(3),
   blockedReason: text("blocked_reason"),
+  /** Round 4 (20261105000001): the parent this task is a part of and the stage it hangs on; see events.schema. */
+  parentEventId: uuid("parent_event_id"),
+  parentTaskId: uuid("parent_task_id"),
+  parentEventStageId: uuid("parent_event_stage_id"),
+  parentTaskStageId: uuid("parent_task_stage_id"),
+  depth: smallint("depth").notNull().default(1),
   version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
