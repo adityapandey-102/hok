@@ -50,7 +50,7 @@ export default function FaqPage() {
         <section className="Faqs-section pt-space pb-space">
           <div className="container">
             <div className="faqs-title text-center mb-xxl-15 mb-xl-12 mb-lg-10 mb-md-9 mb-sm-8 mb-7">
-              <a href="/blog/details" className="radius-btn cmn-border d-inline-flex radius100 py-xxl-2 py-2 px-xxl-4 px-4 theme-clr gap-xxl-4 gap-3 mb-xxl-8 mb-xl-6 mb-5">
+              <a href="/" className="radius-btn cmn-border d-inline-flex radius100 py-xxl-2 py-2 px-xxl-4 px-4 theme-clr gap-xxl-4 gap-3 mb-xxl-8 mb-xl-6 mb-5">
                 FAQ’S
                 {" "}
                 <span className="rot60 d-inline-block">

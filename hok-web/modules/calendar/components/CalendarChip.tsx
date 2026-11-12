@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { formatInZone, formatTimeInZone, STAFF_TASK_PRIORITY_LABELS, STAFF_TASK_STATUS_LABELS, TODO_URGENCY_LABELS } from "../../../lib/domain";
+import { dayKeyInZone, endDayKey, formatDayLabel, formatInZone, formatTimeInZone, STAFF_TASK_PRIORITY_LABELS, STAFF_TASK_STATUS_LABELS, TODO_URGENCY_LABELS } from "../../../lib/domain";
+
+/** "until Thu 12 Nov" for an item that runs past its first day (calendars show it once, on that day), else null. */
+export function untilLabel(item: { startsAt: string; endsAt: string }, zone: string): string | null {
+  const end = endDayKey(item, zone);
+  return end > dayKeyInZone(item.startsAt, zone) ? `until ${formatDayLabel(end)}` : null;
+}
 import { TYPE_CHIP_CLASSES, type CalendarItem } from "../calendarItems";
 
 /** The hover text of a chip: title, client, the time in the viewer's zone (plus the item's own zone when it differs), and what kind of thing it is. */
@@ -43,10 +49,12 @@ export function CalendarChip({
 }) {
   const faded = item.state !== "active" || item.done;
   const cls = `${BASE} ${TYPE_CHIP_CLASSES[item.type]} ${faded ? "line-through opacity-60" : ""}`;
+  const until = untilLabel(item, zone);
   const body = (
     <>
       {!compact && <span className="mr-1 font-semibold">{formatTimeInZone(item.startsAt, zone)}</span>}
       <span>{item.title}</span>
+      {until && <span className="ml-1 text-text-muted">· {until}</span>}
       {item.kind === "task" && item.stageName && <span className="ml-1 text-text-muted" data-testid="chip-stage">· {item.stageName}</span>}
     </>
   );

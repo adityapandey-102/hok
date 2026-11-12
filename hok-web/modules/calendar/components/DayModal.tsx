@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { dayRange, formatDayLabel, formatTimeInZone, itemsOnDay, type DayKey, type Todo } from "../../../lib/domain";
+import { dayRange, formatDayLabel, formatTimeInZone, itemsOnDay, itemsStartingOnDay, type DayKey, type Todo } from "../../../lib/domain";
+import { untilLabel } from "./CalendarChip";
 import { isApiErrorCode } from "../../../lib/api/client";
 import { todosApi } from "../../todos/api/todosApi";
 import { TickBox, UrgencyPill, describeTodoError } from "../../todos/components/todoUi";
@@ -62,7 +63,12 @@ export function DayModal({
   onChanged: () => void;
 }) {
   const { showToast } = useToast();
-  const dayItems = useMemo(() => itemsOnDay(items, day, zone), [items, day, zone]);
+  // What starts today is listed by kind; multi-day events that started earlier sit under "Ongoing".
+  const dayItems = useMemo(() => itemsStartingOnDay(items, day, zone), [items, day, zone]);
+  const ongoing = useMemo(
+    () => itemsOnDay(items, day, zone).filter((i) => i.kind === "event" && !dayItems.includes(i)),
+    [items, day, zone, dayItems],
+  );
   const by = (kind: CalendarItem["kind"]) => dayItems.filter((i) => i.kind === kind);
   const events = by("event");
   const tasks = by("task");
@@ -128,7 +134,7 @@ export function DayModal({
         </div>
 
         <div className="min-h-0 flex-1 divide-y divide-border-light overflow-y-auto">
-          {dayItems.length === 0 && <p className="px-5 py-6 text-sm text-text-muted">Nothing on this day.</p>}
+          {dayItems.length === 0 && ongoing.length === 0 && <p className="px-5 py-6 text-sm text-text-muted">Nothing on this day.</p>}
 
           {events.length > 0 && (
             <Section title="Events" count={events.length}>
@@ -141,6 +147,25 @@ export function DayModal({
                   >
                     <span className="w-16 shrink-0 text-xs font-semibold">{time(it)}</span>
                     <span className="min-w-0 flex-1 truncate font-medium">{it.title}</span>
+                    {untilLabel(it, zone) && <span className="shrink-0 text-xs text-text-muted">{untilLabel(it, zone)}</span>}
+                    {it.clientName && <span className="max-w-[40%] shrink truncate text-xs text-text-muted">{it.clientName}</span>}
+                  </Link>
+                </li>
+              ))}
+            </Section>
+          )}
+
+          {ongoing.length > 0 && (
+            <Section title="Ongoing" count={ongoing.length}>
+              {ongoing.map((it) => (
+                <li key={it.id}>
+                  <Link
+                    href={it.href}
+                    data-testid="day-item"
+                    className={`flex items-center gap-2 rounded-app-sm border px-2.5 py-2 text-sm transition-colors hover:border-text-secondary ${TYPE_CHIP_CLASSES[it.type]} ${it.state !== "active" ? "line-through opacity-60" : ""}`}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-medium">{it.title}</span>
+                    <span className="shrink-0 text-xs text-text-muted">{untilLabel(it, zone)}</span>
                     {it.clientName && <span className="max-w-[40%] shrink truncate text-xs text-text-muted">{it.clientName}</span>}
                   </Link>
                 </li>

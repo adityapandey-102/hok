@@ -123,7 +123,7 @@ export default function PricingPage() {
                         {" "}
                         <span className="month">/month</span>
                       </h4>
-                      <a href="/pricing" className="price-under d-flex align-items-center gap-2">
+                      <a href="/" className="price-under d-flex align-items-center gap-2">
                         Choose Plan
                         {" "}
                         <span className="rot60 d-block">
@@ -193,7 +193,7 @@ export default function PricingPage() {
                         {" "}
                         <span className="month">/month</span>
                       </h4>
-                      <a href="/pricing" className="price-under d-flex align-items-center gap-2">
+                      <a href="/" className="price-under d-flex align-items-center gap-2">
                         Choose Plan
                         {" "}
                         <span className="rot60 d-block">
@@ -263,7 +263,7 @@ export default function PricingPage() {
                         {" "}
                         <span className="month">/month</span>
                       </h4>
-                      <a href="/pricing" className="price-under d-flex align-items-center gap-2">
+                      <a href="/" className="price-under d-flex align-items-center gap-2">
                         Choose Plan
                         {" "}
                         <span className="rot60 d-block">

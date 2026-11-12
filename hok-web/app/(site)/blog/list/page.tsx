@@ -73,11 +73,11 @@ export default function BlogListPage() {
                         Consectetur adipisicing elit, sed do eiusmod tempor is incididunt ut labore et dolore of magna aliqua. Ut enim ad minim veniam, made of owl the quis nostrud exercitation ullamco laboris nisi.
                       </p>
                       <div className="d-flex align-items-center justify-content-between">
-                        <a href="/blog/details" className="blog-singelbtn d-center whitebg" data-aos="zoom-in" data-aos-duration="1400">
+                        <a href="/" className="blog-singelbtn d-center whitebg" data-aos="zoom-in" data-aos-duration="1400">
                           <SiteIcon name="arrow-right" />
                         </a>
                         {" "}
-                        <a href="/blog/details" className="shapre-btn d-flex align-items-center gap-2 cmn-border py-xxl-3 py-2 px-xxl-6 px-4 pra-clr" data-aos="zoom-in-right" data-aos-duration="1600">
+                        <a href="/" className="shapre-btn d-flex align-items-center gap-2 cmn-border py-xxl-3 py-2 px-xxl-6 px-4 pra-clr" data-aos="zoom-in-right" data-aos-duration="1600">
                           Share
                           {" "}
                           <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -108,11 +108,11 @@ export default function BlogListPage() {
                         Consectetur adipisicing elit, sed do eiusmod tempor is incididunt ut labore et dolore of magna aliqua. Ut enim ad minim veniam, made of owl the quis nostrud exercitation ullamco laboris nisi.
                       </p>
                       <div className="d-flex align-items-center justify-content-between">
-                        <a href="/blog/details" className="blog-singelbtn d-center whitebg" data-aos="zoom-in" data-aos-duration="1400">
+                        <a href="/" className="blog-singelbtn d-center whitebg" data-aos="zoom-in" data-aos-duration="1400">
                           <SiteIcon name="arrow-right" />
                         </a>
                         {" "}
-                        <a href="/blog/details" className="shapre-btn d-flex align-items-center gap-2 cmn-border py-xxl-3 py-2 px-xxl-6 px-4 pra-clr" data-aos="zoom-in-right" data-aos-duration="1600">
+                        <a href="/" className="shapre-btn d-flex align-items-center gap-2 cmn-border py-xxl-3 py-2 px-xxl-6 px-4 pra-clr" data-aos="zoom-in-right" data-aos-duration="1600">
                           Share
                           {" "}
                           <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -143,11 +143,11 @@ export default function BlogListPage() {
                         Consectetur adipisicing elit, sed do eiusmod tempor is incididunt ut labore et dolore of magna aliqua. Ut enim ad minim veniam, made of owl the quis nostrud exercitation ullamco laboris nisi.
                       </p>
                       <div className="d-flex align-items-center justify-content-between">
-                        <a href="/blog/details" className="blog-singelbtn d-center whitebg" data-aos="zoom-in" data-aos-duration="1400">
+                        <a href="/" className="blog-singelbtn d-center whitebg" data-aos="zoom-in" data-aos-duration="1400">
                           <SiteIcon name="arrow-right" />
                         </a>
                         {" "}
-                        <a href="/blog/details" className="shapre-btn d-flex align-items-center gap-2 cmn-border py-xxl-3 py-2 px-xxl-6 px-4 pra-clr" data-aos="zoom-in-right" data-aos-duration="1600">
+                        <a href="/" className="shapre-btn d-flex align-items-center gap-2 cmn-border py-xxl-3 py-2 px-xxl-6 px-4 pra-clr" data-aos="zoom-in-right" data-aos-duration="1600">
                           Share
                           {" "}
                           <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -182,42 +182,42 @@ export default function BlogListPage() {
                     <div className="category" data-aos="fade-down" data-aos-duration="1600">
                       <ul className="d-grid gap-xxl-3 gap-3">
                         <li>
-                          <a href="/blog/details">
+                          <a href="/">
                             Business
                             {" "}
                             <span>(2)</span>
                           </a>
                         </li>
                         <li>
-                          <a href="/blog/details">
+                          <a href="/">
                             Job Market
                             {" "}
                             <span>(4)</span>
                           </a>
                         </li>
                         <li>
-                          <a href="/blog/details">
+                          <a href="/">
                             Marketing
                             {" "}
                             <span>(3)</span>
                           </a>
                         </li>
                         <li>
-                          <a href="/blog/details">
+                          <a href="/">
                             News
                             {" "}
                             <span>(5)</span>
                           </a>
                         </li>
                         <li>
-                          <a href="/blog/details">
+                          <a href="/">
                             Social Media
                             {" "}
                             <span>(7)</span>
                           </a>
                         </li>
                         <li>
-                          <a href="/blog/details">
+                          <a href="/">
                             Trends
                             {" "}
                             <span>(8)</span>
@@ -238,7 +238,7 @@ export default function BlogListPage() {
                         <div className="recent-content">
                           <span className="pra-clr d-block mb-1">12/01/2024</span>
                           {" "}
-                          <a href="/blog/details">
+                          <a href="/">
                             Guide dog shortage: The blind peo ple who train their own guide
                           </a>
                         </div>
@@ -250,7 +250,7 @@ export default function BlogListPage() {
                         <div className="recent-content">
                           <span className="pra-clr d-block mb-1">12/01/2024</span>
                           {" "}
-                          <a href="/blog/details">
+                          <a href="/">
                             Guide dog shortage: The blind peo ple who train their own guide
                           </a>
                         </div>
@@ -262,7 +262,7 @@ export default function BlogListPage() {
                         <div className="recent-content">
                           <span className="pra-clr d-block mb-1">12/01/2024</span>
                           {" "}
-                          <a href="/blog/details">
+                          <a href="/">
                             Guide dog shortage: The blind peo ple who train their own guide
                           </a>
                         </div>
@@ -274,23 +274,23 @@ export default function BlogListPage() {
                       <h6>Tag</h6>
                     </div>
                     <div className="tagwrap d-flex flex-wrap gap-xl-6 gap-lg-4 gap-md-3 gap-2">
-                      <a href="/blog/details">nature</a>
+                      <a href="/">nature</a>
                       {" "}
-                      <a href="/blog/details">health</a>
+                      <a href="/">health</a>
                       {" "}
-                      <a href="/blog/details">galaxy</a>
+                      <a href="/">galaxy</a>
                       {" "}
-                      <a href="/blog/details">creative</a>
+                      <a href="/">creative</a>
                       {" "}
-                      <a href="/blog/details">art</a>
+                      <a href="/">art</a>
                       {" "}
-                      <a href="/blog/details">business</a>
+                      <a href="/">business</a>
                       {" "}
-                      <a href="/blog/details">space</a>
+                      <a href="/">space</a>
                       {" "}
-                      <a href="/blog/details">biology</a>
+                      <a href="/">biology</a>
                       {" "}
-                      <a href="/blog/details">environemnt</a>
+                      <a href="/">environemnt</a>
                     </div>
                   </div>
                 </div>

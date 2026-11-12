@@ -1,0 +1,9 @@
+- started 2026-11-11: read spec, tsconfig backed up
+- header nav, SiteIcon, SocialIcons, content.ts, contact page done (not yet built)
+- footer, side menu, preloader (server+control) done, search popup removed
+- home page rewritten (SiteSwiper for reels + testimonials)
+- about, services pages, ServiceBlocks done; next: CSS, link retarget, lint/build, e2e, screenshots
+- CSS appended to hok-site.css
+- links to removed pages retargeted (93 in orphan pages)
+- screenshots checked, reels load, line-shape click fix; next: e2e update, gates
+- gates green: lint, typecheck, unit 247, build ok, bundle ok, e2e 54/54; tsconfig restored

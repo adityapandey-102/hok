@@ -57,10 +57,10 @@ export default function CaseStudiesPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/case-studies/details" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Creative</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Creative</a>
                     </div>
                     <h5>
-                      <a href="/case-studies/details" className="white-clr d-flex align-items-center justify-content-between gap-3">
+                      <a href="/" className="white-clr d-flex align-items-center justify-content-between gap-3">
                         A Simple Social Media Marketing Checklist
                         {" "}
                         <span className="rot60">
@@ -78,10 +78,10 @@ export default function CaseStudiesPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/case-studies/details" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Branding</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Branding</a>
                     </div>
                     <h5>
-                      <a href="/case-studies/details" className="white-clr d-flex align-items-center justify-content-between gap-3">
+                      <a href="/" className="white-clr d-flex align-items-center justify-content-between gap-3">
                         Transforming Challenges into Opportunities
                         {" "}
                         <span className="rot60">
@@ -99,10 +99,10 @@ export default function CaseStudiesPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/case-studies/details" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Creative</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Creative</a>
                     </div>
                     <h5>
-                      <a href="/case-studies/details" className="white-clr d-flex align-items-center justify-content-between gap-3">
+                      <a href="/" className="white-clr d-flex align-items-center justify-content-between gap-3">
                         varius suscipit lectus. Suspendisse
                         {" "}
                         <span className="rot60">
@@ -120,10 +120,10 @@ export default function CaseStudiesPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/case-studies/details" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Branding</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Branding</a>
                     </div>
                     <h5>
-                      <a href="/case-studies/details" className="white-clr d-flex align-items-center justify-content-between gap-3">
+                      <a href="/" className="white-clr d-flex align-items-center justify-content-between gap-3">
                         Internet tend to repeat predefined
                         {" "}
                         <span className="rot60">
@@ -141,10 +141,10 @@ export default function CaseStudiesPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/case-studies/details" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Creative</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Creative</a>
                     </div>
                     <h5>
-                      <a href="/case-studies/details" className="white-clr d-flex align-items-center justify-content-between gap-3">
+                      <a href="/" className="white-clr d-flex align-items-center justify-content-between gap-3">
                         available, but the majority have
                         {" "}
                         <span className="rot60">
@@ -162,10 +162,10 @@ export default function CaseStudiesPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/case-studies/details" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Branding</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Branding</a>
                     </div>
                     <h5>
-                      <a href="/case-studies/details" className="white-clr d-flex align-items-center justify-content-between gap-3">
+                      <a href="/" className="white-clr d-flex align-items-center justify-content-between gap-3">
                         Transforming Challenges into Opportunities
                         {" "}
                         <span className="rot60">

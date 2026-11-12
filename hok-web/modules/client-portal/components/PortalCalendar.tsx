@@ -6,7 +6,7 @@ import { Panel } from "../../../components/ui/Panel";
 import { Icon } from "../../../components/ui/Icon";
 import { Loader } from "../../../components/ui/Loader";
 import { Button } from "../../../components/ui/Button";
-import { dayRange, formatMonthTitle, formatTimeInZone, isSameMonth, itemsOnDay, monthGrid, shiftMonth, todayKey, visibleRange } from "../../../lib/domain/utils/calendar";
+import { dayRange, formatMonthTitle, formatTimeInZone, isSameMonth, itemsStartingOnDay, monthGrid, shiftMonth, todayKey, visibleRange } from "../../../lib/domain/utils/calendar";
 import { publicPortalApi, type PortalEvent } from "../api/publicPortalApi";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -80,9 +80,9 @@ export function PortalCalendar({ token, zone, onOpen }: { token: string; zone: s
           <>
             {/* Phones: an agenda of the month's days that have events. */}
             <ul className="divide-y divide-border-light sm:hidden">
-              {days.filter((d) => itemsOnDay(events, d, zone).length > 0).length === 0 && <li><EmptyState compact title="No events this month." /></li>}
+              {days.filter((d) => itemsStartingOnDay(events, d, zone).length > 0).length === 0 && <li><EmptyState compact title="No events this month." /></li>}
               {days.map((d) => {
-                const items = itemsOnDay(events, d, zone);
+                const items = itemsStartingOnDay(events, d, zone);
                 if (items.length === 0) return null;
                 return (
                   <li key={d} className="p-3">
@@ -108,7 +108,7 @@ export function PortalCalendar({ token, zone, onOpen }: { token: string; zone: s
                   {week.map((d) => (
                     <div key={d} className={`min-h-20 min-w-0 border-r border-border-light p-1 last:border-r-0 ${isSameMonth(d, cursor) ? "" : "bg-accent-bg/60"}`}>
                       <p className={`text-[11px] ${d === today ? "inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-ink px-1 font-bold text-on-ink" : "text-text-muted"}`}>{Number(d.slice(8))}</p>
-                      {itemsOnDay(events, d, zone).map((e) => (
+                      {itemsStartingOnDay(events, d, zone).map((e) => (
                         <EventChip key={e.id} event={e} zone={zone} onOpen={onOpen} compact />
                       ))}
                     </div>

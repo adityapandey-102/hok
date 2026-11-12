@@ -23,16 +23,5 @@ export function SiteScripts() {
     return () => document.removeEventListener("click", onClick);
   }, []);
 
-  return (
-    <Script
-      src="/site/assets/js/main.js"
-      strategy="afterInteractive"
-      onLoad={() => {
-        // main.js hides the preloader on window "load". If the page finished
-        // loading before main.js ran, replay that event so the preloader lifts.
-        const $ = (window as unknown as { jQuery?: (el: unknown) => { trigger: (e: string) => void } }).jQuery;
-        if ($ && document.readyState === "complete") $(window).trigger("load");
-      }}
-    />
-  );
+  return <Script src="/site/assets/js/main.js" strategy="afterInteractive" />;
 }

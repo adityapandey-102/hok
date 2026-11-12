@@ -3,7 +3,9 @@ import {
   addDays,
   dayKeyInZone,
   dayRange,
+  endDayKey,
   itemsOnDay,
+  itemsStartingOnDay,
   monthGrid,
   shiftMonth,
   startOfWeek,
@@ -77,6 +79,19 @@ describe("zones and DST", () => {
   it("gives a 25 hour day when clocks go back", () => {
     const { from, to } = dayRange("2026-10-25", "2026-10-25", "Europe/London");
     expect((Date.parse(to) - Date.parse(from)) / 3_600_000).toBe(25);
+  });
+});
+
+describe("itemsStartingOnDay / endDayKey", () => {
+  // The user's case: a week-long event (4 → 12 Nov IST) is counted once, on 4 Nov.
+  const week = [{ id: "w", startsAt: "2026-11-04T18:13:00Z", endsAt: "2026-11-12T18:13:00Z" }];
+  it("lists a multi-day item only on its first day", () => {
+    expect(itemsStartingOnDay(week, "2026-11-04", "Asia/Kolkata").map((i) => i.id)).toEqual(["w"]);
+    expect(itemsStartingOnDay(week, "2026-11-05", "Asia/Kolkata")).toEqual([]);
+    expect(itemsStartingOnDay(week, "2026-11-12", "Asia/Kolkata")).toEqual([]);
+  });
+  it("knows the last day it covers", () => {
+    expect(endDayKey(week[0], "Asia/Kolkata")).toBe("2026-11-12");
   });
 });
 

@@ -35,7 +35,7 @@ const LIBRARIES = [
  */
 export function SiteDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         {STYLESHEETS.map((href) => (
           <link key={href} rel="stylesheet" href={href} />

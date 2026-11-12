@@ -170,7 +170,7 @@ export default function TeamDetailsPage() {
                       <div className="namebox py-xxl-5 py-xl-4 py-sm-3 py-2 px-3 text-center">
                         <span className="text-uppercase white-clr d-block mb-2">Ceo</span>
                         <h5>
-                          <a href="/team/details" className="htheme white-clr">esther Howard</a>
+                          <a href="/" className="htheme white-clr">esther Howard</a>
                         </h5>
                       </div>
                       <ul className="common-social d-grid align-items-center gap-2">
@@ -222,7 +222,7 @@ export default function TeamDetailsPage() {
                       <div className="namebox py-xxl-5 py-xl-4 py-sm-3 py-2 px-3 text-center">
                         <span className="text-capitalize white-clr d-block mb-2">Web Designer</span>
                         <h5>
-                          <a href="/team/details" className="htheme white-clr">Albert Flores</a>
+                          <a href="/" className="htheme white-clr">Albert Flores</a>
                         </h5>
                       </div>
                       <ul className="common-social d-grid align-items-center gap-2">
@@ -274,7 +274,7 @@ export default function TeamDetailsPage() {
                       <div className="namebox py-xxl-5 py-xl-4 py-sm-3 py-2 px-3 text-center">
                         <span className="text-capitalize white-clr d-block mb-2">UI/UX designer</span>
                         <h5>
-                          <a href="/team/details" className="htheme white-clr">Darlene Robertson</a>
+                          <a href="/" className="htheme white-clr">Darlene Robertson</a>
                         </h5>
                       </div>
                       <ul className="common-social d-grid align-items-center gap-2">
@@ -326,7 +326,7 @@ export default function TeamDetailsPage() {
                       <div className="namebox py-xxl-5 py-xl-4 py-sm-3 py-2 px-3 text-center">
                         <span className="text-capitalize white-clr d-block mb-2">Web Developer</span>
                         <h5>
-                          <a href="/team/details" className="htheme white-clr">Marvin Mckinney</a>
+                          <a href="/" className="htheme white-clr">Marvin Mckinney</a>
                         </h5>
                       </div>
                       <ul className="common-social d-grid align-items-center gap-2">

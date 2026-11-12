@@ -115,16 +115,26 @@ export interface Spans {
   endsAt: string;
 }
 
+/** The last day an item covers in a zone (an item ending exactly at midnight doesn't cover the next day). */
+export function endDayKey(it: Spans, zone: string): DayKey {
+  const endMs = new Date(it.endsAt).getTime();
+  return endMs > new Date(it.startsAt).getTime() ? dayKeyInZone(endMs - 1, zone) : dayKeyInZone(it.startsAt, zone);
+}
+
+const byStart = <T extends Spans>(a: T, b: T) => a.startsAt.localeCompare(b.startsAt) || new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
+
 /** Items that touch a given day in a zone (a multi-day item appears on each day it covers), earliest first. */
 export function itemsOnDay<T extends Spans>(items: T[], key: DayKey, zone: string): T[] {
-  return items
-    .filter((it) => {
-      const start = dayKeyInZone(it.startsAt, zone);
-      const endMs = new Date(it.endsAt).getTime();
-      const end = endMs > new Date(it.startsAt).getTime() ? dayKeyInZone(endMs - 1, zone) : start;
-      return start <= key && key <= end;
-    })
-    .sort((a, b) => a.startsAt.localeCompare(b.startsAt) || new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  return items.filter((it) => dayKeyInZone(it.startsAt, zone) <= key && key <= endDayKey(it, zone)).sort(byStart);
+}
+
+/**
+ * Items that START on a given day (decided 2026-11-05): calendars count and list a multi-day item once, on its
+ * first day, labelled "until <day>", so a week-long event doesn't fill every cell. The day pop-up still lists
+ * the earlier-started ones under "Ongoing" (itemsOnDay minus these).
+ */
+export function itemsStartingOnDay<T extends Spans>(items: T[], key: DayKey, zone: string): T[] {
+  return items.filter((it) => dayKeyInZone(it.startsAt, zone) === key).sort(byStart);
 }
 
 /** "October 2026" for a day key. */

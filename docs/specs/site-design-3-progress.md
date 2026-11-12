@@ -1,0 +1,4 @@
+- started 2026-11-12: read spec, template shots and HEAD markup; plan: content.ts, template-markup components, CSS reset to HEAD base + small additions, pages, e2e
+- components, home, about, services, contact pages rewritten to template markup; PageBanner replaced by compact intro (PAGE_INTROS in content.ts); next: CSS reset, build/screenshots, e2e
+- CSS reset to HEAD base + round-3 block; screenshots checked 1280 + 390 (home/about/services/contact); e2e rewritten; next: gates
+- gates green: lint, typecheck, unit 247, build ok, bundle ok, e2e 55/55; tsconfig restored, .next-site removed

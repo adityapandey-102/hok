@@ -1,12 +1,12 @@
 import { SiteIcon } from "./SiteIcon";
 
-/** Back-to-top button; main.js shows it after 250 px of scrolling. */
+/** The one back-to-top button (fixed, bottom right); main.js shows it after 250 px of scrolling. */
 export function ScrollTop() {
   return (
-    <div id="progress">
+    <button id="progress" type="button" aria-label="Back to top">
       <span id="valiu">
         <SiteIcon name="arrow-up" />
       </span>
-    </div>
+    </button>
   );
 }

@@ -1,0 +1,3 @@
+- started 2026-11-11: read spec, baseline hero screenshot taken; plan: content.ts, components, CSS, pages, e2e
+- content.ts, components, pages, CSS written; next: typecheck, screenshots + fixes, e2e
+- all parts done: home, about, services, contact, header/footer, CSS, e2e; gates green (lint, typecheck, unit 247, build, e2e 54/54); tsconfig restored, .next-site removed

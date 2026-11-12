@@ -55,13 +55,13 @@ export default function ServiceDetailsPage() {
               </div>
               <h3 className="white-clr mb-xxl-9 mb-xl-7 mb-lg-6 mb-4" data-aos="zoom-in-left" data-aos-duration="1600">World best web design service provider.</h3>
               <div className="d-flex flex-wrap align-items-center gap-xxl-5 gap-xl-3 gap-2" data-aos="zoom-in-left" data-aos-duration="1800">
-                <a href="/services/details" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Creative</a>
+                <a href="/services" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Creative</a>
                 {" "}
-                <a href="/services/details" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Branding</a>
+                <a href="/services" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Branding</a>
                 {" "}
-                <a href="/services/details" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Analytics</a>
+                <a href="/services" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Analytics</a>
                 {" "}
-                <a href="/services/details" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Audience</a>
+                <a href="/services" className="radius-btn cmn-border radius100 py-xxl-2 py-2 px-xxl-4 px-3 theme-clr">Audience</a>
               </div>
             </div>
             <div className="case-study-detials-inner mt-xxl-10 mt-xl-7 mt-6">

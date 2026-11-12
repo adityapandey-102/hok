@@ -12,7 +12,7 @@ import {
   formatTimeInZone,
   hasCapability,
   isSameMonth,
-  itemsOnDay,
+  itemsStartingOnDay,
   monthGrid,
   shiftMonth,
   todayKey,
@@ -380,7 +380,8 @@ function MonthGrid({ cursor, items, zone, today, onOpenDay }: { cursor: DayKey; 
       {weeks.map((week) => (
         <div key={week[0]} className="grid grid-cols-7 border-b border-border-light last:border-0" role="row">
           {week.map((day) => {
-            const dayItems = itemsOnDay(items, day, zone);
+            // A multi-day item counts once, on its first day (the pop-up lists it as "Ongoing" on later days).
+            const dayItems = itemsStartingOnDay(items, day, zone);
             const inMonth = isSameMonth(day, cursor);
             return (
               <div
@@ -430,7 +431,7 @@ function WeekGrid({
   return (
     <div className="grid grid-cols-1 gap-2 md:grid-cols-7" aria-label="Week">
       {weekDays(cursor).map((day) => {
-        const dayItems = itemsOnDay(items, day, zone);
+        const dayItems = itemsStartingOnDay(items, day, zone);
         return (
           <section key={day} data-day={day} className={`min-h-[120px] rounded-app-lg border bg-card p-3 shadow-app md:p-2 ${day === today ? "border-primary bg-primary-bg/40 ring-1 ring-primary" : "border-border"}`}>
             <div className="mb-2 flex items-center justify-between">
@@ -472,7 +473,7 @@ function ListView({
 }) {
   const days: DayKey[] = [];
   for (let d = range.first; d <= range.last; d = addDays(d, 1)) days.push(d);
-  const groups = days.map((d) => ({ day: d, list: itemsOnDay(items, d, zone) })).filter((g) => g.list.length > 0);
+  const groups = days.map((d) => ({ day: d, list: itemsStartingOnDay(items, d, zone) })).filter((g) => g.list.length > 0);
   return (
     <div className="overflow-hidden rounded-app-lg bg-card shadow-app" aria-label="Agenda">
       {groups.length === 0 ? (

@@ -27,7 +27,10 @@ import { useToast } from "../../../components/ui/Toast";
 import { useConfirm } from "../../../components/ui/ConfirmDialog";
 import { ClientForm } from "./ClientForm";
 import { EventsTab } from "../../events/components/EventsTab";
-import { CalendarView } from "../../calendar/components/CalendarView";
+import dynamic from "next/dynamic";
+
+// Loaded only when the Calendar tab is opened: keeps the client page inside its bundle budget.
+const CalendarView = dynamic(() => import("../../calendar/components/CalendarView").then((m) => m.CalendarView));
 import { AssetsPanel } from "../../assets/components/AssetsPanel";
 import { ClientTodosPanel } from "../../client-todos/components/ClientTodosPanel";
 import { PortalTab } from "../../portal/components/PortalTab";

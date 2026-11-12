@@ -1,0 +1,4 @@
+- started 2026-11-12: read spec, screenshots, round-3 markup and CSS; plan: new hok-* components (no template pill/arrow classes), CSS round-4 block replacing round-3, pages, e2e
+- components, CSS round-4 block, home/about/services/contact pages rewritten; first 1280 review done, fixes applied; next: phone review, e2e, gates
+- phone/tablet visual review done; menu left-aligned; e2e rewritten (57 tests); next: gates
+- gates: lint, typecheck, unit 247, build ok, e2e 57/57; check:bundle fails only on staff page /app/clients/[clientId] (300 KB, not site); tsconfig restored, .next-site removed

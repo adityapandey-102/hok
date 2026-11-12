@@ -57,12 +57,12 @@ export default function BlogPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/blog/details" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
                       {" "}
                       <span className="bspan-clr">MARCH 24, 2024</span>
                     </div>
                     <h5>
-                      <a href="/blog/details" className="white-clr">Transforming Challenges into</a>
+                      <a href="/" className="white-clr">Transforming Challenges into</a>
                     </h5>
                   </div>
                 </div>
@@ -74,12 +74,12 @@ export default function BlogPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/blog/details" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
                       {" "}
                       <span className="bspan-clr">MARCH 24, 2024</span>
                     </div>
                     <h5>
-                      <a href="/blog/details" className="white-clr">Design Inspiration Where to Find</a>
+                      <a href="/" className="white-clr">Design Inspiration Where to Find</a>
                     </h5>
                   </div>
                 </div>
@@ -91,12 +91,12 @@ export default function BlogPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/blog/details" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
                       {" "}
                       <span className="bspan-clr">MARCH 24, 2024</span>
                     </div>
                     <h5>
-                      <a href="/blog/details" className="white-clr">Creating new working in the digital</a>
+                      <a href="/" className="white-clr">Creating new working in the digital</a>
                     </h5>
                   </div>
                 </div>
@@ -108,12 +108,12 @@ export default function BlogPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/blog/details" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
                       {" "}
                       <span className="bspan-clr">MARCH 24, 2024</span>
                     </div>
                     <h5>
-                      <a href="/blog/details" className="white-clr">Business meeting San Francisco</a>
+                      <a href="/" className="white-clr">Business meeting San Francisco</a>
                     </h5>
                   </div>
                 </div>
@@ -125,12 +125,12 @@ export default function BlogPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/blog/details" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
                       {" "}
                       <span className="bspan-clr">MARCH 24, 2024</span>
                     </div>
                     <h5>
-                      <a href="/blog/details" className="white-clr">Free advertising for your online</a>
+                      <a href="/" className="white-clr">Free advertising for your online</a>
                     </h5>
                   </div>
                 </div>
@@ -142,12 +142,12 @@ export default function BlogPage() {
                   </div>
                   <div className="blog-cont">
                     <div className="d-flex align-items-center gap-xxl-5 gap-xl-4 gap-3 mb-xxl-5 mb-xl-4 mb-3">
-                      <a href="/blog/details" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
+                      <a href="/" className="radius-btn cmn-border radius100 py-xxl-1 py-1 px-xxl-4 px-3 theme-clr">Creative</a>
                       {" "}
                       <span className="bspan-clr">MARCH 24, 2024</span>
                     </div>
                     <h5>
-                      <a href="/blog/details" className="white-clr">Creating new working in the digital</a>
+                      <a href="/" className="white-clr">Creating new working in the digital</a>
                     </h5>
                   </div>
                 </div>
