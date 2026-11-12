@@ -27,6 +27,9 @@ const LIBRARIES = [
   "vanilla-tilt.min.js",
 ];
 
+/** Runs in the <head>, before the first paint: unless the visitor asks for reduced motion, mark <html> so CSS may hide a block until SiteMotion reveals it. */
+const MOTION_FLAG = `try{if(!matchMedia("(prefers-reduced-motion: reduce)").matches)document.documentElement.classList.add("hk-js")}catch(e){}`;
+
 /**
  * The portfolio's whole HTML document: the template's <head> stylesheets, its
  * body class and its scripts. Used by the (site) root layout and by
@@ -37,6 +40,7 @@ export function SiteDocument({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: MOTION_FLAG }} />
         {STYLESHEETS.map((href) => (
           <link key={href} rel="stylesheet" href={href} />
         ))}

@@ -1,16 +1,8 @@
-import { TESTIMONIALS, logoSrc } from "../content";
-import { REVEAL } from "./SectionHead";
-import { SiteSwiper } from "./SiteSwiper";
+"use client";
 
-const OPTIONS = {
-  slidesPerView: 1,
-  speed: 700,
-  effect: "fade",
-  fadeEffect: { crossFade: true },
-  rewind: true,
-  autoplay: { delay: 7000, disableOnInteraction: false, pauseOnMouseEnter: true },
-  pagination: { el: ".hok-testi-dots", clickable: true },
-};
+import { Fragment, useState } from "react";
+import { TESTIMONIALS, logoSrc } from "../content";
+import { MaskText } from "./SectionHead";
 
 /** "Team Kirpa Properties" -> "KP": a monogram for clients without a logo file. */
 function initials(name: string) {
@@ -24,35 +16,61 @@ function initials(name: string) {
 }
 
 /**
- * Testimonials: a centred layout. The heading, then one large light quote
- * (fading from one to the next every 7 s, paused on hover), the client's round
- * logo chip, name and brand, and slider dots.
+ * Testimonials: the heading, one large centred quote and a row of the clients'
+ * round logo chips as buttons. Clicking a chip (or the 7 s autoplay) switches
+ * the quote, which slides in word by word. The active chip has a red ring and a
+ * thin red bar showing the time left; hovering the section pauses it. Under
+ * reduced motion there is no autoplay (the bar has no animation to end).
  */
 export function Testimonials() {
+  const [active, setActive] = useState(0);
+  const [swapped, setSwapped] = useState(false); // the first quote shows without the word animation
+  const t = TESTIMONIALS[active];
+
+  function show(index: number) {
+    setSwapped(true);
+    setActive(index);
+  }
+
   return (
     <section className="hok-section hok-testi">
       <div className="container">
-        <div {...REVEAL}>
-          <h2 className="hok-title hok-title--center">
-            What Our <em>Clients Say</em>
-          </h2>
-          <SiteSwiper className="hok-testi-swiper" options={OPTIONS}>
-            {TESTIMONIALS.map((t) => (
-              <div className="swiper-slide" key={t.name}>
-                <figure className="hok-quote">
-                  <blockquote>{t.quote}</blockquote>
-                  <figcaption>
-                    <div className={`hok-chip${t.logo ? "" : " hok-chip--mono"}`}>
-                      {t.logo ? <img src={logoSrc(t.logo)} alt={`${t.brand} logo`} loading="lazy" /> : <b aria-hidden="true">{initials(t.name)}</b>}
-                    </div>
-                    <div className="hok-quote__name">{t.name}</div>
-                    <div className="hok-quote__brand">{t.role ?? t.brand}</div>
-                  </figcaption>
-                </figure>
-              </div>
+        <h2 className="hok-title hok-title--center" data-reveal="mask">
+          <MaskText text="What Our" em="Clients Say" />
+        </h2>
+        <figure className="hok-quote" data-reveal="up">
+          <blockquote key={active} className={swapped ? "is-swap" : undefined}>
+            {t.quote.split(" ").map((word, i) => (
+              <Fragment key={i}>
+                {i > 0 && " "}
+                <span className="hok-m">
+                  <span style={{ "--w": i } as React.CSSProperties}>{word}</span>
+                </span>
+              </Fragment>
             ))}
-          </SiteSwiper>
-          <div className="hok-testi-dots" />
+          </blockquote>
+          <figcaption key={`c${active}`} className={swapped ? "is-swap" : undefined}>
+            <div className="hok-quote__name">{t.name}</div>
+            <div className="hok-quote__brand">{t.role ?? t.brand}</div>
+          </figcaption>
+        </figure>
+        <div className="hok-testi-logos" role="group" aria-label="Choose a client">
+          {TESTIMONIALS.map((item, i) => (
+            <div key={item.name} className={`hok-testi-item${i === active ? " is-active" : ""}`}>
+              <button
+                type="button"
+                className={`hok-chip${item.logo ? "" : " hok-chip--mono"}`}
+                aria-pressed={i === active}
+                aria-label={item.brand}
+                onClick={() => show(i)}
+              >
+                {item.logo ? <img src={logoSrc(item.logo)} alt="" loading="lazy" /> : <b aria-hidden="true">{initials(item.name)}</b>}
+              </button>
+              <span className="hok-testi-bar" aria-hidden="true">
+                {i === active && <span key={active} onAnimationEnd={() => show((active + 1) % TESTIMONIALS.length)} />}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     </section>

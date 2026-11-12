@@ -1,15 +1,14 @@
 import { PROCESS } from "../content";
-import { REVEAL } from "./SectionHead";
 
 /**
  * "How we work": five numbered steps (a real sequence, so numbers are right).
- * A single hairline runs above them; each column holds a large outlined
- * number, the title and the full sentence. Five columns on desktop, one on
- * phones. The steps stagger in once, after the block's own fade (CSS).
+ * One hairline above them draws left to right, then the outlined numbers fill
+ * red from the bottom, one after another (CSS, triggered by SiteMotion's
+ * reveal). Five columns on desktop, one on phones.
  */
 export function ProcessTimeline() {
   return (
-    <ol className="hok-steps" {...REVEAL}>
+    <ol className="hok-steps" data-reveal="steps">
       {PROCESS.map((step, i) => (
         <li key={step.title} className="hok-step" style={{ "--i": i } as React.CSSProperties}>
           <div className="hok-step__n" aria-hidden="true">

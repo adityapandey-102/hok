@@ -1,50 +1,33 @@
-import { SERVICE_GROUPS, SERVICE_ITEMS } from "../content";
-import { REVEAL } from "./SectionHead";
-
-const BLURBS = new Map(SERVICE_ITEMS.map((s) => [s.title, s.blurb]));
+import { SERVICE_GROUPS } from "../content";
+import { ServiceGraphic } from "./ServiceGraphics";
 
 /**
- * The four service groups, all open (no accordion). `grid` = the home and About
- * 2x2 panels with a plain list; `rows` = the Services page: title and text on
- * the left, every service with its one-line description on the right.
- * Hairlines only: no cards, shadows or numbers.
+ * "What We Do" on Home and About: the four service groups as compact cards in
+ * one row (2x2 on tablets, a swipe row on phones), so the whole section fits one
+ * screen. Each card has its line graphic (88 px high, drawn once when the card
+ * enters view: SiteMotion), the title, a one-line description and the services as a
+ * muted list. On desktop a hovering card lifts, its border turns red and a red
+ * line grows along its top. The Services page has its own, larger layout
+ * (ServicePanels).
  */
-export function ServiceGroups({ layout }: { layout: "grid" | "rows" }) {
-  if (layout === "grid") {
-    return (
-      <div className="hok-groups" {...REVEAL}>
-        {SERVICE_GROUPS.map((group) => (
-          <section key={group.title} className="hok-group">
-            <h3>{group.title}</h3>
-            <p className="hok-group__text">{group.text}</p>
-            <ul className="hok-list">
-              {group.items.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </section>
+export function ServiceGroups() {
+  return (
+    <>
+      <div className="hok-scards">
+        {SERVICE_GROUPS.map((group, i) => (
+          <article key={group.title} className="hok-scard" data-reveal="up" style={{ "--i": i } as React.CSSProperties}>
+            <div className="hok-scard__gfx">
+              <ServiceGraphic group={group.title} />
+            </div>
+            <h3 className="hok-scard__title">{group.title}</h3>
+            <p className="hok-scard__text">{group.short}</p>
+            <p className="hok-scard__items">{group.items.join(" · ")}</p>
+          </article>
         ))}
       </div>
-    );
-  }
-  return (
-    <div className="hok-rows">
-      {SERVICE_GROUPS.map((group) => (
-        <section key={group.title} className="hok-row" {...REVEAL}>
-          <div className="hok-row__lead">
-            <h2 className="hok-row__title">{group.title}</h2>
-            <p className="hok-group__text">{group.text}</p>
-          </div>
-          <ul className="hok-svcs">
-            {group.items.map((item) => (
-              <li key={item} className="hok-svc">
-                <h3>{item}</h3>
-                <p>{BLURBS.get(item)}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-    </div>
+      <p className="hok-swipe" aria-hidden="true">
+        Swipe to see all four
+      </p>
+    </>
   );
 }

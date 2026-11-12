@@ -14,7 +14,7 @@ export function LogoTile({ name, file, hidden = false }: { name: string; file: s
 
 /**
  * The client logo strip: uniform tiles scrolling slowly and continuously,
- * paused on hover. The track moves by exactly one half (each tile carries its
+ * paused on hover and faster while the page scrolls (SiteMotion). The track moves by exactly one half (each tile carries its
  * own right margin), so the loop is seamless; the second half is hidden from
  * screen readers.
  */
@@ -24,7 +24,7 @@ export function LogoMarquee() {
       <div className="container">
         <p className="hok-logos__caption">Brands we’ve worked with</p>
       </div>
-      <div className="hok-logos__viewport">
+      <div className="hok-logos__viewport" data-marquee="" data-marquee-hover="0">
         <div className="hok-logos__track">
           {[0, 1].map((half) =>
             HALF.map((logo, i) => <LogoTile key={`${half}-${i}`} name={logo.name} file={logo.file} hidden={half === 1} />),

@@ -1,4 +1,6 @@
 import { SITE_LOGO } from "../brand";
+import { Btn } from "./Btn";
+import { MobileMenu } from "./MobileMenu";
 import { NavLinks } from "./NavLinks";
 
 /**
@@ -19,17 +21,15 @@ export function SiteHeader({ variant }: { variant: "home" | "inner" }) {
                 <a href="/" className="brand-logo">
                   <img className="w-100" src={SITE_LOGO} alt="HOK" />
                 </a>{" "}
-                <button className="navbar-toggle-btn d-block d-lg-none" type="button" aria-label="Menu">
-                  <span /> <span /> <span /> <span />
-                </button>
+                <MobileMenu />
               </div>
               <div className="navbar-toggle-item">
                 <NavLinks />
               </div>
               <div className="d-lg-flex d-none justify-content-center ph-clickwrap align-items-center">
-                <a href="/contact" className="hok-btn hok-btn--primary">
+                <Btn href="/contact" contact>
                   Get In Touch
-                </a>
+                </Btn>
               </div>
             </div>
           </nav>

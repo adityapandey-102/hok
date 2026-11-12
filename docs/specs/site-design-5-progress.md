@@ -1,0 +1,10 @@
+- started 2026-11-12: reading code
+- 2026-11-12 COORDINATOR CHANGE: user does NOT want the reel wall (§4.1). Not built (nothing started). Hero right column stays as is until a new hero design arrives; the rest of the spec is built. Phone strip and wall load-sequence also skipped.
+- 2026-11-12 NEW HERO (replaces §4.1): no reels; rotating industry word (HERO_ROTATE), drifting bg + mouse parallax, cursor spotlight. Building it with the rest.
+- done: content.ts (HERO_ROTATE, service images, quote), SectionHead/MaskText, Btn, FounderBlock, Process, ServiceGroups (compact/detailed), WorkCard, Testimonials, LetsTalk, Marquee, LogoMarquee, PageBanner+strip, NavLinks, SiteHeader, SiteFooter, HeroRotator, SiteMotion. SiteSwiper deleted. Next: ContactForm, ContactModal, SitePage, SiteDocument, pages, CSS, e2e
+- NEW 2026-11-12: stock photos (STOCK map, Behind The Work band, hover imgs, intro image strips on about/services/contact, contact side image); hero rotator spec in
+- done: ContactForm, ContactModal, SitePage, SiteDocument flag, all 4 pages, stock images wired, hok-site.css round 5 written. Next: lint/typecheck, e2e update, screenshots
+- visual check desktop home done (fixed: hok-m span font, section overflow clip of quote card, clip-reveal observer on parent, modal focus/compact, rows hairline). Next: phone + inner pages shots, e2e rewrite, gates
+- e2e rewrite in progress; phone checked (hero words fit, modal sheet, reels row, services rows).
+- e2e rewritten (65 tests), 64 pass first run; fixing phone modal test hydration race. Next: gates (lint/typecheck/unit/build/bundle), final report
+- gates 2026-11-12: lint ok, typecheck ok, unit 247/247, build ok, e2e portfolio 65/65 (phone-sheet test re-run ok), bundle: site pages 323-325 KB, /app/clients/[clientId] 295 KB; tsconfig restored, .next-site removed. Visual check done at 1280x800 and 390x844 (home sections, modal desktop+phone, about/services/contact desktop). Reel wall never built (user change).

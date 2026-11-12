@@ -3,6 +3,7 @@ import { Fragment } from "react";
 /**
  * The template's text slider: a big word alternating between italic and
  * outlined, a separator `icon` between each, scrolling slowly (main.css).
+ * SiteMotion speeds it up while the page scrolls and slows it on hover.
  * Two identical copies make the loop; the second is hidden from screen readers.
  */
 export function Marquee({
@@ -10,14 +11,17 @@ export function Marquee({
   icon = <Dot />,
   count = 4,
   className = "testi-italic",
+  hoverRate = 0,
 }: {
   text: string;
   icon?: React.ReactNode;
   count?: number;
   className?: string;
+  /** Speed while hovered, as a fraction of normal (0 = pause, the template's own behaviour). */
+  hoverRate?: number;
 }) {
   return (
-    <div className={`digital-solution ${className}`}>
+    <div className={`digital-solution ${className}`} data-marquee="" data-marquee-hover={hoverRate}>
       <div className="mycustom-marque">
         <div className="scrolling-wrap">
           {[0, 1].map((copy) => (

@@ -182,29 +182,40 @@
 }
 
 
+
 /* ======================================================================
-   Design round 4 (docs/specs/site-design-4.md): quiet and confident.
-   Premium comes from space, alignment, type scale and restraint: hairlines
-   instead of cards, one accent (the template red), no decorative arrows,
-   pills or icons. Components use their own hok-* classes.
+   Design round 5 (docs/specs/site-design-5.md): motion-rich, image-led,
+   interactive. Dark and red, Plus Jakarta Sans headings, Manrope body.
+   Motion is driven by SiteMotion (modules/site/components/motion): it adds
+   .is-in to [data-reveal] blocks; the blocks are only hidden when the <html>
+   has .hk-js, which is never set under prefers-reduced-motion.
    ====================================================================== */
 :root {
+  --hk-red: #be1e28;
+  --hk-red-hover: #a41822;
+  --hk-ink: #0d0d0d;
+  --hk-panel: #161616;
   --hk-line: rgba(255, 255, 255, 0.12);
   --hk-muted: #a9a9a9;
   --hk-soft: #e6e6e6;
-  --hk-red-hover: #a41822;
+  --hk-white: #ffffff;
+  --hk-radius: 14px;
+  --hk-ease: cubic-bezier(0.7, 0, 0.2, 1);
+  --hk-ease-out: cubic-bezier(0.22, 0.7, 0.2, 1);
 }
 
-/* --- Layout: a 1200 px content width, 24 px gutters (16 px on phones) --- */
+/* --- Layout: a 1200 px content width, 24 px gutters (20 px on phones) --- */
+:root {
+  --hk-gut: 24px;
+}
 .container {
   max-width: 1248px;
-  padding-left: 24px;
-  padding-right: 24px;
+  padding-left: var(--hk-gut);
+  padding-right: var(--hk-gut);
 }
 @media (max-width: 767px) {
-  .container {
-    padding-left: 16px;
-    padding-right: 16px;
+  :root {
+    --hk-gut: 20px;
   }
 }
 /* The template's faint vertical guide lines cut through content: hidden. */
@@ -212,9 +223,10 @@
   display: none;
 }
 
-/* Sections sit 120 px apart on desktop, 72 px on phones. */
+/* Sections sit 120 px apart on desktop, 64 px on phones (48 px on a 360 px phone). */
 .hok-section {
   padding-top: 120px;
+  overflow: visible; /* the template clips every <section>; the founder's quote card overlaps the edge of its photo */
 }
 .hok-section--page {
   padding-top: 96px;
@@ -224,40 +236,35 @@
 }
 @media (max-width: 767px) {
   .hok-section {
-    padding-top: 72px;
+    padding-top: 64px;
   }
   .hok-section--page {
-    padding-top: 56px;
+    padding-top: 48px;
   }
   .hok-section--end {
-    padding-bottom: 72px;
+    padding-bottom: 64px;
   }
 }
-
-/* One gentle fade-up per block (aos.css moves it 100 px: far too much). */
-[data-aos="fade-up"] {
-  transform: translate3d(0, 24px, 0);
-}
-
-/* The template's anchors drop their outline: give keyboard users a ring instead. */
-.hok-btn:focus-visible,
-.hok-nav:focus-visible,
-.hok-footer a:focus-visible,
-.hok-clients a:focus-visible,
-.hok-textlinks a:focus-visible,
-.hok-work:focus-visible,
-.hok-talk:focus-visible,
-.brand-logo:focus-visible {
-  box-shadow: 0 0 0 2px #fff;
+@media (max-width: 380px) {
+  .hok-section,
+  .hok-section--compact {
+    padding-top: 48px;
+  }
+  .hok-section--page {
+    padding-top: 40px;
+  }
+  .hok-section--end {
+    padding-bottom: 48px;
+  }
 }
 
 /* --- Headings: a 40 x 2 px red rule, the big bold heading with one red italic phrase --- */
 .hok-title {
   margin: 0;
-  font-size: clamp(34px, 4.4vw, 56px);
-  line-height: 1.12;
+  font-size: clamp(40px, 5.2vw, 72px);
+  line-height: 1.02;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   text-wrap: balance;
 }
 .hok-title::before {
@@ -266,12 +273,12 @@
   width: 40px;
   height: 2px;
   margin-bottom: 28px;
-  background: var(--theme);
+  background: var(--hk-red);
 }
 .hok-title em {
   font-style: italic;
   font-weight: 400;
-  color: var(--theme);
+  color: var(--hk-red);
 }
 .hok-title--center {
   text-align: center;
@@ -281,13 +288,13 @@
   margin-right: auto;
 }
 .hok-title--page {
-  font-size: clamp(38px, 4.4vw, 60px);
+  font-size: clamp(40px, 5.2vw, 72px);
 }
 .hok-lead {
   max-width: 36rem;
-  margin: 20px 0 0;
+  margin: 24px 0 0;
   font-size: 17px;
-  line-height: 1.65;
+  line-height: 1.7;
   color: var(--hk-muted);
 }
 .hok-head {
@@ -296,41 +303,153 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 28px 48px;
-  margin-bottom: 56px;
+  margin-bottom: 64px;
+}
+@media (max-width: 767px) {
+  .hok-title {
+    font-size: clamp(34px, 10vw, 44px);
+  }
+  .hok-head {
+    margin-bottom: 40px;
+  }
 }
 
-/* --- Buttons: square. Primary = solid red; secondary = outlined white. No icons. --- */
+/* A heading word inside its mask: SiteMotion slides it up (see "Reveal" below). */
+.hok-m {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  font: inherit;
+  color: inherit;
+  padding: 0.08em 0.06em 0.16em;
+  margin: -0.08em -0.06em -0.16em;
+}
+.hok-m > span {
+  display: inline-block;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+/* --- Reveal: hidden only when .hk-js is on <html> (so never with reduced motion or without JavaScript) --- */
+html.hk-js [data-reveal="up"] {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: opacity 0.9s var(--hk-ease-out) var(--d, calc(var(--i, 0) * 90ms)),
+    transform 0.9s var(--hk-ease-out) var(--d, calc(var(--i, 0) * 90ms));
+}
+html.hk-js [data-reveal="up"].is-in {
+  opacity: 1;
+  transform: none;
+}
+html.hk-js .hok-btn[data-reveal="up"] {
+  transition: opacity 0.9s var(--hk-ease-out) var(--d, 0ms), transform 0.9s var(--hk-ease-out) var(--d, 0ms),
+    color 0.45s var(--hk-ease), border-color 0.45s var(--hk-ease);
+}
+html.hk-js [data-reveal="mask"] .hok-m > span {
+  transform: translateY(130%);
+  transition: transform 1s var(--hk-ease-out) calc(var(--i, 0) * 90ms);
+}
+html.hk-js [data-reveal="mask"].is-in .hok-m > span {
+  transform: none;
+}
+html.hk-js [data-reveal="clip"] {
+  clip-path: inset(0 0 100% 0);
+  transition: clip-path 1.2s var(--hk-ease);
+}
+html.hk-js [data-reveal="clip-up"] {
+  clip-path: inset(100% 0 0 0);
+  transition: clip-path 1.2s var(--hk-ease);
+}
+html.hk-js [data-reveal="clip"].is-in,
+html.hk-js [data-reveal="clip-up"].is-in {
+  clip-path: inset(0);
+}
+html.hk-js [data-reveal="clip"] img {
+  scale: 1.15;
+  transition: scale 1.2s var(--hk-ease), transform 0.8s var(--hk-ease-out);
+}
+html.hk-js [data-reveal="clip"].is-in img {
+  scale: 1;
+}
+
+/* --- Buttons: square, magnetic, the fill slides up on hover; a small round marker, not an arrow --- */
 .hok-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 16px 32px;
+  gap: 10px;
+  overflow: hidden;
+  padding: 18px 34px;
   border: 1px solid transparent;
   border-radius: 0;
-  font: 600 15px/1.2 "Manrope", sans-serif;
-  letter-spacing: 0.01em;
+  font: 600 15px/1 "Manrope", sans-serif;
+  letter-spacing: 0.2px;
   color: #fff;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  isolation: isolate;
+  transition: color 0.45s var(--hk-ease), border-color 0.45s var(--hk-ease);
+}
+.hok-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  transform: translateY(101%);
+  transition: transform 0.45s var(--hk-ease);
+}
+.hok-btn:hover::before,
+.hok-btn:focus-visible::before {
+  transform: translateY(0);
 }
 .hok-btn--primary {
-  background: var(--theme);
-  border-color: var(--theme);
+  background: var(--hk-red);
+  border-color: var(--hk-red);
 }
-.hok-btn--primary:hover {
-  background: var(--hk-red-hover);
-  border-color: var(--hk-red-hover);
-  color: #fff;
+.hok-btn--primary::before {
+  background: #fff;
+}
+.hok-btn--primary:hover,
+.hok-btn--primary:focus-visible {
+  color: var(--hk-red);
 }
 .hok-btn--ghost {
-  background: transparent;
-  border-color: rgba(255, 255, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.35);
 }
-.hok-btn--ghost:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: #fff;
+.hok-btn--ghost::before {
+  background: var(--hk-red);
+}
+.hok-btn--ghost:hover,
+.hok-btn--ghost:focus-visible {
+  border-color: var(--hk-red);
   color: #fff;
+}
+.hok-btn__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  transition: transform 0.45s var(--hk-ease);
+}
+.hok-btn:hover .hok-btn__dot {
+  transform: scale(1.8);
+}
+.hok-btn.is-sending {
+  pointer-events: none;
+  opacity: 0.85;
+}
+.hok-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: hok-spin 0.7s linear infinite;
+}
+@keyframes hok-spin {
+  to { transform: rotate(360deg); }
 }
 .hok-actions {
   display: flex;
@@ -338,10 +457,73 @@
   gap: 16px;
 }
 
-/* --- Header: logo, text menu with a thin underline, one primary button --- */
-.header-fixed {
-  background: var(--bg1);
-  border-bottom: 1px solid var(--hk-line);
+/* --- Text links: the underline grows from the left --- */
+.hok-link {
+  background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat;
+  transition: background-size 0.35s var(--hk-ease), color 0.25s ease;
+  padding-bottom: 2px;
+}
+.hok-link:hover,
+.hok-link:focus-visible {
+  background-size: 100% 1px;
+}
+:focus-visible {
+  outline: 2px solid var(--hk-red);
+  outline-offset: 3px;
+}
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--hk-red) !important;
+  outline-offset: 3px;
+}
+
+/* --- Header: logo, text menu, one primary button --- */
+/* Height 76 px (64 px on phones). Transparent at the top of the page; SiteMotion adds
+   .is-scrolled after 20 px and the bar turns dark and blurred with a hairline.
+   (The template's own .header-fixed / fadeInDown at 50 px is made identical and still.) */
+.header-section.cmn-fixed {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background-color 0.3s ease, border-color 0.3s ease, -webkit-backdrop-filter 0.3s ease, backdrop-filter 0.3s ease;
+}
+.header-section.animated {
+  animation: none !important;
+}
+.header-section.is-scrolled,
+.header-section.header-fixed {
+  background: rgba(13, 13, 13, 0.85);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-bottom-color: var(--hk-line);
+}
+.header-section .main-navbar > .navbar-custom > div {
+  min-height: 76px;
+}
+@media (min-width: 992px) {
+  /* the template gives each menu item 34 px above and below (a 108 px bar) */
+  .header-section .main-navbar .custom-nav .menu-item {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+}
+.header-section .main-navbar .navbar-custom {
+  padding: 0;
+}
+@media (max-width: 991px) {
+  /* the template paints the phone header solid at all times: transparent at the top, solid while the menu is open */
+  .header-section.cmn-fixed:not(.is-scrolled):not(.header-fixed):not(:has(.navbar-toggle-btn.open)) {
+    background: transparent !important;
+  }
+  .header-section.cmn-fixed.is-scrolled,
+  .header-section.cmn-fixed.header-fixed,
+  .header-section.cmn-fixed:has(.navbar-toggle-btn.open) {
+    background: rgba(13, 13, 13, 0.92) !important;
+  }
+  .header-section .main-navbar > .navbar-custom > div {
+    min-height: 64px;
+  }
 }
 .header-section .main-navbar .custom-nav .menu-item:last-child {
   margin-left: 0;
@@ -356,30 +538,28 @@
   text-transform: none;
   color: #d2d2d2;
 }
-.header-section .main-navbar .custom-nav .menu-item a.hok-nav::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
-  background: currentColor;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.25s ease;
-}
 .header-section .main-navbar .custom-nav .menu-item a.hok-nav:hover,
 .header-section .main-navbar .custom-nav .menu-item a.hok-nav.is-current {
   color: #fff;
 }
-.header-section .main-navbar .custom-nav .menu-item a.hok-nav:hover::after,
-.header-section .main-navbar .custom-nav .menu-item a.hok-nav.is-current::after {
-  transform: scaleX(1);
+.hok-nav.is-current::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--hk-red);
 }
 @media (min-width: 992px) {
   .header-section .main-navbar .custom-nav {
     gap: 40px;
   }
+}
+.header-section .hok-btn {
+  padding: 12px 22px;
 }
 @media (max-width: 991px) {
   .header-section .main-navbar .custom-nav {
@@ -388,31 +568,186 @@
     text-align: left;
     padding-bottom: 20px;
   }
+  .hok-nav.is-current::after {
+    left: calc(100% + 10px);
+    bottom: 50%;
+    margin-bottom: -2px;
+  }
 }
-/* The logo file has transparent margins (13 % on the left): pull it to the content edge. */
+/* The logo file has transparent margins (13 % on each side, 25 % above and below the mark): the image is
+   50 px high so the red mark itself reads about 30 px; pulled to the content edge. */
+.header-section .brand-logo {
+  display: block;
+  max-width: none;
+}
 .header-section .brand-logo img {
-  margin-left: -12px;
+  display: block;
+  width: auto !important;
+  height: 50px;
+  margin: -6px 0 -6px -19px;
 }
-@media (min-width: 1200px) {
+@media (max-width: 991px) {
   .header-section .brand-logo img {
-    margin-left: -18px;
+    height: 44px;
+    margin-left: -16px;
   }
 }
 
-/* --- Hero: the template's background and headline; a quiet trust line, no stats box, no arrow --- */
+/* --- Hero: the template's static background, a red cursor spotlight, the headline --- */
 .hero-section-version1.hok-hero {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   min-height: min(100vh, 860px);
-  padding: 150px 0 44px;
+  padding: 130px 0 44px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--bg2);
+}
+.hok-hero__bg {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: url(/site/assets/img/banner/hero-bg1.png) no-repeat center center / cover;
+  pointer-events: none;
+}
+.hok-hero__spot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: -1;
+  display: none;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(190, 30, 40, 0.18), transparent);
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .hok-hero__spot {
+    display: block;
+  }
 }
 .hok-hero__main {
   flex: 1;
   display: flex;
   align-items: center;
+  gap: 24px;
   padding-top: 24px;
   padding-bottom: 40px;
+}
+.hok-hero__main > .hero-v1-content {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* The lockup above the headline: a short red rule, "House of Khalak", a hairline and "Est. Bengaluru". */
+.hok-hero__name {
+  display: flex;
+  align-items: center;
+  margin: 0 0 24px;
+  font: 500 14px/1.4 "Manrope", sans-serif;
+  color: var(--hk-muted);
+}
+.hok-hero__name strong {
+  font: 700 18px/1.3 "Plus Jakarta Sans", sans-serif;
+  letter-spacing: 0.01em;
+  color: #fff;
+}
+.hok-hero__mark {
+  flex: none;
+  width: 24px;
+  height: 2px;
+  margin-right: 12px;
+  border-radius: 1px;
+  background: var(--hk-red);
+}
+.hok-hero__est {
+  display: flex;
+  align-items: center;
+}
+.hok-hero__sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 12px;
+  background: rgba(255, 255, 255, 0.25);
+}
+@media (max-width: 399px) {
+  .hok-hero__est {
+    display: none;
+  }
+}
+/* the market line under the buttons (desktop and tablet; phones get the markets band below the hero) */
+.hok-hero__markets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 32px; /* 20px after the buttons (.hok-actions), 32px to the proof hairline */
+  font: 500 15px/1.4 "Manrope", sans-serif;
+  color: rgba(255, 255, 255, 0.75);
+}
+.hok-hero__markets svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--hk-red);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (max-width: 767px) {
+  .hok-hero__markets {
+    display: none;
+  }
+}
+/* The still service graphic: right column on desktop only, nothing moves. */
+.hok-hero__art {
+  display: none;
+}
+@media (min-width: 992px) {
+  .hok-hero__main > .hero-v1-content {
+    flex: 0 1 600px;
+    max-width: 600px;
+  }
+  .hok-hero__art {
+    position: relative;
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+  }
+  .hok-hero__art::before {
+    /* the cubes background stays behind everything, dimmed to about 30 % behind the graphic */
+    content: "";
+    position: absolute;
+    inset: -8% -12%;
+    background: radial-gradient(closest-side, rgba(13, 13, 13, 0.7), rgba(13, 13, 13, 0.7) 55%, transparent);
+    pointer-events: none;
+  }
+  .hok-cubes-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 560px;
+  }
+  .hok-cubes {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+}
+/* The cubes (every screen size) move only up and down: SiteMotion writes each .hc-cube's `transform: translateY(y)` every
+   frame from one global clock (a sine offset by the cube's x, so a wave travels left to right; CUBE_PERIOD_S). No parallax, no sway, no hover or click movement. */
+.hc-cube {
+  pointer-events: none;
+}
+.hc-shadow {
+  transform-box: fill-box;
+  transform-origin: center; /* its scale follows the big cube, written by SiteMotion */
 }
 .hero-v1-content h1 .hok-mask {
   overflow: hidden;
@@ -422,8 +757,18 @@
 .hero-v1-content h1 .designers {
   display: inline-block;
 }
+.hero-section-version1 .hero-v1-content h1 span {
+  font-size: clamp(38px, 5.4vw, 72px);
+  line-height: 120%;
+}
+@media (min-width: 992px) {
+  /* the headline shares the row with the graphic: a little smaller so "MARKETING FOR BRANDS" stays on one line */
+  .hero-section-version1 .hero-v1-content h1 span {
+    font-size: clamp(40px, 3.7vw, 56px); /* the 600 px column keeps "MARKETING FOR BRANDS" on one line */
+  }
+}
 .hok-rise {
-  animation: hok-rise 0.9s cubic-bezier(0.22, 0.7, 0.2, 1) calc(var(--d, 0s) + var(--pre, 0s)) both;
+  animation: hok-rise 0.9s var(--hk-ease-out) calc(var(--d, 0s) + var(--pre, 0s)) both;
 }
 .hok-fade {
   animation: hok-fade 0.8s ease-out calc(var(--d, 0s) + var(--pre, 0s)) both;
@@ -443,26 +788,9 @@
 }
 .hero-intro {
   max-width: 520px;
-  margin: 26px 0 36px;
-  font-size: 18px;
+  margin: 0 0 36px;
+  font-size: 17px;
   line-height: 1.6;
-}
-.hok-trust {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  max-width: 620px;
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--hk-muted);
-}
-.hok-trust::before {
-  content: "";
-  flex: none;
-  width: 32px;
-  height: 2px;
-  background: var(--theme);
 }
 @media (max-width: 575px) {
   .hero-section-version1.hok-hero {
@@ -473,7 +801,7 @@
   }
 }
 
-/* --- Client logo strip: uniform white tiles on a slow, continuous scroll --- */
+/* --- Client logo strip: uniform white tiles on a slow scroll that follows the page's scroll speed --- */
 .hok-logos {
   padding: 56px 0;
   background: var(--bg1);
@@ -485,6 +813,8 @@
   color: var(--hk-muted);
 }
 .hok-logos__viewport {
+  padding: 12px 0 16px;
+  margin: -12px 0 -16px;
   overflow: hidden;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
   mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
@@ -493,9 +823,6 @@
   display: flex;
   width: max-content;
   animation: hok-logos 80s linear infinite;
-}
-.hok-logos__viewport:hover .hok-logos__track {
-  animation-play-state: paused;
 }
 @keyframes hok-logos {
   to { transform: translateX(-50%); }
@@ -510,6 +837,11 @@
   padding: 14px;
   background: #fff;
   border-radius: 10px;
+  transition: transform 0.35s var(--hk-ease-out), box-shadow 0.35s ease;
+}
+.hok-logo:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.5);
 }
 .hok-logo img {
   display: block;
@@ -529,7 +861,7 @@
   }
 }
 
-/* --- About HOK: photo 4:5 capped to the screen, text centred beside it --- */
+/* --- About HOK: the photo (4:5, rounded) with a quote card on its corner, text centred beside it --- */
 .hok-founder {
   display: grid;
   grid-template-columns: 5fr 7fr;
@@ -537,21 +869,55 @@
   gap: clamp(40px, 6vw, 88px);
 }
 .hok-founder__photo {
-  width: min(100%, calc(min(72vh, 600px) * 0.8));
+  position: relative;
+  width: min(100%, calc(min(70vh, 600px) * 0.8));
+}
+.hok-founder__media {
+  position: relative;
   aspect-ratio: 4 / 5;
   overflow: hidden;
+  border-radius: var(--hk-radius);
   background: var(--bg1);
 }
-.hok-founder__photo img {
+/* object-position 50% 8%: the whole head (and some room above it) stays in frame */
+.hok-founder__media img {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center top;
+  object-position: 50% 8%;
+}
+.hok-founder__quote {
+  position: absolute;
+  right: -144px;
+  bottom: -36px;
+  z-index: 2;
+  width: 360px;
+  max-width: 360px;
+  margin: 0;
+  padding: 28px;
+  background: var(--hk-panel);
+  border-left: 3px solid var(--hk-red);
+  border-radius: 0 var(--hk-radius) var(--hk-radius) 0;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+}
+.hok-founder__quote blockquote {
+  margin: 0 0 14px;
+  font: 600 20px/1.4 "Plus Jakarta Sans", sans-serif;
+  color: #fff;
+}
+.hok-founder__quote figcaption {
+  font-size: 14px;
+  color: var(--hk-muted);
+}
+.hok-founder__text {
+  padding-left: 88px;
 }
 .hok-founder__text .hok-title {
   margin-bottom: 28px;
-  font-size: clamp(32px, 3.6vw, 46px);
+  font-size: clamp(34px, 4vw, 56px);
 }
 .hok-founder__text .hok-title em {
   display: block;
@@ -576,36 +942,190 @@
 }
 .hok-founder__by a {
   color: #fff;
-  border-bottom: 1px solid var(--theme);
 }
 .hok-founder__action {
   margin-top: 28px;
 }
+@media (max-width: 1199px) {
+  .hok-founder__quote {
+    right: -48px;
+    width: 300px;
+  }
+  .hok-founder__text {
+    padding-left: 56px;
+  }
+}
 @media (max-width: 991px) {
   .hok-founder {
     grid-template-columns: 1fr;
-    gap: 40px;
+    gap: 72px;
   }
   .hok-founder__photo {
     width: min(100%, 420px);
   }
+  .hok-founder__quote {
+    right: -8px;
+    bottom: -40px;
+    width: min(300px, calc(100% - 8px));
+    padding: 22px;
+  }
+  .hok-founder__quote blockquote {
+    font-size: 18px;
+  }
+  .hok-founder__text {
+    padding-left: 0;
+  }
 }
 
-/* --- How we work: one hairline, then five numbered columns --- */
+/* --- Work: four reels in a staggered grid, each drifting at its own speed --- */
+.hok-reels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+  padding-bottom: 96px;
+}
+.hok-reels__item:nth-child(2),
+.hok-reels__item:nth-child(4) {
+  margin-top: 80px;
+}
+.hok-work {
+  display: block;
+  color: #fff;
+}
+.hok-work__media {
+  position: relative;
+  display: block;
+  aspect-ratio: 9 / 16;
+  overflow: hidden;
+  border-radius: var(--hk-radius);
+  background: var(--bg1);
+}
+.hok-work__media img,
+.hok-work__media video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.8s var(--hk-ease-out);
+}
+.hok-work__over {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: none;
+  padding: 56px 22px 22px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.88), transparent);
+}
+.hok-work__cat {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--hk-muted);
+}
+.hok-work__title,
+.hok-work__name {
+  display: block;
+  font: 600 20px/1.3 "Plus Jakarta Sans", sans-serif;
+  color: #fff;
+}
+.hok-work__below {
+  display: block;
+  margin-top: 16px;
+  transition: opacity 0.35s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .hok-work__over {
+    display: block;
+    transform: translateY(24px);
+    opacity: 0;
+    transition: transform 0.5s var(--hk-ease-out), opacity 0.4s ease;
+  }
+  .hok-work:hover .hok-work__media img,
+  .hok-work:hover .hok-work__media video,
+  .hok-work:focus-visible .hok-work__media img {
+    transform: scale(1.06);
+  }
+  .hok-work:hover .hok-work__over,
+  .hok-work:focus-visible .hok-work__over {
+    transform: none;
+    opacity: 1;
+  }
+  .hok-work:hover .hok-work__below,
+  .hok-work:focus-visible .hok-work__below {
+    opacity: 0;
+  }
+}
+@media (max-width: 991px) {
+  .hok-reels {
+    display: flex;
+    gap: 16px;
+    margin: 0 -16px;
+    padding: 0 16px 16px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-left: 16px;
+    scrollbar-width: none;
+  }
+  .hok-reels::-webkit-scrollbar {
+    display: none;
+  }
+  .hok-reels__item,
+  .hok-reels__item:nth-child(2),
+  .hok-reels__item:nth-child(4) {
+    flex: 0 0 78%;
+    margin-top: 0;
+    scroll-snap-align: start;
+  }
+}
+@media (min-width: 576px) and (max-width: 991px) {
+  .hok-reels__item {
+    flex-basis: 42%;
+  }
+}
+/* The lightbox for a card that has a video. */
+.hok-lightbox {
+  max-width: 420px;
+  margin: 0 auto;
+}
+.hok-lightbox video {
+  display: block;
+  width: 100%;
+  max-height: 86vh;
+}
+
+/* --- How we work: the hairline draws, then the outlined numbers fill red one after another --- */
 .hok-steps {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 32px;
   margin: 0;
   padding: 40px 0 0;
   list-style: none;
-  border-top: 1px solid var(--hk-line);
+}
+.hok-steps::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--hk-line);
+  transform-origin: left;
 }
 .hok-step__n {
   margin-bottom: 24px;
   font: 700 64px/1 "Plus Jakarta Sans", sans-serif;
   color: transparent;
   -webkit-text-stroke: 1px rgba(255, 255, 255, 0.42);
+  background: linear-gradient(to top, var(--hk-red) 50%, transparent 50%) 0 0 / 100% 200% no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  transition: background-position 0.7s var(--hk-ease);
 }
 .hok-step__t {
   margin: 0 0 10px;
@@ -618,10 +1138,37 @@
   font-size: 15px;
   line-height: 1.6;
   color: var(--hk-muted);
+  transition: color 0.35s ease;
 }
-/* The single stagger: each step fades in after the block itself. */
-.hok-steps.aos-animate .hok-step {
-  animation: hok-fade 0.6s ease-out calc(var(--i, 0) * 90ms) both;
+.hok-step:hover .hok-step__n {
+  background-position: 0 100%;
+  transition-delay: 0s !important;
+}
+.hok-step:hover .hok-step__text {
+  color: #fff;
+}
+html.hk-js [data-reveal="steps"]::before {
+  transform: scaleX(0);
+  transition: transform 1.2s var(--hk-ease);
+}
+html.hk-js [data-reveal="steps"].is-in::before {
+  transform: none;
+}
+html.hk-js [data-reveal="steps"] .hok-step {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s var(--hk-ease-out) calc(0.3s + var(--i, 0) * 120ms),
+    transform 0.7s var(--hk-ease-out) calc(0.3s + var(--i, 0) * 120ms);
+}
+html.hk-js [data-reveal="steps"].is-in .hok-step {
+  opacity: 1;
+  transform: none;
+}
+html.hk-js [data-reveal="steps"] .hok-step__n {
+  transition: background-position 0.9s var(--hk-ease) calc(1.2s + var(--i, 0) * 150ms);
+}
+html.hk-js [data-reveal="steps"].is-in .hok-step__n {
+  background-position: 0 100%;
 }
 @media (max-width: 1099px) {
   .hok-steps {
@@ -634,7 +1181,6 @@
     grid-template-columns: 1fr;
     gap: 0;
     padding-top: 0;
-    border-top: 0;
   }
   .hok-step {
     display: grid;
@@ -642,6 +1188,9 @@
     column-gap: 16px;
     padding: 28px 0;
     border-top: 1px solid var(--hk-line);
+  }
+  .hok-steps::before {
+    display: none;
   }
   .hok-step__n {
     grid-row: 1 / 3;
@@ -653,141 +1202,633 @@
   }
 }
 
-/* --- What we do: four open panels split by hairlines --- */
-.hok-groups {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-.hok-group {
-  padding: 48px 56px 56px 0;
-  border-top: 1px solid var(--hk-line);
-}
-.hok-group:nth-child(even) {
-  padding: 48px 0 56px 56px;
-  border-left: 1px solid var(--hk-line);
-}
-.hok-group h3 {
-  margin: 0 0 12px;
-  font-size: 26px;
-  font-weight: 600;
-  line-height: 1.25;
-}
-.hok-group__text {
-  max-width: 30rem;
-  margin: 0 0 28px;
-  font-size: 16px;
-  line-height: 1.65;
-  color: var(--hk-muted);
-}
-.hok-list {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.hok-list li {
+/* --- Behind the work: a full-width photo band (the one photo, high resolution) --- */
+.hok-band {
   position: relative;
-  padding-left: 22px;
-  font-size: 16px;
-  line-height: 1.5;
-  color: var(--hk-soft);
+  display: flex;
+  align-items: center;
+  min-height: 70vh;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--bg1);
 }
-.hok-list li::before,
-.hok-svc h3::before {
-  content: "";
+.hok-band__img {
   position: absolute;
   left: 0;
-  top: 0.55em;
-  width: 6px;
-  height: 6px;
-  background: var(--theme);
+  top: -140px;
+  z-index: -2;
+  width: 100%;
+  height: calc(100% + 280px);
+  object-fit: cover;
+}
+.hok-band__shade {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.75), transparent 60%);
+}
+.hok-band__content {
+  padding-top: 80px;
+  padding-bottom: 96px;
+}
+.hok-band__content .hok-title {
+  max-width: 10.5em;
+}
+.hok-band__content .hok-lead {
+  margin-bottom: 32px;
+  color: var(--hk-soft);
 }
 @media (max-width: 767px) {
-  .hok-groups {
-    grid-template-columns: 1fr;
+  .hok-band {
+    min-height: 50vh;
   }
-  .hok-group,
-  .hok-group:nth-child(even) {
-    padding: 36px 0 40px;
-    border-left: 0;
+  .hok-band__shade {
+    background: linear-gradient(rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.4));
+  }
+  .hok-band__content {
+    padding-top: 48px;
+    padding-bottom: 64px;
   }
 }
 
-/* --- Services page: one open row per group --- */
-.hok-rows {
-  border-bottom: 1px solid var(--hk-line);
+/* --- What we do (Home and About): four compact cards in ONE row, so the whole section fits one screen.
+   >= 1200 px: 4 across; 768-1199: 2x2; phones: a swipe row at 80 % card width. --- */
+.hok-section--compact {
+  padding-top: 88px;
+  padding-bottom: 8px;
 }
-.hok-row:first-child {
-  border-top: 0;
-  padding-top: 0;
+.hok-head--compact {
+  margin-bottom: 36px;
 }
-.hok-row {
+.hok-head--compact .hok-title {
+  font-size: clamp(36px, 4vw, 52px);
+}
+.hok-head--compact .hok-title::before {
+  margin-bottom: 20px;
+}
+.hok-head--compact .hok-lead {
+  margin-top: 14px;
+}
+.hok-scards {
   display: grid;
-  grid-template-columns: 5fr 7fr;
-  gap: 64px;
-  padding: 64px 0;
-  border-top: 1px solid var(--hk-line);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
 }
-.hok-row__title {
-  margin: 0 0 14px;
-  font-size: clamp(26px, 2.8vw, 34px);
+.hok-scard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  overflow: hidden;
+  background: var(--hk-panel);
+  border: 1px solid var(--hk-line);
+  border-radius: 14px;
+  transition: translate 0.4s var(--hk-ease-out), border-color 0.4s ease;
+}
+html.hk-js .hok-scard[data-reveal="up"] {
+  transition: opacity 0.9s var(--hk-ease-out) var(--d, calc(var(--i, 0) * 90ms)),
+    transform 0.9s var(--hk-ease-out) var(--d, calc(var(--i, 0) * 90ms)), translate 0.4s var(--hk-ease-out),
+    border-color 0.4s ease;
+}
+.hok-scard::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--hk-red);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.5s var(--hk-ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hok-scard:hover {
+    translate: 0 -6px;
+    border-color: rgba(190, 30, 40, 0.6);
+  }
+  .hok-scard:hover::before {
+    transform: scaleX(1);
+  }
+}
+.hok-scard__gfx {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: 88px;
+  margin-bottom: 16px;
+}
+.hok-scard__gfx svg {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: 100%;
+}
+/* The lines draw once when the card comes into view; the filled shapes fade in after. */
+html.hk-js .hok-scard .hk-draw {
+  stroke-dasharray: var(--len, 2000);
+  stroke-dashoffset: var(--len, 2000);
+}
+html.hk-js .hok-scard.is-in .hk-draw {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 1.4s var(--hk-ease) 0.3s;
+}
+html.hk-js .hok-scard__gfx svg > [fill]:not([fill="none"]) {
+  opacity: 0;
+}
+html.hk-js .hok-scard.is-in .hok-scard__gfx svg > [fill]:not([fill="none"]) {
+  opacity: 1;
+  transition: opacity 0.7s ease 1.1s;
+}
+.hok-scard__title {
+  margin: 0;
+  font-size: 20px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.3;
+  text-transform: none;
 }
-.hok-row .hok-group__text {
-  margin-bottom: 0;
+.hok-scard__text {
+  margin: 8px 0 12px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--hk-muted);
 }
-.hok-svcs {
+.hok-scard__items {
+  margin: auto 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #8c8c8c;
+  transition: color 0.35s ease;
+}
+.hok-scard:hover .hok-scard__items {
+  color: var(--hk-soft);
+}
+@media (max-width: 1199px) {
+  .hok-scards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 767px) {
+  .hok-scards {
+    display: flex;
+    gap: 16px;
+    margin: 0 -16px;
+    padding: 0 16px 16px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-left: 16px;
+    scrollbar-width: none;
+  }
+  .hok-scards::-webkit-scrollbar {
+    display: none;
+  }
+  .hok-scard {
+    flex: 0 0 80%;
+    scroll-snap-align: start;
+  }
+  .hok-section--compact {
+    padding-top: 64px;
+  }
+}
+
+/* --- About: the team (wide photo, six role cards, a call to action) --- */
+.hok-team__photo {
+  position: relative;
+  margin: 0 0 24px;
+  aspect-ratio: 21 / 9;
+  overflow: hidden;
+  border-radius: var(--hk-radius);
+  background: var(--bg1);
+}
+.hok-team__photo img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hok-team__photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0) 60%);
+}
+.hok-team__photo figcaption {
+  position: absolute;
+  left: 32px;
+  right: 32px;
+  bottom: 24px;
+  z-index: 1;
+  max-width: 34rem;
+  font: 600 clamp(17px, 1.7vw, 22px) / 1.4 "Plus Jakarta Sans", sans-serif;
+  color: #fff;
+}
+.hok-team__grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 36px 40px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.hok-svc h3 {
+.hok-role {
   position: relative;
-  margin: 0 0 8px;
-  padding-left: 22px;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.4;
+  padding: 24px;
+  overflow: hidden;
+  background: var(--hk-panel);
+  border: 1px solid var(--hk-line);
+  border-radius: var(--hk-radius);
+  transition: translate 0.4s var(--hk-ease-out), border-color 0.4s ease;
 }
-.hok-svc p {
+html.hk-js .hok-role[data-reveal="up"] {
+  transition: opacity 0.9s var(--hk-ease-out) var(--d, calc(var(--i, 0) * 90ms)),
+    transform 0.9s var(--hk-ease-out) var(--d, calc(var(--i, 0) * 90ms)), translate 0.4s var(--hk-ease-out),
+    border-color 0.4s ease;
+}
+.hok-role::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--hk-red);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.5s var(--hk-ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hok-role:hover {
+    translate: 0 -6px;
+    border-color: rgba(190, 30, 40, 0.6);
+  }
+  .hok-role:hover::before {
+    transform: scaleX(1);
+  }
+}
+.hok-role__icon {
+  display: block;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 16px;
+}
+.hok-role__icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.hok-role__t {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-transform: none;
+}
+.hok-role p {
   margin: 0;
-  padding-left: 22px;
   font-size: 15px;
   line-height: 1.6;
   color: var(--hk-muted);
 }
+.hok-team__cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 16px 28px;
+  margin-top: 48px;
+}
+.hok-team__cta p {
+  margin: 0;
+  font-size: 18px;
+  color: var(--hk-soft);
+}
 @media (max-width: 991px) {
-  .hok-row {
-    grid-template-columns: 1fr;
-    gap: 32px;
-    padding: 48px 0;
+  .hok-team__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 767px) {
+  .hok-team__photo {
+    aspect-ratio: 4 / 3;
+  }
+  .hok-team__photo figcaption {
+    left: 20px;
+    right: 20px;
+    bottom: 16px;
   }
 }
 @media (max-width: 575px) {
-  .hok-svcs {
+  .hok-team__grid {
     grid-template-columns: 1fr;
-    gap: 28px;
   }
 }
 
-/* --- Closing call to action band (Services) --- */
-.hok-cta {
+/* --- Services: a sticky index (chips on phones) beside four content panels --- */
+.hok-svc-layout {
+  display: grid;
+  grid-template-columns: 3fr 9fr;
+  gap: 48px;
+  align-items: start;
+}
+.hok-svc-index {
+  position: sticky;
+  top: 100px;
+  display: grid;
+  gap: 4px;
+}
+.hok-svc-index__btn {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 14px 12px 16px 18px;
+  text-align: left;
+  color: var(--hk-muted);
+  cursor: pointer;
+  transition: color 0.3s ease, background-color 0.3s ease;
+}
+.hok-svc-index__btn::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--hk-red);
+  transform: scaleY(0);
+  transition: transform 0.35s var(--hk-ease-out);
+}
+.hok-svc-index__btn:hover {
+  color: #fff;
+}
+.hok-svc-index__btn.is-active {
+  color: #fff;
+}
+.hok-svc-index__btn.is-active::before {
+  transform: scaleY(1);
+}
+.hok-svc-index__n {
+  font: 600 13px/1.4 "Manrope", sans-serif;
+  letter-spacing: 0.06em;
+  color: var(--hk-red);
+}
+.hok-svc-index__t {
+  font: 600 16px/1.4 "Plus Jakarta Sans", sans-serif;
+}
+.hok-svc-index__bar {
+  grid-column: 2;
+  display: block;
+  height: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+  visibility: hidden; /* always takes its space, so the list does not jump when the active group changes */
+}
+.hok-svc-index__btn.is-active .hok-svc-index__bar {
+  visibility: visible;
+}
+.hok-svc-index__bar i {
+  display: block;
+  height: 100%;
+  background: var(--hk-red);
+  transform: scaleX(var(--p, 0));
+  transform-origin: left;
+}
+.hok-svc-panels {
+  display: grid;
+  gap: 120px;
+  min-width: 0;
+}
+.hok-panel {
+  scroll-margin-top: 100px;
+}
+.hok-panel__media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--hk-radius);
+  background: var(--bg1);
+}
+.hok-panel__media img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.9s var(--hk-ease-out);
+}
+.hok-panel:hover .hok-panel__media img {
+  transform: scale(1.04);
+}
+.hok-panel__head {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 32px 48px;
+  align-items: center;
+  gap: 18px;
+  margin-top: 32px;
+}
+.hok-panel__gfx {
+  flex: none;
+  display: block;
+  width: 84px;
+  height: 56px;
+}
+.hok-panel__gfx svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.hok-panel__title {
+  margin: 0;
+  font-size: clamp(26px, 3vw, 40px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+.hok-panel__text {
+  max-width: 40rem;
+  margin: 16px 0 28px;
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--hk-muted);
+}
+.hok-panel__items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0 0 32px;
+  padding: 0;
+  list-style: none;
+}
+.hok-item {
+  padding: 20px 22px;
+  background: var(--hk-panel);
+  border: 1px solid var(--hk-line);
+  border-radius: var(--hk-radius);
+  transition: translate 0.4s var(--hk-ease-out), border-color 0.4s ease;
+}
+.hok-item__t {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #fff;
+}
+.hok-item__t::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--hk-red);
+  transition: transform 0.35s var(--hk-ease-out);
+}
+.hok-item p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--hk-muted);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hok-item:hover {
+    translate: 0 -4px;
+    border-color: var(--hk-red);
+  }
+  .hok-item:hover .hok-item__t::before {
+    transform: scale(1.8);
+  }
+}
+@media (max-width: 991px) {
+  .hok-svc-layout {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  /* the index becomes a row of chips that scrolls sideways */
+  .hok-svc-index {
+    position: static;
+    display: flex;
+    gap: 10px;
+    margin: 0 -16px;
+    padding: 0 16px 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .hok-svc-index::-webkit-scrollbar {
+    display: none;
+  }
+  .hok-svc-index__btn {
+    flex: none;
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+  }
+  .hok-svc-index__btn::before,
+  .hok-svc-index__bar,
+  .hok-svc-index__btn.is-active .hok-svc-index__bar {
+    display: none;
+  }
+  .hok-svc-index__btn.is-active {
+    background: var(--hk-red);
+    border-color: var(--hk-red);
+  }
+  .hok-svc-index__btn.is-active .hok-svc-index__n {
+    color: #fff;
+  }
+  .hok-svc-index__t {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .hok-svc-panels {
+    gap: 72px;
+  }
+  .hok-panel {
+    scroll-margin-top: 88px;
+  }
+}
+@media (max-width: 575px) {
+  .hok-panel__items {
+    grid-template-columns: 1fr;
+  }
+  .hok-panel__head {
+    margin-top: 24px;
+  }
 }
 
-/* --- Text sliders: the loop restarts exactly where it began (main.css moved by half a copy) --- */
+/* --- Signal motif: rings and a dot grid, behind the inner-page intros and the closing band --- */
+.hok-motif {
+  position: absolute;
+  z-index: 0;
+  width: min(520px, 45vw);
+  pointer-events: none;
+}
+.hok-motif svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent);
+  mask-image: linear-gradient(to bottom, #000 62%, transparent);
+}
+.hok-motif .hk-ring {
+  transform-origin: 380px 230px;
+  animation: hok-spin 60s linear infinite;
+}
+@keyframes hok-spin {
+  to { transform: rotate(360deg); }
+}
+.hok-motif--intro {
+  right: calc(max(0px, (100vw - 1248px) / 2) - 70px);
+  top: 70px;
+}
+.hok-motif--talk {
+  right: 0;
+  top: 50%;
+  translate: 0 -50%;
+  opacity: 0.5;
+}
+.hok-motif--talk svg {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.hok-intro > .container,
+.hok-talk-sec > .hok-talk {
+  position: relative;
+  z-index: 1;
+}
+@media (max-width: 767px) {
+  .hok-motif {
+    display: none;
+  }
+}
+
+/* --- Text sliders and the logo strip ---
+   Once SiteMotion runs it moves them itself (.hk-marq: translate set every frame, from first paint,
+   faster while scrolling, slower on hover). The CSS animation below is only the fallback before
+   hydration / without JavaScript: it ends where the same loop starts, and it never runs under
+   reduced motion. (Do not pause these with animation-play-state while also setting playbackRate:
+   that left them frozen.) */
 .scrolling-wrap .comm {
   --hok-gap: 20px;
   animation-name: hok-marquee;
+}
+.hk-marq .scrolling-wrap .comm,
+.hk-marq .hok-logos__track,
+.hk-marq.hok-logos__track {
+  animation: none !important;
+  will-change: transform;
+}
+.scrolling-wrap:hover .comm {
+  animation-play-state: running; /* the template paused on hover; hover slows it in JS instead */
 }
 @media (max-width: 991px) {
   .scrolling-wrap .comm { --hok-gap: 14px; }
@@ -803,7 +1844,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--theme);
+  background: var(--hk-red);
 }
 @media (max-width: 575px) {
   .hok-dot { width: 9px; height: 9px; }
@@ -818,124 +1859,78 @@
   .hok-work-marquee { margin-bottom: 56px; }
 }
 
-/* --- Work: reel cards, clean: poster, small muted category, client name --- */
-.hok-work {
-  display: block;
-  color: #fff;
-}
-.hok-work__media {
-  position: relative;
-  display: block;
-  aspect-ratio: 9 / 16;
-  margin-bottom: 18px;
-  overflow: hidden;
-  background: var(--bg1);
-}
-.hok-work__media img,
-.hok-work__media video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.6s ease;
-}
-.hok-work:hover .hok-work__media img {
-  transform: scale(1.03);
-}
-.hok-work__play {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  margin: -26px 0 0 -26px;
-  border-radius: 50%;
-  background: var(--theme);
-  font-size: 18px;
-  color: #fff;
-}
-.hok-work__cat {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--hk-muted);
-}
-.hok-work__name {
-  display: block;
-  font: 600 20px/1.3 "Plus Jakarta Sans", sans-serif;
-  color: #fff;
-}
-.hok-work-swiper .swiper-slide {
-  height: auto;
-}
-.hok-arrows {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 32px;
-}
-.hok-work-prev,
-.hok-work-next {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 50%;
-  font-size: 18px;
-  color: #fff;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
-}
-.hok-work-prev:hover,
-.hok-work-next:hover {
-  border-color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-}
-/* The lightbox for a card that has a video. */
-.hok-lightbox {
-  max-width: 420px;
-  margin: 0 auto;
-}
-.hok-lightbox video {
-  display: block;
-  width: 100%;
-  max-height: 86vh;
-}
-
-/* --- Testimonials: centred, one large light quote, fading --- */
-.hok-testi-swiper {
-  max-width: 760px;
-  margin: 48px auto 0;
-}
-.hok-testi-swiper .swiper-slide {
-  height: auto;
-}
+/* --- Testimonials: one big quote, a row of client logo buttons --- */
 .hok-quote {
-  margin: 0;
+  max-width: 800px;
+  min-height: clamp(260px, 30vw, 300px);
+  margin: 48px auto 0;
   text-align: center;
 }
 .hok-quote blockquote {
-  margin: 0 0 36px;
+  margin: 0 0 28px;
   font-size: clamp(21px, 2.4vw, 28px);
   font-weight: 300;
   line-height: 1.55;
   color: #f2f2f2;
   text-wrap: balance;
 }
+.hok-quote blockquote .hok-m {
+  padding-left: 0.05em;
+  padding-right: 0.05em;
+  margin-left: -0.05em;
+  margin-right: -0.05em;
+}
+.hok-quote blockquote.is-swap .hok-m > span {
+  animation: hok-word 0.7s var(--hk-ease-out) calc(var(--w, 0) * 25ms) both;
+}
+.hok-quote figcaption.is-swap {
+  animation: hok-fade 0.6s ease-out 0.2s both;
+}
+@keyframes hok-word {
+  from { transform: translateY(130%); }
+  to { transform: none; }
+}
+.hok-quote__name {
+  font: 600 17px/1.4 "Plus Jakarta Sans", sans-serif;
+  color: #fff;
+}
+.hok-quote__brand {
+  font-size: 15px;
+  color: var(--hk-muted);
+}
+.hok-testi-logos {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px 28px;
+  margin-top: 40px;
+}
+.hok-testi-item {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
 .hok-chip {
   display: grid;
   place-items: center;
   width: 56px;
   height: 56px;
-  margin: 0 auto 14px;
   padding: 9px;
   overflow: hidden;
   border-radius: 50%;
   background: #fff;
+  opacity: 0.5;
+  box-shadow: 0 0 0 2px transparent;
+  cursor: pointer;
+  transition: opacity 0.3s ease, box-shadow 0.3s ease, transform 0.35s var(--hk-ease-out);
+}
+.hok-chip:hover {
+  opacity: 0.85;
+  transform: translateY(-3px);
+}
+.hok-testi-item.is-active .hok-chip {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--hk-red);
 }
 .hok-chip img {
   display: block;
@@ -952,33 +1947,37 @@
   font: 600 17px/1 "Plus Jakarta Sans", sans-serif;
   color: #fff;
 }
-.hok-quote__name {
-  font: 600 17px/1.4 "Plus Jakarta Sans", sans-serif;
-  color: #fff;
+.hok-testi-bar {
+  display: block;
+  width: 56px;
+  height: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
 }
-.hok-quote__brand {
-  font-size: 15px;
-  color: var(--hk-muted);
+.hok-testi-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--hk-red);
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: hok-bar 7s linear forwards;
 }
-.hok-testi-dots {
-  --swiper-pagination-color: var(--theme);
-  --swiper-pagination-bullet-inactive-color: #fff;
-  --swiper-pagination-bullet-inactive-opacity: 0.28;
-  --swiper-pagination-bullet-size: 8px;
-  position: static;
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 40px;
+.hok-testi:hover .hok-testi-bar > span {
+  animation-play-state: paused;
 }
-.hok-testi-dots .swiper-pagination-bullet {
-  margin: 0;
-  cursor: pointer;
+@keyframes hok-bar {
+  to { transform: scaleX(1); }
 }
 
-/* --- Inner pages: an editorial intro on the plain dark background --- */
+/* --- Inner pages: an editorial intro with the signal motif behind its right half --- */
 .hok-intro {
+  position: relative;
   padding: 172px 0 0;
+  overflow: hidden;
+}
+.hok-talk-sec {
+  position: relative;
+  overflow: hidden;
 }
 .hok-intro__grid {
   display: grid;
@@ -1040,18 +2039,14 @@
   border-top: 1px solid var(--hk-line);
 }
 .hok-client-link {
-  display: block;
-  padding: 18px 0;
+  display: inline-block;
+  margin: 18px 0;
   font-size: 17px;
   line-height: 1.4;
   color: var(--hk-soft);
-  transition: color 0.2s ease;
 }
 .hok-client-link:hover {
   color: #fff;
-  text-decoration: underline;
-  text-underline-offset: 5px;
-  text-decoration-color: var(--theme);
 }
 @media (max-width: 991px) {
   .hok-clients {
@@ -1064,127 +2059,458 @@
   }
 }
 
-/* --- Contact: label over value, plain links, underlined inputs --- */
-.hok-details {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0 32px;
-  margin: 0 0 96px;
-}
-.hok-detail {
-  padding: 0;
-}
-.hok-detail dt {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--hk-muted);
-}
-.hok-detail dd {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 500;
-  line-height: 1.45;
-  color: #fff;
-}
-.hok-detail dd a:hover {
-  text-decoration: underline;
-  text-underline-offset: 5px;
-  text-decoration-color: var(--theme);
-}
+/* --- Contact: detail rows and a photo on the left, the form on a panel on the right --- */
 .hok-contact__grid {
   display: grid;
-  grid-template-columns: 4fr 8fr;
+  grid-template-columns: 5fr 7fr;
   gap: 64px;
+  align-items: start;
 }
-.hok-contact__h {
-  margin: 0 0 8px;
-  font-size: 26px;
-  font-weight: 700;
-  line-height: 1.25;
+/* the info panel: photo with a line over it, three channel rows, the studio, a faint motif in the corner */
+.hok-info {
+  position: relative;
+  overflow: hidden;
+  background: var(--hk-panel);
+  border: 1px solid var(--hk-line);
+  border-radius: var(--hk-radius);
 }
-.hok-contact__side .hok-lead {
-  margin-top: 0;
+.hok-info__photo {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--bg1);
 }
-.hok-textlinks {
+.hok-info__photo img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hok-info__photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0) 65%);
+}
+.hok-info__title {
+  position: absolute;
+  left: 32px;
+  right: 32px;
+  bottom: 24px;
+  z-index: 1;
+  margin: 0;
+  font: 700 clamp(22px, 2.2vw, 28px) / 1.25 "Plus Jakarta Sans", sans-serif;
+  text-transform: none;
+  color: #fff;
+}
+.hok-info__body {
+  position: relative;
+  z-index: 1;
+  padding: 24px 24px 32px;
+}
+.hok-channels {
   display: grid;
-  gap: 14px;
-  margin: 28px 0 0;
+  gap: 4px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
-.hok-textlinks li {
-  justify-self: start;
-}
-.hok-textlinks a {
-  padding-bottom: 2px;
-  font-size: 17px;
-  color: #fff;
-  border-bottom: 1px solid var(--theme);
-}
-.hok-form {
-  display: grid;
-  gap: 28px;
-  margin-top: 32px;
-}
-.hok-form__row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 28px;
-}
-.hok-form input,
-.hok-form textarea {
+.hok-channel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   width: 100%;
-  padding: 14px 0;
-  border: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 0;
-  background: transparent;
-  font: 16px/1.5 "Manrope", sans-serif;
+  padding: 12px 8px;
+  border-radius: 10px;
+  transition: background-color 0.3s ease;
+}
+.hok-channel:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.hok-channel__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1.5px solid var(--hk-red);
+  border-radius: 50%;
   color: #fff;
-  resize: vertical;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: background-color 0.3s ease;
 }
-.hok-form input::placeholder,
-.hok-form textarea::placeholder {
-  color: #8c8c8c;
+.hok-channel:hover .hok-channel__icon {
+  background: var(--hk-red);
 }
-.hok-form input:focus,
-.hok-form textarea:focus {
-  outline: none;
-  border-bottom-color: var(--theme);
-  box-shadow: 0 1px 0 0 var(--theme);
+.hok-channel__icon svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+}
+.hok-channel__icon circle[r=".6"] {
+  fill: currentColor;
+}
+.hok-channel__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.hok-channel__label {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--hk-muted);
+}
+.hok-channel__value {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+.hok-studio {
+  margin: 20px 8px 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--hk-line);
+}
+.hok-studio p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--hk-muted);
+}
+.hok-motif--info {
+  right: -60px;
+  bottom: -40px;
+  z-index: 0;
+  width: 300px;
+  opacity: 0.35;
+}
+.hok-motif--info svg {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+/* the form card: a 1 px gradient border */
+.hok-contact__form {
+  padding: 48px;
+  background: linear-gradient(#161616, #161616) padding-box,
+    linear-gradient(135deg, rgba(190, 30, 40, 0.7), rgba(255, 255, 255, 0.08) 40%) border-box;
+  border: 1px solid transparent;
+  border-radius: var(--hk-radius);
 }
 @media (max-width: 991px) {
-  .hok-details {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 32px;
-    margin-bottom: 72px;
-  }
-  .hok-detail {
-    padding-top: 24px;
-    border-top: 1px solid var(--hk-line);
-  }
   .hok-contact__grid {
     grid-template-columns: 1fr;
-    gap: 56px;
+    gap: 48px;
+  }
+  .hok-contact__form {
+    order: -1; /* the form first, then the details */
   }
 }
 @media (max-width: 575px) {
-  .hok-details {
-    grid-template-columns: 1fr;
-    gap: 24px;
+  .hok-contact__form {
+    padding: 28px;
   }
-  .hok-form__row {
-    grid-template-columns: 1fr;
+  .hok-info__title {
+    left: 20px;
+    right: 20px;
+  }
+  .hok-info__body {
+    padding: 16px 12px 24px;
   }
 }
 
-/* --- Footer: four plain columns, one thin bottom bar --- */
+/* --- The enquiry form (page and modal): filled boxes, floating labels, a red focus ring --- */
+.hok-cform {
+  display: grid;
+  gap: 20px;
+}
+.hok-cform__head {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.hok-cform__title {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.hok-cform__title em {
+  font-weight: 400;
+  color: var(--hk-red);
+}
+.hok-cform__sub {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--hk-muted);
+}
+.hok-cform__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.hok-field {
+  position: relative;
+}
+.hok-field input,
+.hok-field textarea {
+  display: block;
+  width: 100%;
+  height: 56px;
+  padding: 22px 16px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: #1f1f1f;
+  font: 16px/1.5 "Manrope", sans-serif;
+  color: #fff;
+  outline: none;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.hok-field textarea {
+  min-height: 140px;
+  height: auto;
+  padding-top: 26px;
+  overflow: hidden;
+  resize: none;
+}
+.hok-field input:-webkit-autofill {
+  -webkit-text-fill-color: #fff;
+  box-shadow: 0 0 0 40px #1f1f1f inset;
+}
+.hok-field label {
+  position: absolute;
+  left: 17px;
+  top: 17px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--hk-muted);
+  pointer-events: none;
+  transform-origin: left top;
+  transition: transform 0.2s var(--hk-ease-out), color 0.2s ease;
+}
+.hok-field input:focus ~ label,
+.hok-field input:not(:placeholder-shown) ~ label,
+.hok-field textarea:focus ~ label,
+.hok-field textarea:not(:placeholder-shown) ~ label {
+  transform: translateY(-11px) scale(0.87); /* 15 px x 0.87 = 13 px: no text under 13 px */
+  color: #c9c9c9;
+}
+.hok-field input:focus,
+.hok-field textarea:focus {
+  border-color: var(--hk-red);
+  box-shadow: 0 0 0 4px rgba(190, 30, 40, 0.15);
+}
+.hok-field.has-error input,
+.hok-field.has-error textarea {
+  border-color: var(--hk-red);
+}
+.hok-error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #ff6b73;
+}
+.hok-cform__submit {
+  display: grid;
+  gap: 14px;
+  margin-top: 4px;
+}
+.hok-btn--block {
+  justify-content: center;
+  width: 100%;
+  height: 56px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-radius: 10px;
+}
+.hok-cform__note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  color: #8c8c8c;
+}
+.hok-sent {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  padding: 16px 0;
+}
+.hok-sent__check {
+  width: 76px;
+  height: 76px;
+  fill: none;
+  stroke: var(--hk-red);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hok-sent__check circle {
+  stroke-dasharray: 152;
+  animation: hok-draw-c 0.8s var(--hk-ease) both;
+}
+.hok-sent__check path {
+  stroke-dasharray: 40;
+  animation: hok-draw-p 0.5s var(--hk-ease) 0.6s both;
+}
+@keyframes hok-draw-c {
+  from { stroke-dashoffset: 152; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes hok-draw-p {
+  from { stroke-dashoffset: 40; }
+  to { stroke-dashoffset: 0; }
+}
+.hok-sent__title {
+  margin: 8px 0 0;
+  font-size: clamp(28px, 3vw, 38px);
+  font-weight: 700;
+  line-height: 1.15;
+  text-transform: none;
+}
+.hok-sent__text {
+  margin: 0;
+  font-size: 18px;
+  color: var(--hk-soft);
+}
+.hok-sent__mail {
+  margin-top: 8px;
+  font-size: 16px;
+  color: var(--hk-muted);
+}
+.hok-sent__mail:hover {
+  color: #fff;
+}
+@media (max-width: 575px) {
+  .hok-cform__row {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+/* --- The contact modal: a centred panel on desktop, a bottom sheet on phones --- */
+.hok-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999990;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0);
+  -webkit-backdrop-filter: blur(0);
+  backdrop-filter: blur(0);
+  transition: background-color 0.45s ease, backdrop-filter 0.45s ease, -webkit-backdrop-filter 0.45s ease;
+}
+.hok-modal.is-open {
+  background: rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.hok-modal__panel {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  max-height: calc(100vh - 48px);
+  padding: 48px;
+  overflow-y: auto;
+  background: var(--hk-panel);
+  border: 1px solid var(--hk-line);
+  border-radius: var(--hk-radius);
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.45s var(--hk-ease-out), transform 0.45s var(--hk-ease-out);
+}
+.hok-modal.is-open .hok-modal__panel {
+  opacity: 1;
+  transform: none;
+}
+.hok-modal__lead {
+  margin: 0 48px 12px 0;
+  font-size: 15px;
+  color: var(--hk-muted);
+}
+.hok-modal__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.25s ease;
+}
+.hok-modal__close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.hok-modal__close svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.hok-modal a,
+.hok-modal button {
+  cursor: pointer;
+}
+.hok-cform--modal,
+.hok-cform--modal .hok-cform__row {
+  gap: 14px;
+}
+.hok-cform--modal .hok-field textarea {
+  min-height: 104px;
+}
+.hok-modal__panel:focus {
+  outline: none;
+}
+.hok-modal .hok-cform__title {
+  font-size: clamp(26px, 3vw, 36px);
+}
+html.hk-modal-open {
+  overflow: hidden;
+}
+@media (max-width: 991px) {
+  .hok-modal {
+    place-items: end center;
+    padding: 0;
+  }
+  .hok-modal__panel {
+    max-width: none;
+    max-height: 90vh;
+    padding: 36px 20px 28px;
+    border-radius: var(--hk-radius) var(--hk-radius) 0 0;
+    transform: translateY(100%);
+  }
+}
+
+/* --- Footer: a big mail link, four plain columns, one thin bottom bar --- */
 .hok-footer {
-  padding-top: 80px;
+  padding-top: 88px;
   background: #131313;
   border-top: 1px solid var(--hk-line);
+}
+.hok-footer__lead {
+  display: grid;
+  gap: 24px;
+  margin-bottom: 72px;
+  padding-bottom: 64px;
+  border-bottom: 1px solid var(--hk-line);
+}
+.hok-footer__statement {
+  justify-self: start;
+  max-width: 100%;
+  padding-bottom: 6px;
+  font: 700 clamp(32px, 5vw, 64px) / 1.1 "Plus Jakarta Sans", sans-serif;
+  letter-spacing: -0.02em;
+  color: #fff;
+  overflow-wrap: anywhere;
 }
 .hok-footer__cols {
   display: grid;
@@ -1200,7 +2526,7 @@
 }
 .hok-footer__about {
   max-width: 19rem;
-  margin: 0 0 20px;
+  margin: 0;
   font-size: 15px;
   line-height: 1.65;
   color: var(--hk-muted);
@@ -1217,17 +2543,14 @@
 }
 .hok-footer__list a {
   color: #cfcfcf;
-  transition: color 0.2s ease;
 }
-.hok-footer__list a:hover,
-.hok-footer__bar a:hover {
+.hok-footer__list a:hover {
   color: #fff;
-  text-decoration: underline;
-  text-underline-offset: 5px;
 }
 .hok-footer__list.hok-footer__social {
   display: flex;
-  gap: 24px;
+  gap: 28px;
+  font-size: 16px;
 }
 .hok-footer__bar {
   display: flex;
@@ -1248,7 +2571,9 @@
 }
 .hok-footer__bar a {
   color: #8c8c8c;
-  transition: color 0.2s ease;
+}
+.hok-footer__bar a:hover {
+  color: #fff;
 }
 @media (max-width: 991px) {
   .hok-footer__cols {
@@ -1259,6 +2584,10 @@
 @media (max-width: 575px) {
   .hok-footer {
     padding-top: 56px;
+  }
+  .hok-footer__lead {
+    margin-bottom: 48px;
+    padding-bottom: 40px;
   }
   .hok-footer__cols {
     grid-template-columns: 1fr;
@@ -1288,26 +2617,1049 @@
   background-color: var(--hk-red-hover);
 }
 
-/* --- Reduced motion: the final state, nothing moving --- */
+/* --- Custom cursor (desktop with a mouse only; SiteMotion drives it) --- */
+.hk-cursor {
+  display: none;
+}
+html.hk-cursor-on .hk-cursor {
+  display: block;
+}
+html.hk-cursor-on:not(.hk-modal-open),
+html.hk-cursor-on:not(.hk-modal-open) * {
+  cursor: none !important;
+}
+html.hk-cursor-on:not(.hk-modal-open) :is(input, textarea, select) {
+  cursor: text !important;
+}
+.hk-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 99999999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.hk-cursor.is-on {
+  opacity: 1;
+}
+/* A 10 px solid red dot that follows instantly; its size eases (set by SiteMotion) to a 44 px red ring over
+   links and buttons, and a 64 px solid disc with a white play triangle over reels. No text. */
+.hk-cursor__body {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  translate: -50% -50%;
+  border: 1.5px solid var(--hk-red);
+  border-radius: 50%;
+  background: var(--hk-red);
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+.hk-cursor__body svg {
+  width: 18px;
+  height: 18px;
+  fill: #fff;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.hk-cursor[data-state="link"] .hk-cursor__body {
+  background: transparent;
+}
+.hk-cursor[data-state="play"] .hk-cursor__body svg {
+  opacity: 1;
+}
+.hk-cursor[data-state="hidden"] {
+  opacity: 0 !important;
+}
+html.hk-modal-open .hk-cursor {
+  display: none !important;
+}
+/* --- Reduced motion: the final state, nothing moving, nothing hidden --- */
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
   .hok-rise,
   .hok-fade,
-  .hok-steps.aos-animate .hok-step,
+  .hok-motif .hk-ring,
   .scrolling-wrap .comm,
-  .hok-logos__track {
-    animation: none;
+  .hok-logos__track,
+  .hok-quote blockquote .hok-m > span,
+  .hok-quote figcaption,
+  .hok-pick.is-on,
+  .hok-testi-bar > span,
+  .hok-sent__check circle,
+  .hok-sent__check path,
+  .hok-spinner {
+    animation: none !important;
+  }
+  .hok-testi-bar > span {
+    transform: scaleX(0);
   }
   .hok-logos__viewport {
     overflow-x: auto;
   }
-  .hok-btn,
-  .hok-client-link,
-  .hok-work__media img {
-    transition: none;
+  .hok-modal__panel {
+    transform: none;
   }
-  [data-aos] {
-    opacity: 1 !important;
-    transform: none !important;
-    transition: none !important;
+}
+
+/* ======================================================================
+   Round 7, mobile pass (docs/specs/site-design-7-progress.md). Phones (360-767 px)
+   and tablets (768-991 px): 20 px gutters, 64 px between sections (48 px at 360),
+   one clean column, 44 px tap targets, no hover-only content. Loaded last, so it
+   wins over the earlier rules of equal weight.
+   ====================================================================== */
+
+/* --- Header menu: a 44 px button and a full-screen overlay (MobileMenu.tsx) --- */
+.hok-menu-btn {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: 0 -13px 0 0; /* the lines' right edge (13 px inside the button) meets the page gutter */
+  padding: 0;
+  border: 0;
+  border-radius: 8px; /* only the keyboard focus outline shows it */
+  background: none;
+  cursor: pointer;
+}
+/* two white lines, right-aligned: 18 px over 12 px, 6 px apart (centres 8 px apart); no box around them */
+.hok-menu-btn span {
+  position: absolute;
+  right: 13px;
+  top: 21px;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: #fff;
+  transition: width 0.3s var(--hk-ease), transform 0.3s var(--hk-ease);
+}
+.hok-menu-btn span:nth-child(1) { transform: translateY(-4px); }
+.hok-menu-btn span:nth-child(2) { width: 12px; transform: translateY(4px); }
+.hok-menu-btn:focus-visible { outline-offset: 0 !important; } /* the 2px red outline hugs the 44 px area (keyboard only) */
+.hok-menu-btn:focus-visible span:nth-child(2) { width: 18px; }
+@media (hover: hover) {
+  .hok-menu-btn:hover span:nth-child(2) { width: 18px; }
+}
+/* open: the lines turn into a white X, still on no background */
+.hok-menu-btn[aria-expanded="true"] span:nth-child(1) { transform: rotate(45deg); }
+.hok-menu-btn[aria-expanded="true"] span:nth-child(2) { width: 18px; transform: rotate(-45deg); }
+/* while the menu is open the header (logo and the button) sits above the overlay, on no background */
+html.hk-menu-open .header-section.cmn-fixed {
+  z-index: 9999990 !important; /* main.css sets 9999 !important on phones */
+  background: transparent !important;
+  border-bottom-color: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.hok-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 9999985;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #0d0d0d;
+  animation: hok-fade 0.25s ease-out both;
+}
+.hok-menu__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 88px 20px 40px; /* 64 px for the header (the logo and the button sit above the overlay) */
+}
+/* the links stagger in: 16 px up and fading in, 60 ms apart */
+.hok-menu__list li,
+.hok-menu__cta-wrap,
+.hok-menu__social {
+  animation: hok-menu-in 0.45s var(--hk-ease-out) calc(80ms + var(--i, 0) * 60ms) backwards;
+}
+@keyframes hok-menu-in {
+  from { opacity: 0; transform: translateY(16px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hok-menu__list li,
+  .hok-menu__cta-wrap,
+  .hok-menu__social {
+    animation: none;
+  }
+}
+.hok-menu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hok-menu__link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  border-bottom: 1px solid var(--hk-line);
+  font: 700 28px/1.2 "Plus Jakarta Sans", sans-serif;
+  color: #fff;
+}
+.hok-menu__link.is-current::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hk-red);
+}
+.hok-menu__cta-wrap {
+  margin-top: 32px;
+}
+.hok-menu .hok-menu__cta {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-height: 56px;
+}
+.hok-menu__social {
+  display: flex;
+  gap: 28px;
+  margin: auto 0 0;
+  padding: 32px 0 0;
+  list-style: none;
+}
+.hok-menu__social a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 16px;
+  color: var(--hk-muted);
+}
+html.hk-menu-open,
+html.hk-menu-open body {
+  overflow: hidden;
+}
+html.hk-menu-open .hk-cursor {
+  display: none !important;
+}
+
+/* --- Modal: a sticky bar (lead line and the close button) on top of the sheet --- */
+.hok-modal__bar {
+  display: contents;
+}
+@media (max-width: 991px) {
+  .hok-modal__panel {
+    max-height: 88vh;
+    max-height: 88dvh;
+    padding: 0 20px 28px;
+    overscroll-behavior: contain;
+  }
+  .hok-modal__bar {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 -20px 8px;
+    padding: 20px 10px 8px 20px;
+    background: var(--hk-panel);
+  }
+  .hok-modal__bar::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 8px;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.2);
+  }
+  .hok-modal__lead {
+    margin: 0;
+  }
+  .hok-modal__close {
+    position: static;
+    flex: none;
+  }
+}
+
+/* the outlined word's filled copy never wraps */
+.hero-v1-content h1 .designers::before {
+  white-space: nowrap;
+}
+
+/* --- Tablet and phone layout --- */
+@media (max-width: 991px) {
+  .hok-reels {
+    margin: 0 calc(var(--hk-gut) * -1);
+    padding: 0 var(--hk-gut) 16px;
+    scroll-padding-left: var(--hk-gut);
+  }
+  /* the services index becomes a chip row that stays under the header while the panels scroll */
+  .hok-svc-layout {
+    display: block;
+  }
+  .hok-svc-index {
+    position: sticky;
+    top: 64px;
+    z-index: 30;
+    margin: 0 calc(var(--hk-gut) * -1) 32px;
+    padding: 10px var(--hk-gut);
+    background: rgba(13, 13, 13, 0.92);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--hk-line);
+  }
+  .hok-svc-index__btn {
+    min-height: 44px;
+  }
+  .hok-panel {
+    scroll-margin-top: 140px;
+  }
+}
+.hok-swipe {
+  display: none;
+}
+@media (max-width: 767px) {
+  /* type */
+  .hok-title,
+  .hok-head--compact .hok-title,
+  .hok-founder__text .hok-title {
+    font-size: clamp(32px, 9vw, 44px);
+  }
+  .hero-section-version1 .hero-v1-content h1 span {
+    font-size: clamp(40px, 11vw, 56px);
+  }
+  .hok-lead,
+  .hok-panel__text,
+  .hok-scard__text,
+  .hok-role p,
+  .hok-item p,
+  .hok-step__text,
+  .hok-footer__about,
+  .hok-studio p,
+  .hok-founder__p1,
+  .hok-founder__p2 {
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  main p {
+    text-wrap: pretty;
+  }
+  .hok-founder {
+    gap: 56px;
+  }
+  /* buttons: full width, stacked with a 12 px gap */
+  main .hok-btn {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    min-height: 52px;
+  }
+  .hok-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .hok-head {
+    gap: 24px;
+  }
+  /* hero: no empty block under the proof row */
+  .hero-section-version1.hok-hero {
+    min-height: 0;
+    padding: 104px 0 40px;
+  }
+  .hok-hero__main {
+    padding-top: 0;
+    padding-bottom: 32px;
+  }
+  /* What We Do: a swipe row, 80 % cards with the next one peeking, and a hint */
+  .hok-scards {
+    margin: 0 calc(var(--hk-gut) * -1);
+    padding: 0 var(--hk-gut) 12px;
+    scroll-padding-left: var(--hk-gut);
+  }
+  .hok-swipe {
+    display: block;
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--hk-muted);
+  }
+  .hok-swipe::before {
+    content: "";
+    display: inline-block;
+    width: 24px;
+    height: 2px;
+    margin: 0 10px 3px 0;
+    background: var(--hk-red);
+  }
+  .hok-section--compact {
+    padding-top: 64px;
+  }
+  /* reels: 70 % cards */
+  .hok-reels__item,
+  .hok-reels__item:nth-child(2),
+  .hok-reels__item:nth-child(4) {
+    flex-basis: 70%;
+  }
+  /* team */
+  .hok-role {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    column-gap: 16px;
+    padding: 20px;
+  }
+  .hok-role__icon {
+    grid-row: 1 / 3;
+    margin: 0;
+  }
+  .hok-team__cta {
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 32px;
+    text-align: center;
+  }
+  .hok-team__cta .hok-btn {
+    width: 100%;
+  }
+  .hok-svc-panels {
+    gap: 64px;
+  }
+  /* testimonials: a 20 px quote, the logo buttons in one scrollable row */
+  .hok-quote {
+    min-height: 0;
+    margin-top: 32px;
+  }
+  .hok-quote blockquote {
+    font-size: 20px;
+    line-height: 1.55;
+  }
+  .hok-testi-logos {
+    flex-wrap: nowrap;
+    justify-content: safe center;
+    margin: 32px calc(var(--hk-gut) * -1) 0;
+    padding: 8px var(--hk-gut);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .hok-testi-logos::-webkit-scrollbar {
+    display: none;
+  }
+  .hok-testi-item {
+    flex: none;
+  }
+  /* the sliders: the LET'S TALK text is 48 px tall, the work slider 36 px */
+  .hok-talk .scrolling-wrap .comm .cmn-textslide {
+    font-size: 48px;
+    line-height: 56px;
+  }
+  .hok-talk .hok-dot {
+    width: 12px;
+    height: 12px;
+  }
+  .hok-work-marquee .scrolling-wrap .comm .cmn-textslide {
+    font-size: 36px;
+    line-height: 44px;
+  }
+}
+
+/* --- Phones --- */
+@media (max-width: 575px) {
+  /* client logo strip: 120 x 72 tiles */
+  .hok-logo {
+    width: 120px;
+    height: 72px;
+    margin-right: 12px;
+    padding: 10px;
+  }
+  .hok-logos {
+    padding: 40px 0;
+  }
+  /* contact and the modal: one column, 52 px fields, the Send button stays in view */
+  .hok-contact__form {
+    padding: 24px 20px;
+  }
+  .hok-field input,
+  .hok-field textarea {
+    height: 52px;
+    padding: 20px 16px 6px;
+  }
+  .hok-field textarea {
+    min-height: 120px;
+    padding-top: 24px;
+  }
+  .hok-field label {
+    top: 14px;
+  }
+  .hok-cform {
+    display: flex;
+    flex-direction: column;
+  }
+  .hok-cform__submit {
+    display: contents;
+  }
+  .hok-cform__submit .hok-btn {
+    height: 52px;
+  }
+  /* once a field is focused (the keyboard is up) the Send button follows the bottom edge of the screen */
+  .hok-cform:focus-within .hok-cform__submit .hok-btn {
+    position: sticky;
+    bottom: 12px;
+    z-index: 2;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+  }
+  .hok-cform__note {
+    margin-top: -8px;
+  }
+  /* footer: About on top, Pages and Services side by side, then Contact; links are 44 px tall */
+  .hok-footer__cols {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px 20px;
+  }
+  .hok-footer__cols > div:first-child,
+  .hok-footer__cols > div:last-child {
+    grid-column: 1 / -1;
+  }
+  .hok-footer__h {
+    margin-bottom: 8px;
+  }
+  .hok-footer__list {
+    gap: 0;
+  }
+  .hok-footer__list li {
+    padding: 0;
+  }
+  .hok-footer__list a,
+  .hok-footer__bar a {
+    display: inline-flex;
+    align-items: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 6px 0;
+  }
+  .hok-footer__list li:not(:has(a)) {
+    padding: 10px 0;
+  }
+  .hok-footer__statement {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    font-size: clamp(20px, 6.2vw, 28px);
+    overflow-wrap: normal;
+  }
+  .hok-footer__list.hok-footer__social {
+    gap: 24px;
+  }
+}
+
+/* --- Touch screens: nothing that needs a hover, and no hover style that sticks after a tap --- */
+@media (hover: none) {
+  .hok-btn:hover::before {
+    transform: translateY(101%);
+  }
+  .hok-btn--primary:hover {
+    color: #fff;
+  }
+  .hok-btn--ghost:hover {
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+  .hok-btn:hover .hok-btn__dot {
+    transform: none;
+  }
+  .hok-link:hover {
+    background-size: 0 1px;
+  }
+  .hok-logo:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  .hok-step:hover .hok-step__text {
+    color: var(--hk-muted);
+  }
+  .hok-scard:hover .hok-scard__items {
+    color: #8c8c8c;
+  }
+  .hok-panel:hover .hok-panel__media img {
+    transform: none;
+  }
+  .hok-chip:hover {
+    opacity: 0.5;
+    transform: none;
+  }
+  .hok-channel:hover {
+    background: none;
+  }
+  .hok-channel:hover .hok-channel__icon {
+    background: transparent;
+  }
+  .hok-svc-index__btn:not(.is-active):hover {
+    color: var(--hk-muted);
+  }
+  .hok-client-link:hover {
+    color: var(--hk-soft);
+  }
+  .hok-modal__close:hover {
+    background: none;
+  }
+  .hok-footer__list a:hover {
+    color: #cfcfcf;
+  }
+  .hok-footer__bar a:hover {
+    color: #8c8c8c;
+  }
+  .hok-sent__mail:hover {
+    color: var(--hk-muted);
+  }
+}
+
+/* ======================================================================
+   Round 7, changes A-D: the markets band, "Why Brands Trust HOK", the footer line
+   ====================================================================== */
+.hok-markets {
+  padding: 28px 0;
+  background: var(--hk-ink);
+  border-top: 1px solid var(--hk-line);
+  border-bottom: 1px solid var(--hk-line);
+}
+.hok-markets__in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px 48px;
+}
+.hok-markets__text {
+  max-width: 46rem;
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--hk-muted);
+}
+.hok-markets__text strong {
+  font-weight: 600;
+  color: #fff;
+}
+.hok-markets__badges {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hok-markets__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 16px 5px 5px;
+  border: 1px solid var(--hk-line);
+  border-radius: 999px;
+  font: 600 14px/1 "Manrope", sans-serif;
+  color: #fff;
+}
+.hok-markets__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1.5px solid rgba(190, 30, 40, 0.85);
+  border-radius: 50%;
+}
+.hok-markets__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: #fff;
+}
+
+/* Why Brands Trust HOK: a 3x2 hairline grid, no cards */
+.hok-trustgrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--hk-line);
+  border-left: 1px solid var(--hk-line);
+}
+.hok-trust-item {
+  padding: 32px;
+  border-right: 1px solid var(--hk-line);
+  border-bottom: 1px solid var(--hk-line);
+}
+.hok-trust-item__icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 18px;
+  padding: 8px;
+  border: 1px solid rgba(190, 30, 40, 0.55);
+  border-radius: 14px;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+.hok-trust-item__icon svg {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+.hok-trust-item__t {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-transform: none;
+}
+.hok-trust-item p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--hk-muted);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hok-trust-item:hover .hok-trust-item__icon {
+    background: var(--hk-red);
+    border-color: var(--hk-red);
+  }
+  .hok-trust-item:hover .hok-trust-item__icon [stroke="#be1e28"] {
+    stroke: #fff;
+  }
+  .hok-trust-item:hover .hok-trust-item__icon [fill="#be1e28"] {
+    fill: #fff;
+    stroke: #fff;
+  }
+}
+.hok-footer__markets {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #8c8c8c;
+}
+@media (max-width: 991px) {
+  .hok-trustgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 768px) and (max-width: 991px) {
+  .hero-section-version1.hok-hero {
+    min-height: 0;
+    padding: 120px 0 48px;
+  }
+}
+@media (max-width: 767px) {
+  .hok-markets {
+    padding: 24px 0;
+  }
+  .hok-markets__in {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .hok-trustgrid {
+    grid-template-columns: 1fr;
+  }
+  .hok-trust-item {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    column-gap: 16px;
+    padding: 24px 0 24px 16px;
+  }
+  .hok-trust-item__icon {
+    grid-row: 1 / 3;
+    width: 48px;
+    height: 48px;
+    margin: 0;
+    padding: 6px;
+  }
+  .hok-trust-item p {
+    font-size: 16px;
+  }
+  .hok-trustgrid {
+    border-left: 0;
+  }
+  .hok-trust-item {
+    border-right: 0;
+  }
+}
+
+/* ======================================================================
+   Hero, left column: one aligned stack, max 600 px wide, on a fixed rhythm:
+   brand line 24 / headline 28 / intro 36 / buttons 48 / hairline 24 / proof row
+   ====================================================================== */
+.hero-v1-content h1 {
+  margin: 0 0 28px;
+}
+.hok-hero .hok-actions {
+  gap: 16px;
+  margin: 0 0 20px;
+}
+.hok-hero .hok-actions .hok-btn {
+  justify-content: center;
+  height: 56px;
+  min-height: 56px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.hok-proof {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 24px 0 0;
+  list-style: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.hok-proof__item {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-width: 0;
+  padding: 0 24px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+.hok-proof__item:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.hok-proof__v {
+  font: 700 24px/1.2 "Plus Jakarta Sans", sans-serif;
+  color: #fff;
+}
+.hok-proof__l {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--hk-muted);
+}
+@media (max-width: 991px) {
+  /* the logo link is a 44 px tap target (the image has transparent margins) */
+  .header-section .brand-logo {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+@media (max-width: 575px) {
+  .hok-hero .hok-actions {
+    gap: 12px;
+  }
+  .hok-hero .hok-actions .hok-btn {
+    height: 56px;
+  }
+  .hok-proof__item {
+    padding: 0 14px;
+  }
+  .hok-proof__v {
+    font-size: 20px;
+  }
+}
+@media (max-width: 359px) {
+  /* narrower than 360: two columns, then the third on its own row */
+  .hok-proof {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 16px;
+  }
+  .hok-proof__item:nth-child(3) {
+    grid-column: 1 / -1;
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+/* ======================================================================
+   Round 8 (docs/specs/site-design-8.md): mobile hero, cubes on phones, motif on phones
+   ====================================================================== */
+.hok-proof__l-short {
+  display: none;
+}
+
+/* --- Tablets and phones (below 992): the hero is one column, the cubes graphic on top --- */
+@media (max-width: 991px) {
+  .hok-hero__main {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding-top: 0;
+  }
+  .hok-hero__main > .hero-v1-content {
+    flex: none;
+  }
+  .hok-hero__art {
+    display: block;
+    order: -1;
+    margin-bottom: 20px;
+  }
+  .hok-cubes-wrap {
+    width: 100%;
+  }
+  .hok-cubes {
+    display: block;
+    width: 100%;
+    height: 240px;
+  }
+  .hero-section-version1.hok-hero {
+    padding: 84px 0 48px;
+  }
+}
+
+/* --- Phones (below 768): clean and structured --- */
+@media (max-width: 767px) {
+  /* airy rhythm (--hs scales every gap: 1 on a 390 phone, .85 at 360): 32 below the header, cubes 200, 36, lockup,
+     24, headline, 24, intro, 36, primary, 20, link, 44, proof row, 24 */
+  .hok-hero {
+    --hs: 1;
+  }
+  .hero-section-version1.hok-hero {
+    padding: calc(64px + 32px * var(--hs)) 0 calc(24px * var(--hs)); /* 64 px header, then 32 px */
+  }
+  .hok-hero__main {
+    padding-bottom: 0;
+  }
+  .hok-hero__art {
+    margin-bottom: calc(36px * var(--hs));
+  }
+  .hok-cubes {
+    height: calc(200px * var(--hs));
+  }
+  /* 1. brand lockup, one line */
+  .hok-hero__name {
+    margin: 0 0 calc(24px * var(--hs));
+  }
+  /* 2. headline: three lines, BRANDS on its own */
+  .hero-v1-content h1 {
+    margin: 0 0 calc(24px * var(--hs));
+  }
+  .hero-section-version1 .hero-v1-content h1 span {
+    font-size: clamp(36px, 10vw, 46px);
+    line-height: 1.2;
+  }
+  .hero-section-version1 .hero-v1-content h1 .designers {
+    display: block;
+    width: fit-content;
+  }
+  /* 3. intro: up to 3 lines */
+  .hero-intro {
+    max-width: none;
+    margin: 0 0 calc(36px * var(--hs));
+    font-size: 16px;
+    line-height: 1.65;
+  }
+  /* 4. buttons: the primary full width and 52 px, the secondary a centred text link.
+     The link's 44 px tap box has about 14 px of air above and below its text, so the gaps are
+     6 px (about 20 visible) after the primary and 34 px (about 44 visible) after the link. */
+  .hok-hero .hok-actions {
+    align-items: stretch;
+    gap: calc(6px * var(--hs));
+    margin: 0 0 calc(34px * var(--hs));
+  }
+  .hok-hero .hok-actions .hok-btn--primary {
+    height: 52px;
+    min-height: 52px;
+  }
+  .hok-hero .hok-actions .hok-btn--ghost {
+    align-self: center;
+    width: auto;
+    height: 44px;
+    min-height: 44px;
+    padding: 0 2px;
+    border: 0;
+    background: linear-gradient(currentColor, currentColor) 0 calc(50% + 11px) / 100% 1px no-repeat;
+    font-size: 15px;
+    overflow: visible;
+  }
+  .hok-hero .hok-actions .hok-btn--ghost::before,
+  .hok-hero .hok-actions .hok-btn--ghost .hok-btn__dot {
+    display: none;
+  }
+  /* BRANDS: one clean outline (the template's sweeping fill copy is off) */
+  .hero-v1-content h1 .designers {
+    -webkit-text-stroke-width: 1.5px;
+  }
+  .hero-v1-content h1 .designers::before {
+    display: none;
+  }
+  /* 5. proof row: three columns, short labels, no hairline above */
+  .hok-proof {
+    padding-top: 0;
+    border-top: 0;
+  }
+  .hok-proof__item {
+    gap: 6px;
+  }
+  .hok-proof__v {
+    font-size: 20px;
+  }
+  .hok-proof__l {
+    font-size: 12px;
+  }
+  .hok-proof__l-full {
+    display: none;
+  }
+  .hok-proof__l-short {
+    display: inline;
+  }
+}
+@media (max-width: 379px) {
+  .hok-hero {
+    --hs: 0.85; /* the same rhythm at about 85 % on a 360 phone */
+  }
+}
+@media (max-width: 359px) {
+  .hok-proof {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 0;
+  }
+  .hok-proof__item {
+    padding: 0 10px;
+  }
+  .hok-proof__item:nth-child(3) {
+    grid-column: auto;
+    padding-left: 10px;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+  }
+}
+
+/* --- Intro motif on tablets and phones: under the text, inside the intro, above the hairline --- */
+@media (max-width: 991px) {
+  .hok-intro {
+    display: flex;
+    flex-direction: column;
+  }
+  .hok-intro > .container {
+    order: 1;
+  }
+  .hok-intro__grid {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .hok-motif.hok-motif--intro {
+    position: relative;
+    right: auto;
+    top: auto;
+    order: 2;
+    display: block;
+    width: 100%;
+    height: 200px;
+    margin-top: 8px;
+    opacity: 0.9;
+  }
+  .hok-motif--intro svg {
+    height: 100%;
+  }
+  .hok-intro::after {
+    content: "";
+    order: 3;
+    height: 1px;
+    margin: 0 var(--hk-gut, 20px);
+    background: var(--hk-line);
+  }
+}
+@media (max-width: 767px) {
+  .hok-motif.hok-motif--intro {
+    height: 160px;
   }
 }

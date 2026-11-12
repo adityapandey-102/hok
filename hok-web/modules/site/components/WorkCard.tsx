@@ -1,35 +1,21 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { reelUrl, type WorkItem } from "../content";
-import { SiteIcon } from "./SiteIcon";
 
 type MagnificPopup = { open: (options: Record<string, unknown>) => void };
 
 /**
- * One reel: a sharp-cornered 9:16 poster with a small round play mark, the
- * category as small muted text, then the client name. No pill, no arrow.
+ * One reel: a rounded 9:16 poster that reveals with a clip. On hover (desktop)
+ * the poster zooms and a gradient rises with the category and client name; the
+ * cursor becomes a red disc with a play triangle (SiteMotion). Without hover the name sits below the card.
  * Without a `video` the whole card opens the reel on Instagram in a new tab.
- * With a `video` (mp4) it plays muted and looping while on screen, and a click
- * opens a Magnific Popup lightbox that plays it with sound.
+ * With a `video` (mp4) it plays muted on hover, and a click opens a Magnific
+ * Popup lightbox that plays it with sound.
  */
 export function WorkCard({ item }: { item: WorkItem }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { video } = item;
-
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) void el.play().catch(() => {});
-        else el.pause();
-      },
-      { threshold: 0.6 },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [video]);
 
   function onClick(event: React.MouseEvent) {
     if (!video) return;
@@ -44,24 +30,36 @@ export function WorkCard({ item }: { item: WorkItem }) {
     });
   }
 
+  const play = () => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    void videoRef.current?.play().catch(() => {});
+  };
+  const stop = () => videoRef.current?.pause();
+
   return (
     <a
       href={video ?? reelUrl(item.reelId)}
       className="hok-work"
       target="_blank"
       rel="noopener noreferrer"
+      data-cursor="play"
       onClick={onClick}
+      onPointerEnter={video ? play : undefined}
+      onPointerLeave={video ? stop : undefined}
       aria-label={`${item.client}, ${item.category}: watch the reel`}
     >
-      <span className="hok-work__media">
-        <img src={item.poster} alt="" loading="lazy" decoding="async" />
+      <span className="hok-work__media" data-reveal="clip">
+        <img src={item.poster} alt="" sizes="(min-width: 992px) 25vw, 70vw" loading="lazy" decoding="async" />
         {video && <video ref={videoRef} src={video} poster={item.poster} muted loop playsInline preload="none" />}
-        <span className="hok-work__play" aria-hidden="true">
-          <SiteIcon name="play" solid />
+        <span className="hok-work__over" aria-hidden="true">
+          <span className="hok-work__cat">{item.category}</span>
+          <span className="hok-work__title">{item.client}</span>
         </span>
       </span>
-      <span className="hok-work__cat">{item.category}</span>
-      <span className="hok-work__name">{item.client}</span>
+      <span className="hok-work__below">
+        <span className="hok-work__cat">{item.category}</span>
+        <span className="hok-work__name">{item.client}</span>
+      </span>
     </a>
   );
 }

@@ -1,0 +1,5 @@
+- 2026-11-12 round 6: hero static BRANDS (HeroRotator deleted), content.ts (STOCK = studio only, no group images/intro images/HERO_ROTATE), 7 stock photos deleted, home band thumbs removed
+- done: ServiceGraphics, SignalMotif, ServiceGroups cards, PageBanner/LetsTalk motif, contact photo removed, SiteMotion (no hover img/parallax, --len), CSS. Next: gates, e2e, visual
+- e2e updated (rotating test removed; new: static hero, card draw, motif, no photos, reduced motion). Next: lint/typecheck/unit/build/bundle, full e2e, visual
+- visual check done 1280 + 390 (hero, cards drawing/hover, band, about/services/contact intros, talk band); motif masked+clipped. Next: unit, build+bundle, full e2e
+- gates 2026-11-12: lint ok, typecheck ok, unit 247/247, build ok, e2e portfolio 67/67, bundle site pages 323-324 KB (all app pages within budget); tsconfig restored, .next-site removed. Round 6 done.

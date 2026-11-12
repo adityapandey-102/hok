@@ -1,4 +1,4 @@
-import { COMPANY, CONTACT, PHONE_HREF, SERVICE_GROUPS, SOCIALS } from "../content";
+import { COMPANY, CONTACT, MARKETS_SHORT, PHONE_HREF, SERVICE_GROUPS, SOCIALS } from "../content";
 
 const PAGES = [
   { href: "/", label: "Home" },
@@ -19,31 +19,37 @@ export function SiteFooter({ variant }: { variant: "home" | "inner" }) {
   return (
     <footer className="hok-footer">
       <div className="container">
+        <div className="hok-footer__lead">
+          <a href={`mailto:${CONTACT.email}`} className="hok-footer__statement hok-link">
+            {CONTACT.email}
+          </a>
+          <ul className="hok-footer__list hok-footer__social">
+            <li>
+              <a href={SOCIALS.instagram} className="hok-link" target="_blank" rel="noopener noreferrer">
+                Instagram
+              </a>
+            </li>
+            <li>
+              <a href={SOCIALS.linkedin} className="hok-link" target="_blank" rel="noopener noreferrer">
+                LinkedIn
+              </a>
+            </li>
+          </ul>
+        </div>
         <div className="hok-footer__cols">
           <div>
             <h2 className="hok-footer__h">About</h2>
             <p className="hok-footer__about">
               {COMPANY.tagline}. {COMPANY.longName} helps brands grow through strategy, storytelling and automation.
             </p>
-            <ul className="hok-footer__list hok-footer__social">
-              <li>
-                <a href={SOCIALS.instagram} target="_blank" rel="noopener noreferrer">
-                  Instagram
-                </a>
-              </li>
-              <li>
-                <a href={SOCIALS.linkedin} target="_blank" rel="noopener noreferrer">
-                  LinkedIn
-                </a>
-              </li>
-            </ul>
+            <p className="hok-footer__markets">Serving {MARKETS_SHORT}</p>
           </div>
           <div>
             <h2 className="hok-footer__h">Pages</h2>
             <ul className="hok-footer__list">
               {PAGES.map((p) => (
                 <li key={p.label}>
-                  <a href={p.href}>{p.label}</a>
+                  <a href={p.href} className="hok-link">{p.label}</a>
                 </li>
               ))}
             </ul>
@@ -53,7 +59,7 @@ export function SiteFooter({ variant }: { variant: "home" | "inner" }) {
             <ul className="hok-footer__list">
               {SERVICE_GROUPS.map((group) => (
                 <li key={group.title}>
-                  <a href="/services">{group.title}</a>
+                  <a href="/services" className="hok-link">{group.title}</a>
                 </li>
               ))}
             </ul>
@@ -62,10 +68,10 @@ export function SiteFooter({ variant }: { variant: "home" | "inner" }) {
             <h2 className="hok-footer__h">Contact</h2>
             <ul className="hok-footer__list">
               <li>
-                <a href={PHONE_HREF}>{CONTACT.phone}</a>
+                <a href={PHONE_HREF} className="hok-link">{CONTACT.phone}</a>
               </li>
               <li>
-                <a href={`mailto:${CONTACT.email}`}>{CONTACT.email}</a>
+                <a href={`mailto:${CONTACT.email}`} className="hok-link">{CONTACT.email}</a>
               </li>
               <li>{CONTACT.address}</li>
               <li>{CONTACT.hours}</li>
@@ -76,7 +82,7 @@ export function SiteFooter({ variant }: { variant: "home" | "inner" }) {
           <p>
             &copy; {new Date().getFullYear()} {COMPANY.name} ({COMPANY.longName}). All rights reserved.
           </p>
-          <a href="/login" className="hok-staff-login">
+          <a href="/login" className="hok-staff-login hok-link">
             Staff login
           </a>
         </div>
