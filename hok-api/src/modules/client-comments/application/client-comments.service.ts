@@ -1,4 +1,4 @@
-import { BadRequestError } from "../../../common/errors/app-error";
+import { BadRequestError, NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import type { AuditLogger } from "../../../common/audit/audit-logger";
 import { AUDIT_ACTIONS, AUDIT_ENTITIES } from "../../../common/audit/audit-actions";
@@ -69,8 +69,12 @@ export class ClientCommentsService {
 
   // -- portal (the client) ------------------------------------------------------
 
-  listForPortal(ctx: PortalContext, limit: number, offset: number) {
-    return this.repo.listForPortal(ctx.clientId, limit, offset);
+  /** The client's own comments, optionally only those about one event (which must be one of theirs: 404 EVENT_NOT_FOUND, never a hint about other clients' events). */
+  async listForPortal(ctx: PortalContext, limit: number, offset: number, eventId?: string) {
+    if (eventId && !(await this.repo.eventBelongsToClient(ctx.clientId, eventId))) {
+      throw new NotFoundError("Event not found", ERROR_CODES.EVENT_NOT_FOUND);
+    }
+    return this.repo.listForPortal(ctx.clientId, limit, offset, eventId);
   }
 
   /** FR-CMT-01/02: post a comment (general or about one of the client's events), then notify the client's whole team. */

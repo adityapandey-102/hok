@@ -1,7 +1,7 @@
 import { NotFoundError } from "../../../common/errors/app-error";
 import { ERROR_CODES } from "../../../common/errors/error-codes";
 import type { PortalContext } from "../../../common/database/portal-links";
-import { PORTAL_RECENT_LIMIT, PORTAL_UPCOMING_LIMIT, type PortalDashboard, type PortalEvent, type PortalEventDetail } from "../domain/portal.entity";
+import { PORTAL_ATTENTION_FILES_DAYS, PORTAL_RECENT_LIMIT, PORTAL_UPCOMING_LIMIT, type PortalDashboard, type PortalEvent, type PortalEventDetail } from "../domain/portal.entity";
 import { assertPortalRange, pickCurrent } from "../domain/portal.rules";
 import type { PortalReadRepositoryPort } from "./ports/portal-repositories.port";
 
@@ -22,19 +22,20 @@ export class PortalPublicService {
 
   async dashboard(ctx: PortalContext): Promise<PortalDashboard> {
     const now = this.now();
-    const [upcoming, recent] = await Promise.all([
+    const since = new Date(now.getTime() - PORTAL_ATTENTION_FILES_DAYS * 24 * 60 * 60 * 1000);
+    const [upcoming, recent, attention] = await Promise.all([
       this.repo.upcoming(ctx.clientId, now, PORTAL_UPCOMING_LIMIT),
       this.repo.recent(ctx.clientId, now, PORTAL_RECENT_LIMIT),
+      this.repo.attention(ctx.clientId, since),
     ]);
-    const current = pickCurrent(upcoming);
-    // Round 3: the badge "Needs your approval" on the current event (one extra query, only when there is one).
-    const awaitingYourApproval = current ? await this.repo.awaitingApproval(ctx.clientId, current.id) : false;
     return {
       client: { businessName: ctx.businessName, logoUrl: ctx.logoUrl, timeZone: ctx.timeZone },
       manager: { firstName: ctx.ownerFirstName },
-      current: current ? { ...current, awaitingYourApproval } : null,
+      // Every event carries awaitingYourApproval / file counts (round 5), so the current one needs no extra query.
+      current: pickCurrent(upcoming),
       upcoming,
       recent,
+      attention,
     };
   }
 

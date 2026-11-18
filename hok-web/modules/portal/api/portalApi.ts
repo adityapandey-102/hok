@@ -8,6 +8,8 @@ export interface PortalLink {
   createdByName: string | null;
   revokedAt: string | null;
   lastUsedAt: string | null;
+  /** The shareable link while the link is active (staff routes only); null when switched off or made before round 5. */
+  url: string | null;
 }
 
 export interface GeneratedPortalLink {

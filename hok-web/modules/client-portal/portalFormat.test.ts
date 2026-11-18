@@ -13,7 +13,7 @@ describe("portal formatting", () => {
 
   it("summarises progress and falls back for unknown types", () => {
     const e = { stages: [{ position: 1, name: "Plan" }, { position: 2, name: "Shoot" }], currentStagePosition: 2, stageCount: 2 };
-    expect(stageSummary(e)).toBe("Stage 2 of 2 · Shoot");
+    expect(stageSummary(e)).toBe("Step 2 of 2 · Shoot");
     expect(eventTypeLabel("shoot")).toBe("Shoot");
     expect(eventTypeLabel("mystery")).toBe("Event");
   });

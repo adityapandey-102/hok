@@ -2425,8 +2425,8 @@ paths:
       - { name: clientId, in: path, required: true, schema: { type: string, format: uuid } }
     get:
       tags: [Portal]
-      summary: The client's current portal link (never the token)
-      description: "`portal:manage`: Admin any client, SMM/MM own clients (another manager's client is 404 CLIENT_NOT_FOUND); task-only staff 403."
+      summary: The client's current portal link, with its URL so staff can copy it again
+      description: "`portal:manage`: Admin any client, SMM/MM own clients (another manager's client is 404 CLIENT_NOT_FOUND); task-only staff 403. Since round 5 the token is stored in plain text (decision 2026-11-18), so an ACTIVE link carries `url`; `url` is null for a revoked link and for a link made before round 5 (make a new one). Sent `Cache-Control: no-store`. The token/url never appear on any public `/portal/*` route."
       security: [{ bearerAuth: [] }]
       responses:
         "200": { description: The active link, else the latest revoked one, else null., content: { application/json: { schema: { type: object, properties: { link: { allOf: [{ $ref: "#/components/schemas/PortalLink" }], nullable: true } } } } } }
@@ -2436,7 +2436,7 @@ paths:
     post:
       tags: [Portal]
       summary: Generate or regenerate the link (the old one stops working)
-      description: The token and full URL are returned ONCE and stored only as a SHA-256 hash. Refused (409 CLIENT_ARCHIVED) for an archived client.
+      description: "The old link (if any) stops working at once (`active: false`, `revokedAt`; its URL then gets `404 PORTAL_LINK_INVALID`) and its stored token is dropped. The response carries the token and full URL; the URL can also be read again with GET. Refused (409 CLIENT_ARCHIVED) for an archived client."
       security: [{ bearerAuth: [] }]
       responses:
         "201": { description: The new link plus its one-time token and URL., content: { application/json: { schema: { type: object, required: [link, token, url], properties: { link: { $ref: "#/components/schemas/PortalLink" }, token: { type: string }, url: { type: string } } } } } }
@@ -2500,9 +2500,11 @@ paths:
       parameters:
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: eventId, in: query, description: "Only the comments about this event (round 5). It must be one of this client's events, else 404 EVENT_NOT_FOUND (the same answer for another client's event and a made-up one); a malformed id is 400.", schema: { type: string, format: uuid } }
       responses:
+        "400": { description: Invalid query (e.g. eventId is not a uuid), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "200": { description: Newest first., content: { application/json: { schema: { type: object, properties: { comments: { type: array, items: { $ref: "#/components/schemas/PortalComment" } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } } } } } }
-        "404": { description: PORTAL_LINK_INVALID, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: "PORTAL_LINK_INVALID, or EVENT_NOT_FOUND (eventId is not one of this client's events)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     post:
       tags: [Portal]
       summary: "Public: post a comment (general or about one of the client's events)"
@@ -3238,8 +3240,9 @@ components:
         createdAt: { type: string, format: date-time }
     PortalLink:
       type: object
-      description: Staff view of a client's portal link. Never the token or its hash.
+      description: Staff view of a client's portal link. Never the token hash. `url` is the full link, only while the link is active and has a stored token.
       properties:
+        url: { type: string, nullable: true, description: "The link to share (WEB_APP_URL + /p/<token>). Null when the link is revoked, or was made before round 5 and so has no stored token." }
         id: { type: string, format: uuid }
         clientId: { type: string, format: uuid }
         active: { type: boolean }
@@ -3262,6 +3265,11 @@ components:
         stages: { type: array, items: { type: object, properties: { position: { type: integer }, name: { type: string } } } }
         currentStagePosition: { type: integer }
         stageCount: { type: integer }
+        awaitingYourApproval: { type: boolean, description: "A pending approval the CLIENT can decide is waiting on this event (an approval meant for staff only never counts)." }
+        approvalStagePosition: { type: integer, nullable: true, description: The stage position that approval is for. }
+        fileCount: { type: integer, description: Assets shared with the client on this event. }
+        fileStages: { type: array, description: "Shared assets per stage, by position (only stages with at least one; assets with no stage are not listed here).", items: { type: object, required: [position, count], properties: { position: { type: integer }, count: { type: integer } } } }
+        latestFileAt: { type: string, format: date-time, nullable: true, description: The newest shared asset's createdAt. }
         updates: { type: array, description: Only on the single-event read. Client-visible stage notes., items: { type: object, properties: { stageName: { type: string }, note: { type: string, nullable: true }, createdAt: { type: string, format: date-time } } } }
         pendingApproval:
           type: object
@@ -3288,7 +3296,7 @@ components:
               decidedVia: { type: string, enum: [staff, portal], nullable: true }
               decidedAt: { type: string, format: date-time }
               decisionComment: { type: string, nullable: true, description: Plain text; render as text. }
-        assets: { type: array, maxItems: 100, description: "Only on the single-event read: the links staff chose to share ('Shared with you'), newest first. Client-safe: no comment, tags, preview or creator.", items: { type: object, required: [id, title, url, type, stageName, createdAt], properties: { id: { type: string, format: uuid }, title: { type: string }, url: { type: string }, type: { $ref: "#/components/schemas/AssetType" }, stageName: { type: string, nullable: true }, createdAt: { type: string, format: date-time } } } }
+        assets: { type: array, maxItems: 100, description: "Only on the single-event read: the links staff chose to share ('Shared with you'), newest first. Client-safe: no comment, tags, preview or creator.", items: { type: object, required: [id, title, url, type, stageName, stagePosition, createdAt], properties: { id: { type: string, format: uuid }, title: { type: string }, url: { type: string }, type: { $ref: "#/components/schemas/AssetType" }, stageName: { type: string, nullable: true }, stagePosition: { type: integer, nullable: true, description: The position of that stage in the event. }, createdAt: { type: string, format: date-time } } } }
     PortalDashboard:
       type: object
       properties:
@@ -3298,12 +3306,43 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/PortalEvent"
-            - type: object
-              required: [awaitingYourApproval]
-              properties:
-                awaitingYourApproval: { type: boolean, description: A request is waiting for the client on this event (show a "Needs your approval" badge). }
         upcoming: { type: array, items: { $ref: "#/components/schemas/PortalEvent" } }
         recent: { type: array, items: { $ref: "#/components/schemas/PortalEvent" } }
+        attention:
+          type: object
+          description: "What needs the client now (round 5). Only data the portal may already show: assets marked 'Show to client' on this client's events, and pending approvals the client can decide. No staff names."
+          required: [approvals, files]
+          properties:
+            approvals:
+              type: array
+              maxItems: 20
+              description: All pending client approvals, oldest first.
+              items:
+                type: object
+                required: [eventId, eventTitle, stageName, stagePosition, requestedAt]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  eventTitle: { type: string }
+                  stageName: { type: string }
+                  stagePosition: { type: integer }
+                  requestedAt: { type: string, format: date-time }
+            files:
+              type: array
+              maxItems: 12
+              description: Files shared in the last 30 days, newest first.
+              items:
+                type: object
+                required: [id, title, url, type, eventId, eventTitle, stageName, stagePosition, createdAt]
+                properties:
+                  id: { type: string, format: uuid }
+                  title: { type: string }
+                  url: { type: string }
+                  type: { $ref: "#/components/schemas/AssetType" }
+                  eventId: { type: string, format: uuid }
+                  eventTitle: { type: string }
+                  stageName: { type: string, nullable: true }
+                  stagePosition: { type: integer, nullable: true }
+                  createdAt: { type: string, format: date-time }
     PortalComment:
       type: object
       description: The client's view of their comment. No staff names.

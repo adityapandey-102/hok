@@ -6,7 +6,7 @@ import { auditLogger as defaultAuditLogger } from "../../../common/audit/drizzle
 import type { AuditLogger } from "../../../common/audit/audit-logger";
 import { getCapabilityScope, type Role } from "../../../domain";
 import { assertCanIssueLink, assertClientManageable, assertLead, portalUrl, type PortalScope } from "../domain/portal.rules";
-import type { PortalLinkEntity } from "../domain/portal.entity";
+import type { PortalLinkRecord, PortalLinkView } from "../domain/portal.entity";
 import type { PortalLinksRepositoryPort } from "./ports/portal-repositories.port";
 
 export interface PortalCaller {
@@ -20,8 +20,9 @@ export interface PortalCaller {
  * client's link. portal:manage: anyone on the client's team sees the link;
  * only its lead (or the Admin) generates or disables it (403 PORTAL_LEAD_ONLY);
  * a client off the caller's team is a 404.
- * The token is returned ONCE, in the generate response; only its SHA-256 is
- * stored, and neither is ever logged or audited.
+ * Since round 5 the token is stored in plain text beside its SHA-256 (decision
+ * 2026-11-18) so staff can copy the link again: GET returns `url` for the active
+ * link. The token is never logged or audited, and never on a public route.
  */
 export class PortalLinksService {
   constructor(
@@ -37,31 +38,38 @@ export class PortalLinksService {
     throw new ForbiddenError("Your role can't manage portal links");
   }
 
-  async get(caller: PortalCaller, clientId: string): Promise<PortalLinkEntity | null> {
-    assertClientManageable(this.scopeOf(caller), await this.repo.findClient(clientId));
-    return this.repo.findCurrent(clientId);
+  /** The link as staff see it: with its URL while it is active and has a stored token, else `url: null`. */
+  private view(link: PortalLinkRecord | null): PortalLinkView | null {
+    if (!link) return null;
+    const { token, ...rest } = link;
+    return { ...rest, url: link.active && token ? portalUrl(this.webAppUrl, token) : null };
   }
 
-  async generate(caller: PortalCaller, clientId: string): Promise<{ link: PortalLinkEntity; token: string; url: string }> {
+  async get(caller: PortalCaller, clientId: string): Promise<PortalLinkView | null> {
+    assertClientManageable(this.scopeOf(caller), await this.repo.findClient(clientId));
+    return this.view(await this.repo.findCurrent(clientId));
+  }
+
+  async generate(caller: PortalCaller, clientId: string): Promise<{ link: PortalLinkView; token: string; url: string }> {
     const scope = this.scopeOf(caller);
     assertLead(scope, assertClientManageable(scope, await this.repo.findClient(clientId)));
     const token = generateOpaqueToken();
-    const link = await this.repo.replace(clientId, hashToken(token), caller.userId, (locked) => {
+    const link = await this.repo.replace(clientId, token, hashToken(token), caller.userId, (locked) => {
       // Re-checked on the locked client: it may have been archived or reassigned since.
       assertLead(scope, assertClientManageable(scope, locked));
       assertCanIssueLink(locked);
     });
     await this.audit.record({ action: AUDIT_ACTIONS.PORTAL_LINK_GENERATED, entityType: AUDIT_ENTITIES.PORTAL_LINK, entityId: link.id, metadata: { clientId } });
-    return { link, token, url: portalUrl(this.webAppUrl, token) };
+    return { link: this.view(link)!, token, url: portalUrl(this.webAppUrl, token) };
   }
 
   /** Idempotent: disabling a client with no active link is fine. Returns the link as it now stands. */
-  async disable(caller: PortalCaller, clientId: string): Promise<PortalLinkEntity | null> {
+  async disable(caller: PortalCaller, clientId: string): Promise<PortalLinkView | null> {
     const scope = this.scopeOf(caller);
     assertLead(scope, assertClientManageable(scope, await this.repo.findClient(clientId)));
     if (await this.repo.revoke(clientId)) {
       await this.audit.record({ action: AUDIT_ACTIONS.PORTAL_LINK_DISABLED, entityType: AUDIT_ENTITIES.PORTAL_LINK, metadata: { clientId } });
     }
-    return this.repo.findCurrent(clientId);
+    return this.view(await this.repo.findCurrent(clientId));
   }
 }

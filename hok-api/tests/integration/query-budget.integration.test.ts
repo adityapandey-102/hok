@@ -277,6 +277,43 @@ describe("query budget: no N+1, bounded pages (integration)", () => {
     expect(many.n, `portal event: ${none.n} queries with no assets, ${many.n} with 12`).toBe(none.n);
   });
 
+  // Round 5: the dashboard's per-event flags and file counts and its "attention" lists are grouped queries, never one per event.
+  it("portal dashboard: the same number of queries for 1 event as for 6 events with shared files and waiting approvals", async () => {
+    const link = await request(app).post(`/api/v1/portal-links/${firstClientId}`).set("Authorization", auth);
+    expect(link.status).toBe(201);
+    const token = (link.body as { token: string }).token;
+    const dashboardQueries = async () => {
+      count = 0;
+      const res = await request(app).get(`/api/v1/portal/${token}`);
+      expect(res.status).toBe(200);
+      return { n: count, body: res.body as { upcoming: unknown[]; attention: { approvals: unknown[]; files: unknown[] } } };
+    };
+    await dashboardQueries(); // warm-up: the first open records "last used"
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const few = await dashboardQueries();
+    for (let i = 0; i < 5; i += 1) {
+      const start = new Date(Date.UTC(2031, 5, 1 + i, 10));
+      const [e] = await db
+        .insert(events)
+        .values({ clientId: firstClientId, title: `QB Dash Event ${i}`, type: "shoot", startsAt: start, endsAt: new Date(start.getTime() + 3600_000), timeZone: "UTC", templateName: "QB", stageCount: 2 })
+        .returning({ id: events.id });
+      const [s1, s2] = await db
+        .insert(eventStages)
+        .values([{ eventId: e!.id, position: 1, name: "A" }, { eventId: e!.id, position: 2, name: "B", approvers: ["client"] }])
+        .returning({ id: eventStages.id });
+      await db.update(events).set({ currentStageId: s1!.id }).where(eq(events.id, e!.id));
+      await db.insert(stageApprovals).values({ eventId: e!.id, eventStageId: s2!.id, status: "pending", requestedBy: admin.id });
+      await db.insert(assets).values(
+        Array.from({ length: 3 }, (_, k) => ({ clientId: firstClientId, eventId: e!.id, eventStageId: k === 0 ? s1!.id : s2!.id, title: `QB Dash File ${i}-${k}`, url: `https://example.test/qb-dash/${i}/${k}`, type: "video" as const, visibleToClient: true, createdBy: admin.id })),
+      );
+    }
+    const many = await dashboardQueries();
+    expect(many.body.upcoming.length).toBeGreaterThanOrEqual(6);
+    expect(many.body.attention.approvals).toHaveLength(5);
+    expect(many.body.attention.files).toHaveLength(12); // capped, newest first
+    expect(many.n, `portal dashboard: ${few.n} queries with 1 event, ${many.n} with 6`).toBe(few.n);
+  });
+
   it("list page sizes are capped (an over-large limit is clamped, never honoured)", async () => {
     const users = await request(app).get("/api/v1/users?limit=100000").set("Authorization", auth);
     expect((users.body as { limit: number }).limit).toBeLessThanOrEqual(100);

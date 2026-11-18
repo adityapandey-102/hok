@@ -204,6 +204,9 @@ A read-mostly dashboard for the **client**, opened via a generated link.
 | FR-POR-08 | Plain, neutral design — no firm or per-client branding beyond showing the client's own name/logo. |
 | FR-POR-09 | Portal must be mobile-friendly (clients will mostly open it on phones). |
 | FR-POR-10 | *(v0.4)* The portal's event page lists **"Shared with you"**: that event's assets marked "Show to client" (title, type, stage, date, link). No internal comment, tags or staff names. |
+| FR-POR-12 | *(Round 5, 2026-11-18)* Staff can **copy the current portal link at any time** from the Portal tab (the link is stored; making a new link switches the old one off at once and erases it). |
+| FR-POR-13 | *(Round 5)* The portal has **Overview · Calendar · Messages** tabs. Files shared with the client show on the event card and rows as a green **"N files shared"** tag with a slow ripple, and as a badge on the step they belong to; a step waiting for the client's approval has an amber ring. No separate up-front attention list. |
+| FR-POR-14 | *(Round 5)* The client can **comment from inside an event** (comments tied to that event, its earlier comments listed with their status). |
 | FR-POR-11 | *(v0.4)* When an event stage waits for the **client's** approval, the portal's event page shows "Your approval is needed" with the team's note, link and shared assets, and **Approve** / **Request changes** (a comment is required for changes). The dashboard flags the event. The client's past decisions are listed. Same rate limits as portal comments. |
 
 ### 5.8 Client Comments / Feedback (CMT)
@@ -258,6 +261,7 @@ Tasks the **Admin** assigns to staff — the **only** module available to Market
 | FR-WRK-03 | At most **3 levels** (parent → part → sub-part). |
 | FR-WRK-04 | The parent lists its parts by stage with progress ("+N you can't see" for hidden ones; the lock still counts them). A part shows "Part of: parent › stage". |
 | FR-WRK-05 | When the last unfinished part of a stage finishes, the parent's people are notified ("Parts finished"). |
+| FR-WRK-06 | *(Round 5)* Stage lists scale to any number of stages: more than 6 wrap into rows on wider screens; on phones more than 4 collapse into a dropdown ("Stage 5 of 13", opens to the full list). The Parts section lists only stages that have parts, with one "Add part" row (stage picker, preset to the current stage). |
 | FR-TSK-11 | *(Phase 2)* Due-date reminder: notify the assignee **2 hours before** the task is due. |
 
 ### 5.10 Notifications (NTF)

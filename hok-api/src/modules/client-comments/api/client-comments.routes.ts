@@ -99,9 +99,9 @@ portalCommentsRouter.get(
   "/comments",
   validateQuery(portalCommentQueryDtoSchema),
   asyncHandler(async (req, res) => {
-    const q = req.query as unknown as { limit: number; offset: number };
+    const q = req.query as unknown as { limit: number; offset: number; eventId?: string };
     res.set("Cache-Control", "private, no-store");
-    const { comments, total } = await service.listForPortal(req.portal!, q.limit, q.offset);
+    const { comments, total } = await service.listForPortal(req.portal!, q.limit, q.offset, q.eventId);
     res.json({ comments: comments.map(toPortalCommentDto), total, limit: q.limit, offset: q.offset });
   }),
 );

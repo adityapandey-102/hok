@@ -37,10 +37,10 @@ export function formatEventWhen(e: Pick<PortalEvent, "startsAt" | "endsAt">, zon
     : `${day.format(start)}, ${time.format(start)} – ${day.format(end)}, ${time.format(end)}`;
 }
 
-/** Progress as the client sees it: "Stage 3 of 6 · Editing". */
+/** Progress as the client sees it: "Step 3 of 6 · Editing" (the client says step, staff say stage). */
 export function stageSummary(e: Pick<PortalEvent, "stages" | "currentStagePosition" | "stageCount">): string {
   const current = e.stages.find((s) => s.position === e.currentStagePosition);
-  return `Stage ${e.currentStagePosition} of ${e.stageCount}${current ? ` · ${current.name}` : ""}`;
+  return `Step ${e.currentStagePosition} of ${e.stageCount}${current ? ` · ${current.name}` : ""}`;
 }
 
 /** "20 Nov 2026" in the client's zone (a shared link's date). */

@@ -158,6 +158,10 @@ describe("openapi.yaml stays in sync with the Approvals module", () => {
     expect(props("StaffTaskDetail")).toEqual(expect.arrayContaining(["approvals", "nextBlockedBy"]));
     expect(props("Dashboard")).toEqual(expect.arrayContaining(["approvals"]));
     expect(props("PortalEvent")).toEqual(expect.arrayContaining(["pendingApproval", "approvalHistory"]));
+    // Round 5: the portal puts shared files and waiting approvals up front.
+    expect(props("PortalEvent")).toEqual(expect.arrayContaining(["awaitingYourApproval", "approvalStagePosition", "fileCount", "fileStages", "latestFileAt"]));
+    expect(props("PortalDashboard")).toEqual(expect.arrayContaining(["attention"]));
+    expect(props("PortalLink")).toEqual(expect.arrayContaining(["url"]));
     expect(props("Approval")).toEqual(
       expect.arrayContaining(["id", "subject", "subjectId", "stageName", "approvers", "status", "requestedByName", "decidedVia", "decisionComment", "version", "canDecide", "canCancel"]),
     );

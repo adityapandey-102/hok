@@ -251,6 +251,7 @@ export function TaskDetailClient({ initialTask, role, viewerId, zone }: { initia
       <div className="mb-5 empty:hidden">
         <PartsSection
           kind="task"
+          currentStageId={task.currentStage.id}
           itemId={task.id}
           itemTitle={task.title}
           stages={task.stages}

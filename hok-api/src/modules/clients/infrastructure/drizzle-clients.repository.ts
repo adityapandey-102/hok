@@ -198,7 +198,7 @@ export class DrizzleClientsRepository implements ClientsRepositoryPort {
         if (changes.archivedAt === "now") {
           await tx
             .update(portalLinks)
-            .set({ active: false, revokedAt: sql`now()` })
+            .set({ active: false, revokedAt: sql`now()`, token: null })
             .where(and(eq(portalLinks.clientId, id), eq(portalLinks.active, true)));
         }
 

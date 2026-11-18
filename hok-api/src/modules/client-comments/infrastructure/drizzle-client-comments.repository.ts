@@ -164,9 +164,9 @@ export class DrizzleClientCommentsRepository implements ClientCommentsRepository
     });
   }
 
-  listForPortal(clientId: string, limit: number, offset: number) {
+  listForPortal(clientId: string, limit: number, offset: number, eventId?: string) {
     return guarded("load your comments", async () => {
-      const where = eq(clientComments.clientId, clientId);
+      const where = eventId ? and(eq(clientComments.clientId, clientId), eq(clientComments.eventId, eventId)) : eq(clientComments.clientId, clientId);
       const [rows, [total]] = await Promise.all([
         db
           .select(PORTAL_SELECT)

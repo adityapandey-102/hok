@@ -25,8 +25,16 @@ export interface PortalEvent {
   stages: PortalStage[];
   currentStagePosition: number;
   stageCount: number;
-  /** Dashboard's current event only: a request is waiting for the client's approval (round 3). */
-  awaitingYourApproval?: boolean;
+  /** A request is waiting for the client's approval on this event (round 5: on every event, not just the current one). */
+  awaitingYourApproval: boolean;
+  /** The step that approval is for. */
+  approvalStagePosition: number | null;
+  /** Files shared with the client on this event. */
+  fileCount: number;
+  /** Shared files per step (only steps with at least one; files without a step are not listed). */
+  fileStages: { position: number; count: number }[];
+  /** When the newest shared file was added. */
+  latestFileAt: string | null;
 }
 
 /** A link the staff chose to share with the client on one event (internal fields never come this way). */
@@ -36,6 +44,7 @@ export interface PortalAsset {
   url: string;
   type: string;
   stageName: string | null;
+  stagePosition: number | null;
   createdAt: string;
 }
 
@@ -72,6 +81,33 @@ export interface PortalDashboard {
   current: PortalEvent | null;
   upcoming: PortalEvent[];
   recent: PortalEvent[];
+  /** What needs the client: every approval waiting (oldest first, max 20) and files shared in the last 30 days (newest first, max 12). */
+  attention: PortalAttention;
+}
+
+export interface PortalAttentionApproval {
+  eventId: string;
+  eventTitle: string;
+  stageName: string;
+  stagePosition: number;
+  requestedAt: string;
+}
+
+export interface PortalAttentionFile {
+  id: string;
+  title: string;
+  url: string;
+  type: string;
+  eventId: string;
+  eventTitle: string;
+  stageName: string | null;
+  stagePosition: number | null;
+  createdAt: string;
+}
+
+export interface PortalAttention {
+  approvals: PortalAttentionApproval[];
+  files: PortalAttentionFile[];
 }
 
 export type PortalCommentStatus = "received" | "in_progress" | "solved";
@@ -121,8 +157,9 @@ export const publicPortalApi = {
   events: (token: string, from: string, to: string) =>
     call<{ events: PortalEvent[]; timeZone: string }>(token, `/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   event: (token: string, eventId: string) => call<{ event: PortalEventDetail }>(token, `/events/${encodeURIComponent(eventId)}`),
-  comments: (token: string, limit = 20, offset = 0) =>
-    call<{ comments: PortalComment[]; total: number }>(token, `/comments?limit=${limit}&offset=${offset}`),
+  /** The client's comments, newest first; `eventId` limits them to one event (404 EVENT_NOT_FOUND when it is not theirs). */
+  comments: (token: string, limit = 20, offset = 0, eventId?: string) =>
+    call<{ comments: PortalComment[]; total: number }>(token, `/comments?limit=${limit}&offset=${offset}${eventId ? `&eventId=${encodeURIComponent(eventId)}` : ""}`),
   /** The client's decision on a pending approval. Changes need a comment (the API refuses otherwise). */
   decideApproval: (token: string, approvalId: string, payload: { version: number; decision: "approve" | "changes"; comment?: string }) =>
     call<{ ok: true }>(token, `/approvals/${encodeURIComponent(approvalId)}`, { method: "POST", body: JSON.stringify(payload) }),

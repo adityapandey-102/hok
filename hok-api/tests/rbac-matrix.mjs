@@ -395,6 +395,12 @@ async function main() {
     check(`POST /portal-links/:clientId (SMM's) as ${role} -> ${linkExpect[role]}`, r.status, linkExpect[role]);
     if (r.status === 201) porToken = r.body.token; // the last 201 wins; earlier tokens are revoked
   }
+  const getExpect = { admin: 200, social_media_manager: 200, marketing_manager: 404, project_manager: 404, marketing_agent: 403, developer: 403, editor: 403, content_writer: 403 };
+  for (const [role, token] of everyone) {
+    const r = await req(`/portal-links/${porClient?.id}`, {}, token);
+    check(`GET /portal-links/:clientId (SMM's) as ${role} -> ${getExpect[role]}`, r.status, getExpect[role]);
+    if (r.status === 200) check(`... the active link's url ends with its token (round 5: copy any time)`, String(r.body?.link?.url).endsWith(`/p/${porToken}`), true);
+  }
   check("GET /portal/:token (no login) -> 200", (await req(`/portal/${porToken}`)).status, 200);
   check("GET /portal/<made-up token> -> 404", (await req(`/portal/${"A".repeat(43)}`)).status, 404);
   const posted = await req(`/portal/${porToken}/comments`, { method: "POST", body: JSON.stringify({ body: `RBAC comment ${stamp}` }) });

@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { Select } from "../../../components/ui/Select";
 import { hiddenPartsLabel, partHref, partProgressLabel, partsSummary, type WorkChild } from "../../../lib/domain";
 import { Panel } from "../../../components/ui/Panel";
 import { Icon } from "../../../components/ui/Icon";
@@ -23,9 +25,9 @@ function partTone(c: WorkChild): PillTone {
 
 /**
  * The "Parts" section of an event or a task (round 4): child events and tasks grouped by the stage of this item
- * they hang on. Each stage row shows how many parts still hold it and, for someone who may move the item, an
- * "Add part" button. A stage with no parts is only listed when the viewer can add one. Parts the viewer can't see
- * are counted ("+2 you can't see"); they still hold the stage.
+ * they hang on. Only stages that have parts are listed (a 13-stage item no longer lists 13 empty rows, round 5);
+ * someone who may move the item gets one "Add part" row at the bottom with a stage picker, preset to the current
+ * stage. Parts the viewer can't see are counted ("+2 you can't see"); they still hold the stage.
  */
 export function PartsPanel({
   stages,
@@ -33,16 +35,21 @@ export function PartsPanel({
   hiddenParts,
   canAdd,
   onAdd,
+  defaultStageId,
 }: {
   stages: readonly StageLike[];
   parts: readonly WorkChild[];
   hiddenParts: number;
   canAdd: boolean;
   onAdd: (stage: StageLike) => void;
+  /** The stage the picker starts on (the item's current stage). */
+  defaultStageId?: string;
 }) {
   const ordered = [...stages].sort((a, b) => a.position - b.position);
-  const rows = ordered.filter((s) => canAdd || parts.some((p) => p.stageId === s.id) || (s.openChildren ?? 0) > 0);
-  if (rows.length === 0 && hiddenParts === 0) return null;
+  const [pickedId, setPickedId] = useState(defaultStageId && ordered.some((s) => s.id === defaultStageId) ? defaultStageId : ordered[0]?.id);
+  const picked = ordered.find((s) => s.id === pickedId) ?? ordered[0];
+  const rows = ordered.filter((s) => parts.some((p) => p.stageId === s.id) || (s.openChildren ?? 0) > 0);
+  if (rows.length === 0 && hiddenParts === 0 && !canAdd) return null;
   const hidden = hiddenPartsLabel(hiddenParts);
 
   return (
@@ -68,11 +75,6 @@ export function PartsPanel({
                     <StatusPill label="All finished" tone="green" />
                   ) : null}
                 </div>
-                {canAdd && (
-                  <Button variant="ghost" className="-mr-2 text-primary" aria-label={`Add part at ${s.name}`} onClick={() => onAdd(s)}>
-                    <Icon name="plus" size={15} /> Add part
-                  </Button>
-                )}
               </div>
               {mine.length > 0 && (
                 <ul className="inset-rows pb-1">
@@ -97,6 +99,23 @@ export function PartsPanel({
           <p data-testid="parts-hidden" className="px-5 py-3 text-[13px] text-text-muted">
             {hidden}. They still count toward the stage.
           </p>
+        )}
+        {canAdd && picked && (
+          <div className="flex flex-wrap items-center gap-2 px-5 py-3">
+            <label htmlFor="part-stage" className="sr-only">
+              Stage for the new part
+            </label>
+            <Select id="part-stage" value={picked.id} onChange={(e) => setPickedId(e.target.value)} className="min-w-0 flex-1 basis-48">
+              {ordered.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.position}. {s.name}
+                </option>
+              ))}
+            </Select>
+            <Button variant="outline" aria-label={`Add part at ${picked.name}`} onClick={() => onAdd(picked)} className="max-sm:w-full">
+              <Icon name="plus" size={15} /> Add part
+            </Button>
+          </div>
         )}
       </div>
     </Panel>

@@ -19,16 +19,17 @@ portalLinksRouter.param("clientId", uuidParam(ERROR_CODES.CLIENT_NOT_FOUND, "Cli
 
 const callerOf = (req: Request): PortalCaller => ({ userId: req.authUserId!, role: req.profile!.role });
 
-/** The client's current link (active, else the latest revoked), or null. Never the token. */
+/** The client's current link (active, else the latest revoked), or null. Carries `url` (the secret link) while active, so never cached. */
 portalLinksRouter.get(
   "/:clientId",
   asyncHandler(async (req, res) => {
     const link = await service.get(callerOf(req), req.params.clientId!);
+    res.set("Cache-Control", "no-store");
     res.json({ link: link ? toPortalLinkDto(link) : null });
   }),
 );
 
-/** Generate or regenerate: the previous link stops working. The token/url are shown ONCE. */
+/** Generate or regenerate: the previous link stops working at once. */
 portalLinksRouter.post(
   "/:clientId",
   asyncHandler(async (req, res) => {

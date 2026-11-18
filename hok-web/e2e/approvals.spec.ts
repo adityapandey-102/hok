@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { newPortalToken, openPortalEvent } from "./portalHelpers";
 
 const PASSWORD = process.env.E2E_PASSWORD ?? "Hok@2026";
 const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100/api/v1";
@@ -120,7 +121,7 @@ test("a 5-stage task template: stage 4 needs an SMM or the Admin, stage 5 needs 
   await expect(meera.page.getByRole("heading", { name: title })).toBeVisible({ timeout: 30_000 });
   await meera.page.getByLabel("Jump to a stage").selectOption({ label: "4. Review" });
   await meera.page.getByRole("button", { name: "Move", exact: true }).click();
-  await expect(meera.page.getByText("Stage 4 of 5")).toBeVisible({ timeout: 15_000 });
+  await expect(meera.page.getByText("Stage 4 of 5").filter({ visible: true })).toBeVisible({ timeout: 15_000 });
   const forward = meera.page.getByRole("button", { name: "Move to Final" });
   await expect(forward).toBeDisabled();
   await expect(meera.page.getByTestId("move-blocked-reason")).toHaveText(/Needs approval at Review/);
@@ -146,7 +147,7 @@ test("a 5-stage task template: stage 4 needs an SMM or the Admin, stage 5 needs 
   await expect(card).toContainText("Approved");
   await expect(card).toContainText("by Rohan Mehta");
   await meera.page.getByRole("button", { name: "Move to Final" }).click();
-  await expect(meera.page.getByText("Stage 5 of 5")).toBeVisible({ timeout: 15_000 });
+  await expect(meera.page.getByText("Stage 5 of 5").filter({ visible: true })).toBeVisible({ timeout: 15_000 });
   await expect(card).toContainText("Needs approval from: Admin");
   await expect(meera.page.getByRole("button", { name: "Mark complete" })).toBeDisabled();
   await expect(meera.page.getByTestId("move-blocked-reason")).toHaveText(/Needs approval at Final/);
@@ -182,34 +183,6 @@ test("a 5-stage task template: stage 4 needs an SMM or the Admin, stage 5 needs 
   await Promise.all([admin.ctx.close(), smm.ctx.close(), meera.ctx.close()]);
 });
 
-/** The SMM generates a fresh portal link for Chai Point Cafe and returns its token. */
-async function newPortalToken(page: Page): Promise<string> {
-  await page.goto("/app/clients");
-  await page.waitForLoadState("networkidle");
-  await page.getByLabel("Search clients").fill("Chai Point Cafe");
-  await page.getByRole("link", { name: /Chai Point Cafe/ }).first().click();
-  await page.getByRole("tab", { name: "portal" }).click();
-  await expect(page.getByRole("button", { name: /^(Re)?generate link$/i })).toBeVisible({ timeout: 15_000 });
-  const hasActive = await page.getByRole("button", { name: "Regenerate link" }).isVisible().catch(() => false);
-  await page.getByRole("button", { name: hasActive ? "Regenerate link" : "Generate link" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: hasActive ? "Regenerate" : "Generate", exact: true }).click();
-  const urlText = (await page.getByTestId("portal-url").textContent({ timeout: 15_000 })) ?? "";
-  return urlText.trim().split("/").pop()!;
-}
-
-/** The client's side: open /p/<token> and the named event's page (the hero card or a list row). */
-async function openPortalEvent(portal: Page, token: string, eventTitle: string) {
-  await portal.goto(`/p/${token}`);
-  await expect(portal.getByRole("heading", { name: "Happening now / next" })).toBeVisible({ timeout: 30_000 });
-  const row = portal.getByRole("button", { name: new RegExp(eventTitle) }).first();
-  if (!(await row.isVisible())) {
-    for (const more of await portal.getByRole("button", { name: /^Show all/ }).all()) if (await more.isVisible()) await more.click();
-  }
-  if (await row.isVisible()) await row.click();
-  else await portal.getByRole("button", { name: /^(See updates|Review and approve)$/ }).click(); // the event is the hero card
-  await expect(portal.getByRole("dialog").getByRole("heading", { name: eventTitle })).toBeVisible({ timeout: 15_000 });
-}
-
 /** Rohan (SMM) creates a short event for Chai Point Cafe from the named event template. */
 async function createEvent(page: Page, title: string, template: string) {
   await page.goto("/app/clients");
@@ -223,6 +196,7 @@ async function createEvent(page: Page, title: string, template: string) {
   await page.locator('[role="listbox"] [role="option"]').filter({ hasText: template }).first().click();
   await page.locator("#ev-start").fill("2026-11-21T10:00");
   await page.locator("#ev-end").fill("2026-11-21T12:00");
+  await page.locator("#ev-location").fill("Video call: https://meet.google.com/e2e-shoot");
   await page.getByRole("button", { name: "Create event" }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible({ timeout: 30_000 });
 }
@@ -254,6 +228,10 @@ test("an event stage approved by the client: changes need a comment, then the cl
   const clientCtx = await browser.newContext();
   const portal = await clientCtx.newPage();
   await openPortalEvent(portal, token, title);
+  // The event's "Location or link" is clickable for the client, in a new tab.
+  const meet = portal.getByRole("dialog").getByRole("link", { name: "https://meet.google.com/e2e-shoot" });
+  await expect(meet).toHaveAttribute("href", "https://meet.google.com/e2e-shoot");
+  await expect(meet).toHaveAttribute("target", "_blank");
   const box = portal.getByTestId("portal-approval");
   await expect(box).toContainText("Your approval is needed: Client review");
   await expect(box).toContainText("<b>please</b>"); // shown as text, never as HTML

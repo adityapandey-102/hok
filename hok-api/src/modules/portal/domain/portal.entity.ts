@@ -1,7 +1,7 @@
 import type { AssetType } from "../../assets/domain/asset.entity";
 import type { EventState, EventType } from "../../events/domain/event.entity";
 
-/** A client's portal link as staff see it -- never the token (only shown once, at generation). */
+/** A client's portal link as staff see it. */
 export interface PortalLinkEntity {
   id: string;
   clientId: string;
@@ -10,6 +10,16 @@ export interface PortalLinkEntity {
   createdByName: string | null;
   revokedAt: string | null;
   lastUsedAt: string | null;
+}
+
+/** What the repository returns: the link plus its stored token (plain text, active links only; null for older links). Server-side only. */
+export interface PortalLinkRecord extends PortalLinkEntity {
+  token: string | null;
+}
+
+/** The staff response: the link and its full URL (null when it has no stored token, i.e. made before round 5, or is revoked). */
+export interface PortalLinkView extends PortalLinkEntity {
+  url: string | null;
 }
 
 /**
@@ -32,6 +42,16 @@ export interface PortalEvent {
   stages: { position: number; name: string }[];
   currentStagePosition: number;
   stageCount: number;
+  /** Round 5: a pending approval this client can decide is waiting on this event (a staff-only approval never counts). */
+  awaitingYourApproval: boolean;
+  /** The stage position that approval is for, else null. */
+  approvalStagePosition: number | null;
+  /** Assets shared with the client on this event. */
+  fileCount: number;
+  /** Shared assets per stage (only stages with at least one; assets with no stage are not listed here), by position. */
+  fileStages: { position: number; count: number }[];
+  /** The newest shared asset's createdAt. */
+  latestFileAt: string | null;
 }
 
 /** A stage move the manager marked "visible to client" (FR-POR-06): no staff names. */
@@ -48,6 +68,8 @@ export interface PortalAsset {
   url: string;
   type: AssetType;
   stageName: string | null;
+  /** The position of that stage in the event, else null. */
+  stagePosition: number | null;
   createdAt: string;
 }
 
@@ -89,11 +111,45 @@ export interface PortalDashboard {
   client: { businessName: string; logoUrl: string | null; timeZone: string };
   /** The account manager's first name only (FR-POR-07: no staff data beyond that). */
   manager: { firstName: string };
-  /** The next or in-progress active event, if any; `awaitingYourApproval` = a request is waiting for the client on it. */
-  current: (PortalEvent & { awaitingYourApproval: boolean }) | null;
+  /** The next or in-progress active event, if any. */
+  current: PortalEvent | null;
   upcoming: PortalEvent[];
   recent: PortalEvent[];
+  /** What needs the client now (round 5). */
+  attention: PortalAttention;
 }
+
+/** A request waiting for the client, on any of their events. */
+export interface PortalAttentionApproval {
+  eventId: string;
+  eventTitle: string;
+  stageName: string;
+  stagePosition: number;
+  requestedAt: string;
+}
+
+/** A file shared with the client recently. */
+export interface PortalAttentionFile {
+  id: string;
+  title: string;
+  url: string;
+  type: AssetType;
+  eventId: string;
+  eventTitle: string;
+  stageName: string | null;
+  stagePosition: number | null;
+  createdAt: string;
+}
+
+export interface PortalAttention {
+  /** All pending client approvals, oldest first, at most 20. */
+  approvals: PortalAttentionApproval[];
+  /** Shared in the last PORTAL_ATTENTION_FILES_DAYS days, newest first, at most PORTAL_ATTENTION_FILES_LIMIT. */
+  files: PortalAttentionFile[];
+}
+
+export const PORTAL_ATTENTION_FILES_LIMIT = 12;
+export const PORTAL_ATTENTION_FILES_DAYS = 30;
 
 /** How many of each list the dashboard shows. */
 export const PORTAL_UPCOMING_LIMIT = 10;

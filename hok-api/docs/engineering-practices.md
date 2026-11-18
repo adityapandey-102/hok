@@ -45,6 +45,7 @@ arrives in M11; until then the query budget below is the check.)
 | `staff_tasks (template_id)`, `(current_stage_id)`, `staff_task_updates (from_stage_id)`, `(to_stage_id)`, `staff_task_links (stage_id)`, `(added_by)`, `(shared_asset_id)` (all partial `where … is not null`) | The new foreign keys (cascade / set-null checks) |
 | `staff_task_links (task_id, kind, created_at)` | A task's links, in one query, oldest first |
 | `assets (event_id, created_at desc) where visible_to_client and deleted_at is null`, `assets (event_stage_id) where … is not null` | The portal's "Shared with you" list for one event (capped at 100); the stage FK |
+| `assets (client_id, created_at desc, id desc) where visible_to_client and deleted_at is null` (`assets_client_visible_idx`, round 5) | The portal dashboard's "needs your attention" files: the client's newest shared assets (last 30 days, capped at 12) |
 | `stage_template_stages (template_id, position)` unique | A template's ordered stages (batched for a whole page) |
 | `events (client_id, starts_at)` | A client's Events tab |
 | `assets (client_id, created_at desc, id desc) where deleted_at is null` (+ `(client_id, type, created_at desc)`, `(created_at desc, id desc)`, `(event_id)`, same predicate) | A client's Assets tab, type filter, the Admin's all-assets list, assets of an event |
@@ -86,7 +87,7 @@ Every later module adds its rows here in the same change as its migration.
 | **Validate every input with zod at the edge; parse queries strictly** (400 on a bad role / non-numeric limit, never silently use a default). | A silent fallback shows the wrong data with no error. |
 | **Rate-limited auth (and, from M8, the public portal); `TRUST_PROXY` = number of proxies in production.** | Brute-force protection only works when it keys on the real client IP. |
 | **Admins can't lock the firm out**: no changing your own role, no deactivating yourself. | Guarantees at least one active Admin. |
-| **Generated passwords are shown once; portal tokens are stored only as SHA-256 hashes.** | A leaked database never yields a usable credential. |
+| **Generated passwords are shown once; portal tokens are looked up by SHA-256 hash.** Exception (round 5, the user's decision 2026-11-18): the active portal link's token is also stored in plain text so staff can copy it again; it is cleared when the link is revoked and never leaves a staff route. | A leaked database never yields a staff password; it does yield the active portal links (a read-only client view, revocable by making a new link). |
 | **Secrets are server-only; logs redact tokens and passwords; the audit log records who did what.** | Accountability without leaking credentials. |
 | **Least-privilege database role in production** (needleye's ADR 0006; planned with production). | A bug or injection can't drop tables. |
 

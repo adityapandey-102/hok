@@ -26,7 +26,10 @@ export function PartsSection({
   event,
   zone,
   onChanged,
+  currentStageId,
 }: {
+  /** Presets the "Add part" stage picker (the item's current stage). */
+  currentStageId?: string;
   kind: WorkKind;
   itemId: string;
   itemTitle: string;
@@ -56,6 +59,7 @@ export function PartsSection({
         parts={parts}
         hiddenParts={hiddenParts}
         canAdd={may}
+        defaultStageId={currentStageId}
         onAdd={(s) =>
           setTarget({
             parent: { kind, id: itemId, stageId: s.id },

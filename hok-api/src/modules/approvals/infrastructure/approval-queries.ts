@@ -248,14 +248,45 @@ export async function selectPortalHistory(ex: Executor, clientId: string, eventI
   }));
 }
 
-/** Is a request waiting for this client on this event? (the dashboard's badge) One query. */
-export async function selectAwaitingClient(ex: Executor, clientId: string, eventId: string): Promise<boolean> {
-  const [row] = await ex
-    .select({ id: a.id })
+/** Most pending client approvals the portal's "needs your attention" lists. */
+export const PORTAL_ATTENTION_APPROVALS_MAX = 20;
+
+/**
+ * Pending approvals the CLIENT can decide (the stage lists `client` as an approver) on these events of THIS client,
+ * as event id -> the stage position (the newest request wins). ONE query for any number of events.
+ */
+export async function selectPortalAwaitingByEvent(ex: Executor, clientId: string, eventIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (eventIds.length === 0) return out;
+  const rows = await ex
+    .select({ eventId: a.eventId, position: eventStages.position })
     .from(a)
     .innerJoin(events, eq(events.id, a.eventId))
     .innerJoin(eventStages, eq(eventStages.id, a.eventStageId))
-    .where(and(eq(a.eventId, eventId), eq(events.clientId, clientId), eq(a.status, "pending"), sql`'client' = any(${eventStages.approvers})`))
-    .limit(1);
-  return row !== undefined;
+    .where(and(inArray(a.eventId, eventIds), eq(events.clientId, clientId), eq(a.status, "pending"), sql`'client' = any(${eventStages.approvers})`))
+    .orderBy(asc(a.requestedAt), asc(a.id));
+  // Oldest first, so the newest request overwrites.
+  for (const r of rows) if (r.eventId) out.set(r.eventId, r.position);
+  return out;
+}
+
+export interface PortalAttentionApprovalRow {
+  eventId: string;
+  eventTitle: string;
+  stageName: string;
+  stagePosition: number;
+  requestedAt: string;
+}
+
+/** Every request waiting for THIS client, oldest first (what has waited longest), capped. ONE query. */
+export async function selectPortalAttentionApprovals(ex: Executor, clientId: string): Promise<PortalAttentionApprovalRow[]> {
+  const rows = await ex
+    .select({ eventId: events.id, eventTitle: events.title, stageName: eventStages.name, stagePosition: eventStages.position, requestedAt: a.requestedAt })
+    .from(a)
+    .innerJoin(events, eq(events.id, a.eventId))
+    .innerJoin(eventStages, eq(eventStages.id, a.eventStageId))
+    .where(and(eq(events.clientId, clientId), eq(a.status, "pending"), sql`'client' = any(${eventStages.approvers})`))
+    .orderBy(asc(a.requestedAt), asc(a.id))
+    .limit(PORTAL_ATTENTION_APPROVALS_MAX);
+  return rows.map((r) => ({ ...r, requestedAt: r.requestedAt.toISOString() }));
 }

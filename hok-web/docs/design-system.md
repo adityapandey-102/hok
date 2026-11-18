@@ -36,6 +36,8 @@ Taken from the House of Khalak logo: crimson letterforms, ink lettering, now bui
 | Pills | `StatusPill` (capsules; soft tints, solid only for urgent) |
 | Pickers over growing data | `SearchSelect` |
 | Lists | server-paged + `Pager`; debounced search; filters in the API |
+| Stage lists (events, tasks, portal) | `components/brand/StageRail.tsx`, always. Up to 6 stages: one row from 640 px. More: a wrapping grid (4 across, 7 from lg) with a 28 px node, a 2-line label and two half connectors per cell so the line continues across rows. Phones: a vertical list up to 4 stages, more become a native `<details>` dropdown (summary: current node, "Step 5 of 13", name, thin progress bar, chips, chevron). `unit="Step"` in the portal (the client never says "stage"). Highlights: an amber ring + "Approval" / "Your approval" chip for a waiting approval, a file count on the node (green in the portal, crimson on staff pages). `onStageClick` makes every stage a button. Layout rules and wording live in `components/brand/railLayout.ts` (unit-tested). Never hand-roll another stage list |
+| Client portal: shared files | `PortalFilesTag`: a green (`bg-success-bg text-success ring-success/30`) "N files shared" button on an event card, row and sheet header; `.file-tag-ripple` adds one very slow ripple (4 s cycle, a `::after` ring, off under reduced motion) when files are newer than the last visit. Approvals are the amber chip. There is no up-front attention list |
 | Destructive actions | at the end of the page, red text in its own group ("Archive client"); confirm before acting |
 
 ## Colour for meaning
@@ -47,7 +49,7 @@ Taken from the House of Khalak logo: crimson letterforms, ink lettering, now bui
 ## Motion (only when it shows what changed)
 - Answers to an action: buttons give way under the finger (`active:scale`), the segmented thumb slides, sheets rise from the bottom (`.sheet-in`), toasts, the theme's circular reveal.
 - One page-load moment at most (`CountUp` figures, `grow-x` bars, `draw-stroke` charts). No fade-in on every card, no hover lift on lists.
-- Ambient: only the slow crimson glow on the sign-in panel and inside the hero band.
+- Ambient: only the slow crimson glow on the sign-in panel and inside the hero band, and the very slow green ripple on the portal's "files shared" tag.
 - Everything respects `prefers-reduced-motion` (globals.css).
 
 ## Responsive (check every screen at 375, 768, 1024 and 1440, light and dark)

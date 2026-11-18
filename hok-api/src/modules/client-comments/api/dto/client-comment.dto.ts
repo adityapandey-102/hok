@@ -40,7 +40,12 @@ export const updateCommentDtoSchema = z.object({
 export type UpdateCommentDto = z.infer<typeof updateCommentDtoSchema>;
 
 /** Public: GET /portal/:token/comments. */
-export const portalCommentQueryDtoSchema = z.object({ limit, offset });
+export const portalCommentQueryDtoSchema = z.object({
+  limit,
+  offset,
+  /** Round 5: only the comments about this event (one of the client's own, else 404 EVENT_NOT_FOUND; a malformed id is 400). */
+  eventId: z.string().uuid("eventId must be an event id").optional(),
+});
 
 /** Public: POST /portal/:token/comments (FR-CMT-01). Strict: unknown keys are refused. */
 export const postCommentDtoSchema = z

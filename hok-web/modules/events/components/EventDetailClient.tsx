@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { LinkifiedText } from "../../../components/ui/LinkifiedText";
 import Link from "next/link";
 import {
   approvedStageIds,
@@ -259,6 +260,7 @@ export function EventDetailClient({
 
           <PartsSection
             kind="event"
+            currentStageId={event.currentStageId}
             itemId={event.id}
             itemTitle={event.title}
             stages={event.stages}
@@ -278,7 +280,7 @@ export function EventDetailClient({
               <dl className="inset-rows">
                 <Row label="Starts" value={start.primary} extra={start.secondary} />
                 <Row label="Ends" value={end.primary} extra={end.secondary} />
-                {event.location && <Row label="Location" value={event.location} />}
+                {event.location && <Row label="Location" value={<LinkifiedText text={event.location} />} />}
                 {event.team.length > 0 && <Row label="Team" value={event.team.map((t) => t.fullName).join(", ")} />}
                 {event.description && <Row label="Description" value={event.description} />}
               </dl>
@@ -387,7 +389,7 @@ export function EventDetailClient({
 }
 
 /** A list row: label left, value right. Empty fields aren't drawn at all. */
-function Row({ label, value, extra }: { label: string; value: string; extra?: string | null }) {
+function Row({ label, value, extra }: { label: string; value: ReactNode; extra?: string | null }) {
   return (
     <div className="flex items-baseline justify-between gap-4 px-5 py-3">
       <dt className="shrink-0 text-[15px] text-text-primary">{label}</dt>

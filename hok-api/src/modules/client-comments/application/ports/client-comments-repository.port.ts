@@ -30,7 +30,7 @@ export interface ClientCommentsRepositoryPort {
   update(id: string, changedBy: string, decide: (current: ClientCommentEntity) => CommentChange): Promise<ClientCommentEntity>;
 
   // -- portal (pinned to the client the link opens) --
-  listForPortal(clientId: string, limit: number, offset: number): Promise<{ comments: PortalCommentEntity[]; total: number }>;
+  listForPortal(clientId: string, limit: number, offset: number, eventId?: string): Promise<{ comments: PortalCommentEntity[]; total: number }>;
   /** Is this event one of the client's own? (A comment may name one of them only.) */
   eventBelongsToClient(clientId: string, eventId: string): Promise<boolean>;
   createFromPortal(input: { clientId: string; portalLinkId: string; eventId: string | null; body: string }): Promise<PortalCommentEntity>;

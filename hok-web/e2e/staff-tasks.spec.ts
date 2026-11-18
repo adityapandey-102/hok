@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { newPortalToken, openPortalEvent } from "./portalHelpers";
 
 const PASSWORD = process.env.E2E_PASSWORD ?? "Hok@2026";
 
@@ -80,34 +81,6 @@ async function createEvent(page: Page, title: string) {
   await page.locator("#ev-end").fill("2026-11-21T12:00");
   await page.getByRole("button", { name: "Create event" }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible({ timeout: 30_000 });
-}
-
-/** The SMM generates a fresh portal link for Chai Point Cafe and returns its token. */
-async function newPortalToken(page: Page): Promise<string> {
-  await page.goto("/app/clients");
-  await page.waitForLoadState("networkidle");
-  await page.getByLabel("Search clients").fill("Chai Point Cafe");
-  await page.getByRole("link", { name: /Chai Point Cafe/ }).first().click();
-  await page.getByRole("tab", { name: "portal" }).click();
-  await expect(page.getByRole("button", { name: /^(Re)?generate link$/i })).toBeVisible({ timeout: 15_000 });
-  const hasActive = await page.getByRole("button", { name: "Regenerate link" }).isVisible().catch(() => false);
-  await page.getByRole("button", { name: hasActive ? "Regenerate link" : "Generate link" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: hasActive ? "Regenerate" : "Generate", exact: true }).click();
-  const urlText = (await page.getByTestId("portal-url").textContent({ timeout: 15_000 })) ?? "";
-  return urlText.trim().split("/").pop()!;
-}
-
-/** The client's side: open /p/<token> and the named event's page (the hero card or a list row). */
-async function openPortalEvent(portal: Page, token: string, eventTitle: string) {
-  await portal.goto(`/p/${token}`);
-  await expect(portal.getByRole("heading", { name: "Happening now / next" })).toBeVisible({ timeout: 30_000 });
-  const row = portal.getByRole("button", { name: new RegExp(eventTitle) }).first();
-  if (!(await row.isVisible())) {
-    for (const more of await portal.getByRole("button", { name: /^Show all/ }).all()) if (await more.isVisible()) await more.click();
-  }
-  if (await row.isVisible()) await row.click();
-  else await portal.getByRole("button", { name: "See updates" }).click(); // the event is the hero card
-  await expect(portal.getByRole("dialog").getByRole("heading", { name: eventTitle })).toBeVisible({ timeout: 15_000 });
 }
 
 /**

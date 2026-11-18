@@ -7,11 +7,10 @@ import { Select, Textarea } from "../../../components/ui/Select";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { Button } from "../../../components/ui/Button";
 import { FieldError, FieldLabel } from "../../../components/ui/Field";
-import { StatusPill } from "../../../components/ui/StatusPill";
-import { PortalApiError, publicPortalApi, type PortalComment, type PortalEvent } from "../api/publicPortalApi";
-import { COMMENT_STATUS_LABEL, COMMENT_STATUS_TONE, formatShortDate } from "../portalFormat";
+import { publicPortalApi, type PortalComment, type PortalEvent } from "../api/publicPortalApi";
+import { COMMENT_MAX as MAX, useCommentComposer } from "../commentComposer";
+import { PortalCommentItem } from "./PortalCommentItem";
 
-const MAX = 2000;
 const PAGE = 20;
 
 /**
@@ -23,11 +22,13 @@ export function PortalComments({ token, zone, events }: { token: string; zone: s
   const [comments, setComments] = useState<PortalComment[] | null>(null);
   const [total, setTotal] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [text, setText] = useState("");
   const [eventId, setEventId] = useState("");
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
+  const composer = useCommentComposer(token, (comment) => {
+    setComments((prev) => [comment, ...(prev ?? [])]);
+    setTotal((n) => n + 1);
+    setEventId("");
+  });
+  const { text, sending, error: sendError, sent } = composer;
 
   const load = useCallback(
     (offset = 0) => {
@@ -49,28 +50,9 @@ export function PortalComments({ token, zone, events }: { token: string; zone: s
 
   useEffect(() => load(0), [load]);
 
-  async function submit(e: React.FormEvent) {
+  function submit(e: React.FormEvent) {
     e.preventDefault();
-    const body = text.trim();
-    if (!body) {
-      setSendError("Write a comment first.");
-      return;
-    }
-    setSending(true);
-    setSendError(null);
-    setSent(false);
-    try {
-      const { comment } = await publicPortalApi.postComment(token, body, eventId || null);
-      setComments((prev) => [comment, ...(prev ?? [])]);
-      setTotal((n) => n + 1);
-      setText("");
-      setEventId("");
-      setSent(true);
-    } catch (err) {
-      setSendError(err instanceof PortalApiError && err.status === 429 ? err.message : err instanceof Error ? err.message : "Could not send your comment.");
-    } finally {
-      setSending(false);
-    }
+    void composer.submit(eventId || null);
   }
 
   return (
@@ -95,10 +77,7 @@ export function PortalComments({ token, zone, events }: { token: string; zone: s
             <Textarea
               id="portal-comment-text"
               value={text}
-              onChange={(e) => {
-                setText(e.target.value.slice(0, MAX));
-                setSent(false);
-              }}
+              onChange={(e) => composer.setText(e.target.value)}
               rows={4}
               maxLength={MAX}
               placeholder="e.g. Please change the background music in the reel."
@@ -147,22 +126,7 @@ export function PortalComments({ token, zone, events }: { token: string; zone: s
           ) : (
             <ul className="flex flex-col gap-5">
               {comments.map((c) => (
-                <li key={c.id} className="border-l-2 border-border pl-4">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
-                    <span>{formatShortDate(c.createdAt, zone)}</span>
-                    {c.eventTitle && <span>· {c.eventTitle}</span>}
-                    <StatusPill label={COMMENT_STATUS_LABEL[c.status]} tone={COMMENT_STATUS_TONE[c.status]} />
-                  </div>
-                  <p className="mt-1.5 text-sm break-words whitespace-pre-line text-text-primary">{c.body}</p>
-                  {c.reply && (
-                    <div className="mt-2.5 rounded-app-lg rounded-tl-sm border border-border-light bg-accent-bg px-3.5 py-2.5">
-                      <p className="flex items-center gap-1.5 text-[11.5px] font-semibold text-text-secondary">
-                        <Icon name="message" size={12} /> Reply{c.repliedAt ? ` · ${formatShortDate(c.repliedAt, zone)}` : ""}
-                      </p>
-                      <p className="mt-0.5 text-sm break-words whitespace-pre-line text-text-primary">{c.reply}</p>
-                    </div>
-                  )}
-                </li>
+                <PortalCommentItem key={c.id} comment={c} zone={zone} />
               ))}
             </ul>
           )}

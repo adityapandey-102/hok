@@ -770,7 +770,7 @@ describe("round 2: share a delivered link with the client", () => {
     const shared = (page.body as { event: { assets: Record<string, unknown>[] } }).event.assets;
     const mine = shared.find((a) => a.id === assetId);
     expect(mine).toMatchObject({ title: "Hero reel", url: "https://example.test/final-cut", type: "other", stageName: null });
-    expect(Object.keys(mine!).sort()).toEqual(["createdAt", "id", "stageName", "title", "type", "url"]);
+    expect(Object.keys(mine!).sort()).toEqual(["createdAt", "id", "stageName", "stagePosition", "title", "type", "url"]);
   });
 
   it("two people sharing at once make exactly one asset (the link is locked)", async () => {

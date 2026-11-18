@@ -71,12 +71,20 @@ async function pickTemplate(page: Page, template: string) {
   await page.locator('[role="listbox"] [role="option"]').filter({ hasText: template }).first().click();
 }
 
+/** Sets the Parts panel's stage picker to `stage` (options read "3. Production"). */
+async function pickPartStage(page: Page, stage: string) {
+  const select = page.getByLabel("Stage for the new part");
+  const value = await select.locator("option").filter({ hasText: new RegExp(`^\\d+\\. ${stage}$`) }).getAttribute("value");
+  await select.selectOption(value!);
+}
+
 /**
  * On an event page: "Add part" under `stage`, choose Event, say how many, fill the form once and create.
  * With `expectBack` the page returns to the parent; otherwise the form stays (a refusal) and the caller checks it.
  */
 async function addEventParts(page: Page, stage: string, count: number, title: string, template: string, expectBack = true) {
   const parentUrl = page.url();
+  await pickPartStage(page, stage);
   await page.getByRole("button", { name: `Add part at ${stage}` }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "Add a part" })).toBeVisible();
@@ -191,6 +199,7 @@ test.describe.serial("parts (parent and child work)", () => {
     const page = smm.page;
     await page.goto(parentUrl);
     await expect(page.getByRole("heading", { name: title })).toBeVisible({ timeout: 30_000 });
+    await pickPartStage(page, "Plan");
     await page.getByRole("button", { name: "Add part at Plan" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByText("An event part needs a client, and this task has none.")).toBeVisible();
