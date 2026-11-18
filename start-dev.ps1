@@ -57,7 +57,7 @@ $ErrorActionPreference = "Stop"
 #
 # To upgrade deliberately: bump this, run the script, and expect a one-time pull.
 # Reclaim the superseded images afterwards with `docker image prune` (optional).
-$SupabaseCli = "supabase@2.119.0"
+$SupabaseCli = "supabase@3.2.0"
 
 # Containers this project never uses -- excluded so they are never pulled or run.
 #   imgproxy      storage.image_transformation is disabled in config.toml
@@ -231,24 +231,81 @@ if (-not $NoUpdateCheck) {
 
 # --- 1. Supabase (DB + Auth + Storage) -----------------------------------------
 # Supabase commands run from hok-api, where supabase/ (config + migrations) lives.
-Push-Location $Api
-try {
-  if ($Reset) {
-    Write-Step "Resetting Supabase DB (wipes local data + re-applies all migrations)..."
-    npx $CliToUse db reset
-  } else {
-    Write-Step "Starting Supabase (Postgres + Auth + Storage)..."
-    npx $CliToUse start -x $SupabaseExclude
-    Write-Step "Applying database migrations..."
-    npx $CliToUse migration up
-  }
 
-  if ($Seed) {
-    Write-Step "Seeding demo data..."
-    npm run seed
+# Starts (or resets) the stack with one CLI version and applies migrations.
+# Returns $false instead of throwing, so a failed trial can fall back.
+function Start-Stack($cli) {
+  Push-Location $Api
+  try {
+    if ($Reset) {
+      Write-Step "Resetting Supabase DB with $cli (wipes local data + re-applies all migrations)..."
+      npx $cli db reset | Out-Host
+      if ($LASTEXITCODE -ne 0) { return $false }
+    } else {
+      Write-Step "Starting Supabase with $cli (Postgres + Auth + Storage)..."
+      npx $cli start -x $SupabaseExclude | Out-Host
+      if ($LASTEXITCODE -ne 0) { return $false }
+      Write-Step "Applying database migrations..."
+      npx $cli migration up | Out-Host
+      if ($LASTEXITCODE -ne 0) { return $false }
+    }
+    return $true
+  } catch {
+    Write-Host "    $($_.Exception.Message)" -ForegroundColor Red
+    return $false
+  } finally {
+    Pop-Location
   }
-} finally {
-  Pop-Location
+}
+
+# `supabase start` returns before Auth/REST finish booting; tests run straight
+# after it used to hit a half-ready stack. Wait for Docker's healthchecks.
+function Wait-StackHealthy([int]$timeoutSec = 120) {
+  $names = "supabase_db_hok", "supabase_auth_hok", "supabase_kong_hok"
+  $deadline = (Get-Date).AddSeconds($timeoutSec)
+  while ((Get-Date) -lt $deadline) {
+    $ready = $true
+    foreach ($n in $names) {
+      # try/catch: with ErrorActionPreference=Stop, PS 5.1 throws on a missing container's stderr
+      try { $state = docker inspect -f "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}" $n 2>$null } catch { $state = $null }
+      if ($state -ne "healthy" -and $state -ne "running") { $ready = $false; break }
+    }
+    if ($ready) { Write-Ok "Supabase containers are healthy."; return $true }
+    Start-Sleep -Seconds 3
+  }
+  Write-Host "    Supabase containers weren't healthy after $timeoutSec s." -ForegroundColor Yellow
+  return $false
+}
+
+# Stops the trialled CLI and brings the pinned one back up. Data is never wiped here.
+function Restore-PinnedStack {
+  Write-Step "Going back to the pinned $SupabaseCli..."
+  Push-Location $Api
+  try { npx $CliToUse stop | Out-Host } catch { } finally { Pop-Location }
+  $script:CliToUse = $SupabaseCli
+  if ((Start-Stack $SupabaseCli) -and (Wait-StackHealthy)) { return $true }
+  Write-Host "`n    The pinned $SupabaseCli didn't start either." -ForegroundColor Red
+  Write-Host "    The newer Postgres may have changed the local data volume. Your data is untouched;" -ForegroundColor Yellow
+  Write-Host "    if you're OK wiping LOCAL data, run:  .\start-dev.ps1 -NoUpdateCheck -Reset -Seed" -ForegroundColor Yellow
+  return $false
+}
+
+$stackUp = (Start-Stack $CliToUse) -and (Wait-StackHealthy)
+if (-not $stackUp) {
+  if ($TrialVersion) {
+    Write-Host "`n    supabase@$TrialVersion didn't start cleanly -- pin left unchanged." -ForegroundColor Red
+    $TrialVersion = $null
+    if (-not (Restore-PinnedStack)) { exit 1 }
+  } else {
+    Write-Host "`n    Supabase didn't start. Check Docker Desktop, then re-run this script." -ForegroundColor Red
+    exit 1
+  }
+}
+
+if ($Seed) {
+  Write-Step "Seeding demo data..."
+  Push-Location $Api
+  try { npm run seed } finally { Pop-Location }
 }
 
 # --- 1b. A trialled CLI has to earn its pin -------------------------------------
@@ -265,7 +322,14 @@ if ($TrialVersion) {
     if ($LASTEXITCODE -ne 0) { $testsPassed = $false }
     if ($testsPassed) {
       npm run test:integration
-      if ($LASTEXITCODE -ne 0) { $testsPassed = $false }
+      if ($LASTEXITCODE -ne 0) {
+        # A freshly pulled stack can still be warming up (first GoTrue/PostgREST
+        # requests are slow); one retry separates a real break from a cold start.
+        Write-Host "    Integration tests failed -- retrying once in 15 s in case the stack was still warming up..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 15
+        npm run test:integration
+        if ($LASTEXITCODE -ne 0) { $testsPassed = $false }
+      }
     }
   } finally {
     Pop-Location
@@ -278,12 +342,9 @@ if ($TrialVersion) {
       Write-Host "    Worth also running (once the API window is up): npm run test:rbac" -ForegroundColor DarkGray
     }
   } else {
-    Write-Host "`n    Tests FAILED on supabase@$TrialVersion -- pin left unchanged." -ForegroundColor Red
-    Write-Host "    Servers were not launched. To go back to the known-good version:" -ForegroundColor Yellow
-    Write-Host "      npx $CliToUse stop"                    -ForegroundColor DarkGray
-    Write-Host "      .\start-dev.ps1 -NoUpdateCheck"        -ForegroundColor DarkGray
-    Write-Host "    Add -Reset if the newer Postgres left the local data volume unusable." -ForegroundColor DarkGray
-    exit 1
+    Write-Host "`n    Tests FAILED twice on supabase@$TrialVersion -- pin left unchanged." -ForegroundColor Red
+    Write-Host "    Scroll up for the failing test; the servers will run on the pinned version." -ForegroundColor Yellow
+    if (-not (Restore-PinnedStack)) { exit 1 }
   }
 }
 
