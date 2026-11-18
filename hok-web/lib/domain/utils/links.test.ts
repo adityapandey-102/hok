@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { splitLinks } from "./links";
+import { logoImageSrc, splitLinks } from "./links";
+
+describe("logoImageSrc", () => {
+  const id = "1AbC_dEf-GhIjKlMnOp";
+  it("turns Google Drive file links into Drive's image address", () => {
+    const img = `https://drive.google.com/thumbnail?id=${id}&sz=w256`;
+    expect(logoImageSrc(`https://drive.google.com/file/d/${id}/view?usp=sharing`)).toBe(img);
+    expect(logoImageSrc(`https://drive.google.com/open?id=${id}`)).toBe(img);
+    expect(logoImageSrc(`https://drive.google.com/uc?export=view&id=${id}`)).toBe(img);
+  });
+  it("leaves any other URL as typed", () => {
+    expect(logoImageSrc("https://cdn.example.com/logo.png")).toBe("https://cdn.example.com/logo.png");
+    expect(logoImageSrc("https://drive.google.com/drive/folders/xyz")).toBe("https://drive.google.com/drive/folders/xyz");
+  });
+});
 
 describe("splitLinks", () => {
   it("plain text stays one part", () => {

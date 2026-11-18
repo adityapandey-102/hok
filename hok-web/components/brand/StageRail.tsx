@@ -1,8 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Icon } from "../ui/Icon";
-import { desktopLayout, highlightTotals, phoneLayout, railAriaLabel, railCaption, segmentsReached, type RailUnit } from "./railLayout";
+import { gridColumns, highlightTotals, phoneLayout, railAriaLabel, railCaption, segmentsReached, type RailUnit } from "./railLayout";
 
 export interface RailStage {
   key: string;
@@ -50,32 +50,26 @@ export function StageRail({
   summaryChips?: boolean;
 }) {
   if (stages.length === 0) return null;
-  const desktop = desktopLayout(stages.length);
   const phone = phoneLayout(stages.length);
   const listLabel = label;
   const item = (s: RailStage, i: number) => <RailItem key={s.key} s={s} i={i} count={stages.length} currentIndex={currentIndex} unit={unit} onStageClick={onStageClick} />;
+  // ≥ 640px it's always the grid: each stage gets its own column and long names wrap (2 lines) instead of
+  // overlapping, which the single flex row did with long names (production, 2026-11-18).
+  const cols = { "--rail-sm": gridColumns(stages.length, "sm"), "--rail-lg": gridColumns(stages.length, "lg") } as CSSProperties;
 
   return (
     <div role="group" aria-label={railAriaLabel(label, stages, currentIndex, unit)} data-testid="stage-rail">
-      {phone === "list" && desktop === "row" ? (
-        <ol aria-label={listLabel} className="flex flex-col sm:flex-row">
+      <ol aria-label={listLabel} style={cols} className="hidden gap-y-5 sm:grid sm:grid-cols-[repeat(var(--rail-sm),minmax(0,1fr))] lg:grid-cols-[repeat(var(--rail-lg),minmax(0,1fr))]">
+        {stages.map((s, i) => (
+          <GridCell key={s.key} s={s} i={i} count={stages.length} currentIndex={currentIndex} unit={unit} onStageClick={onStageClick} />
+        ))}
+      </ol>
+      {phone === "list" ? (
+        <ol aria-label={listLabel} className="flex flex-col sm:hidden">
           {stages.map(item)}
         </ol>
       ) : (
-        <>
-          {desktop === "row" ? (
-            <ol aria-label={listLabel} className="hidden sm:flex sm:flex-row">
-              {stages.map(item)}
-            </ol>
-          ) : (
-            <ol aria-label={listLabel} className="hidden grid-cols-4 gap-y-5 sm:grid lg:grid-cols-7">
-              {stages.map((s, i) => (
-                <GridCell key={s.key} s={s} i={i} count={stages.length} currentIndex={currentIndex} unit={unit} onStageClick={onStageClick} />
-              ))}
-            </ol>
-          )}
-          <PhoneDropdown stages={stages} currentIndex={currentIndex} label={listLabel} unit={unit} item={item} chips={summaryChips} />
-        </>
+        <PhoneDropdown stages={stages} currentIndex={currentIndex} label={listLabel} unit={unit} item={item} chips={summaryChips} />
       )}
     </div>
   );

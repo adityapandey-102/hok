@@ -1,5 +1,19 @@
 import { isHttpUrl } from "../validation/asset";
 
+const DRIVE_FILE_ID = /^https:\/\/drive\.google\.com\/(?:file\/d\/([\w-]{10,})|(?:open|uc)\?(?:.*&)?id=([\w-]{10,}))/;
+
+/**
+ * The address to load a logo image from. People paste a Google Drive "open file" link
+ * (drive.google.com/file/d/<id>/view), which is a viewer page, not an image; Drive's thumbnail
+ * address serves the image itself (only when the file is shared as "Anyone with the link").
+ * Any other URL is used as typed.
+ */
+export function logoImageSrc(url: string): string {
+  const m = DRIVE_FILE_ID.exec(url.trim());
+  const id = m?.[1] ?? m?.[2];
+  return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w256` : url;
+}
+
 /** One piece of free text: plain text, or a link with the safe absolute http(s) address to open. */
 export type TextPart = { text: string; href?: string };
 

@@ -10,6 +10,7 @@ import { StatusPill } from "../../../components/ui/StatusPill";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { ThemeToggle } from "../../../components/ui/ThemeToggle";
 import { LinkifiedText } from "../../../components/ui/LinkifiedText";
+import { logoImageSrc } from "../../../lib/domain/utils/links";
 import { BrandLockup } from "../../../components/shell/BrandMark";
 import { LINK_INVALID, PortalApiError, publicPortalApi, type PortalDashboard, type PortalEvent } from "../api/publicPortalApi";
 import { eventTypeLabel, formatEventWhen, stageSummary } from "../portalFormat";
@@ -39,6 +40,8 @@ export function PortalApp({ token }: { token: string }) {
   const [data, setData] = useState<PortalDashboard | null>(null);
   const [error, setError] = useState<PortalApiError | null>(null);
   const [open, setOpen] = useState<{ id: string; focus?: PortalFocus } | null>(null);
+  // A logo URL that doesn't load (moved, private, hot-link blocked) falls back to the initial, never a broken image.
+  const [logoBroken, setLogoBroken] = useState(false);
   const lastVisit = useLastVisit(token);
   const tab = useSyncExternalStore(subscribeHash, () => tabFromHash(window.location.hash), () => "overview" as PortalTabId);
 
@@ -97,9 +100,9 @@ export function PortalApp({ token }: { token: string }) {
         <div aria-hidden className="ambient-glow pointer-events-none absolute -top-40 -right-32 h-[420px] w-[420px] rounded-full" />
         <div aria-hidden className="absolute inset-0 -z-10 [background-image:linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:32px_32px] [mask-image:linear-gradient(90deg,transparent,black_50%)]" />
         <div className="mx-auto flex max-w-4xl items-center gap-3.5 px-4 py-5 sm:px-6">
-          {data.client.logoUrl ? (
+          {data.client.logoUrl && !logoBroken ? (
             // eslint-disable-next-line @next/next/no-img-element -- the client's own logo URL (any host); a plain img avoids allow-listing every domain
-            <img src={data.client.logoUrl} alt="" className="h-12 w-12 shrink-0 rounded-app-lg bg-white object-cover p-0.5 shadow-app-md sm:h-14 sm:w-14" referrerPolicy="no-referrer" />
+            <img src={logoImageSrc(data.client.logoUrl)} alt="" onError={() => setLogoBroken(true)} className="h-12 w-12 shrink-0 rounded-app-lg bg-white object-cover p-0.5 shadow-app-md sm:h-14 sm:w-14" referrerPolicy="no-referrer" />
           ) : (
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-app-lg bg-white font-serif text-2xl text-primary shadow-app-md sm:h-14 sm:w-14">{data.client.businessName.charAt(0)}</div>
           )}

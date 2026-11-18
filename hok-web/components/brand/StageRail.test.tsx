@@ -9,7 +9,14 @@ describe("StageRail", () => {
     const html = renderToStaticMarkup(<StageRail stages={stages(13)} currentIndex={4} />);
     for (let i = 1; i <= 13; i++) expect(html).toContain(`>Stage name ${i}<`);
     expect(html).toContain("<details");
-    expect(html).toContain("lg:grid-cols-7");
+    expect(html).toContain("--rail-lg:7");
+  });
+
+  it("uses the grid (never a squeezed row) even with few, long-named stages, one column per stage", () => {
+    const html = renderToStaticMarkup(<StageRail stages={stages(6)} currentIndex={0} />);
+    expect(html).toContain("sm:grid");
+    expect(html).toContain("--rail-sm:4;--rail-lg:6");
+    expect(html).not.toContain("sm:flex-row");
   });
 
   it("shows the phone summary as 'Stage 5 of 13' with the current name", () => {
@@ -27,14 +34,15 @@ describe("StageRail", () => {
   it("keeps a short list as a plain list with no dropdown", () => {
     const html = renderToStaticMarkup(<StageRail stages={stages(4)} currentIndex={1} />);
     expect(html).not.toContain("<details");
-    expect(html).toContain("flex-col sm:flex-row");
+    expect(html).toContain("flex flex-col sm:hidden"); // the phone list
+    expect(html).toContain("sm:grid"); // the grid from 640px
   });
 
-  it("uses a row plus a dropdown for 5 to 6 stages", () => {
+  it("uses the grid plus a phone dropdown for 5 to 6 stages", () => {
     const html = renderToStaticMarkup(<StageRail stages={stages(6)} currentIndex={0} />);
     expect(html).toContain("<details");
-    expect(html).toContain("hidden sm:flex");
-    expect(html).not.toContain("sm:grid");
+    expect(html).toContain("sm:grid");
+    expect(html).not.toContain("sm:flex-row");
   });
 
   it("shows the approval ring and chip, and the file count, plus the summary chips", () => {
@@ -60,7 +68,8 @@ describe("StageRail", () => {
 
   it("makes every stage a button when onStageClick is given", () => {
     const html = renderToStaticMarkup(<StageRail stages={stages(3)} currentIndex={0} onStageClick={() => {}} />);
-    expect(html.match(/<button/g)).toHaveLength(3);
+    // Each stage is a button in the grid (≥ 640px) and in the phone list; only one of the two is displayed.
+    expect(html.match(/<button/g)).toHaveLength(6);
   });
 
   it("renders nothing for an empty list", () => {

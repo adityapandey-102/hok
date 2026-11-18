@@ -164,7 +164,12 @@ export function ClientForm({
         </div>
         {field("cf-industry", "Industry", "industry")}
         {field("cf-email", "Business email", "email", { type: "email" })}
-        {field("cf-logo", "Logo URL", "logoUrl", { placeholder: "https://" })}
+        <div>
+          {field("cf-logo", "Logo URL", "logoUrl", { placeholder: "https://", "aria-describedby": "cf-logo-hint" })}
+          <p id="cf-logo-hint" className="mt-1 text-xs text-text-muted">
+            A direct image link, or a Google Drive file shared as &quot;Anyone with the link&quot;.
+          </p>
+        </div>
         {field("cf-address", "Address", "address")}
       </section>
 

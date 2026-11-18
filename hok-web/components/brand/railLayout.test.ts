@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { desktopLayout, highlightTotals, phoneLayout, railAriaLabel, railCaption, segmentsReached } from "./railLayout";
+import { gridColumns, highlightTotals, phoneLayout, railAriaLabel, railCaption, segmentsReached } from "./railLayout";
 
 describe("stage rail layouts", () => {
   it("keeps the row up to 6 stages and wraps into a grid after", () => {
-    expect([1, 4, 6].map(desktopLayout)).toEqual(["row", "row", "row"]);
-    expect([7, 13, 30].map(desktopLayout)).toEqual(["grid", "grid", "grid"]);
+    // Always the grid on wider screens; never more columns than stages.
+    expect([1, 3, 6, 13].map((n) => gridColumns(n, "sm"))).toEqual([1, 3, 4, 4]);
+    expect([1, 3, 6, 13].map((n) => gridColumns(n, "lg"))).toEqual([1, 3, 6, 7]);
   });
   it("keeps the phone list up to 4 stages and drops down after", () => {
     expect([1, 4].map(phoneLayout)).toEqual(["list", "list"]);

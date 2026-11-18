@@ -5,14 +5,15 @@
  */
 export type RailUnit = "Stage" | "Step";
 
-/** Up to this many stages, tablets and desktops keep the single horizontal row. */
-export const ROW_MAX = 6;
 /** Up to this many stages, phones keep the plain vertical list; more become a dropdown. */
 export const PHONE_LIST_MAX = 4;
 
-/** ≥ 640px: one row, or needleye's wrapping grid when the row would squeeze. */
-export function desktopLayout(count: number): "row" | "grid" {
-  return count <= ROW_MAX ? "row" : "grid";
+/**
+ * ≥ 640px the rail is always needleye's wrapping grid (a single flex row let long names overlap):
+ * at most 4 columns on tablets and 7 from 1024px, never more columns than stages.
+ */
+export function gridColumns(count: number, size: "sm" | "lg"): number {
+  return Math.max(1, Math.min(count, size === "sm" ? 4 : 7));
 }
 
 /** < 640px: the vertical list, or a dropdown when the list would run long. */
