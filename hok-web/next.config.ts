@@ -81,6 +81,8 @@ const nextConfig: NextConfig = {
     // heap ran out ("JavaScript heap out of memory", measured 2026-10-22). Off, the
     // first page after a restart compiles a little slower. No effect on builds.
     turbopackFileSystemCacheForDev: false,
+    // Set by `next upgrade --agent=security` (16.4.3 -> 16.4.6, security advisory).
+    agentUpgrade: "security",
   },
 };
 
