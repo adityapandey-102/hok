@@ -228,11 +228,11 @@ Tasks the **Admin** assigns to staff — the **only** module available to Market
 
 | ID | Requirement |
 |---|---|
-| FR-TSK-01 | *(v0.4)* The **Admin and the client managers** (SMM, MM, PM) create tasks, each with **exactly one** assignee, **only downwards**: Admin (incl. Owner) → managers and task-only staff; managers → task-only staff. No same-level or upward assignment. A manager can link only clients on their team. *(Before v0.4: Admin only.)* |
+| FR-TSK-01 | *(v0.4)* The **Admin and the client managers** (SMM, MM, PM) create tasks, each with **exactly one** assignee: Admin (incl. Owner) → managers and task-only staff; managers → **other managers, themselves** and task-only staff *(sideways since 2026-11-20)*. Nobody assigns to the Admin; task-only staff assign nobody. A manager can link only clients on their team. *(Before v0.4: Admin only.)* |
 | FR-TSK-02 | Common fields: title, description, assignee, due date, priority, optional related client/event, optional reference links, status. |
 | FR-TSK-03 | *(v0.4)* Every task is created from an Admin-made **task template** and moves through its stages (forward or back) like an event. Status follows the stage: first stage = To Do, later stages = In Progress, completed past the last stage = Done. **Blocked** is a flag with a required reason, raised by the assignee or Admin. |
 | FR-TSK-04 | *(v0.4)* The assignee, the creator or the Admin moves the task between stages and completes it, with an optional comment. All moves form a timeline on the task. |
-| FR-TSK-05 | The Admin, or the task's **creator** (v0.4), can reopen a Done task, edit, reassign (down the ladder) or delete it. |
+| FR-TSK-05 | The Admin, or the task's **creator** (v0.4), can reopen a Done task, edit, reassign (within the same rule as creating) or delete it. |
 | FR-TSK-06 | The Admin, the creator and the assignee can comment on the task at any time (discussion thread). Managers who see a task only through their client's team have read-only access. |
 | FR-TSK-07 | Assignee is notified when a task is assigned; the task's creator is notified when the assignee changes the status or comments. |
 | FR-TSK-08 | Assignee sees "My Tasks" (filter: status, priority, due date; overdue highlighted). |

@@ -364,7 +364,7 @@ async function main() {
   check("GET /calendar as editor holds no events or personal entries", edCal.body?.items?.every((i) => i.kind === "task" || i.kind === "todo"), true);
   check("GET /calendar with include=nope -> 400", (await req(`/calendar?${calRange}&include=nope`, {}, admin.token)).status, 400);
   const asgSmm = await req("/team-members?assignable=true&limit=100", {}, smm.token);
-  check("GET /team-members?assignable=true as SMM lists task-only roles only", asgSmm.body?.members?.every((m) => TASK_ONLY.includes(m.role)) && asgSmm.body?.members?.length > 0, true);
+  check("GET /team-members?assignable=true as SMM lists managers and task-only roles, never the admin", asgSmm.body?.members?.every((m) => m.role !== "admin") && asgSmm.body?.members?.some((m) => m.role === "marketing_manager") && asgSmm.body?.members?.some((m) => TASK_ONLY.includes(m.role)), true);
   const asgAdmin = await req("/team-members?assignable=true&limit=100", {}, admin.token);
   check("GET /team-members?assignable=true as admin lists no admin", asgAdmin.body?.members?.every((m) => m.role !== "admin"), true);
 
@@ -511,10 +511,10 @@ async function main() {
     const expected = TASK_ONLY.includes(role) ? 403 : 201;
     check(`POST /staff-tasks (to the editor) as ${role} -> ${expected}`, track(await req("/staff-tasks", { method: "POST", body: taskBody() }, token)).status, expected);
   }
-  // Create, to a manager (the SMM): only the Admin; a manager is refused by the ladder.
+  // Create, to a manager (the SMM): the Admin and the managers (sideways or themselves, 2026-11-20); task-only roles never.
   const toManager = JSON.stringify({ title: `RBAC to-manager ${stamp}`, assigneeId: smm.id, templateId: taskTplId });
   for (const [role, token] of everyone) {
-    const expected = TASK_ONLY.includes(role) ? 403 : role === "admin" ? 201 : 400;
+    const expected = TASK_ONLY.includes(role) ? 403 : 201;
     check(`POST /staff-tasks (to the SMM) as ${role} -> ${expected}`, track(await req("/staff-tasks", { method: "POST", body: toManager }, token)).status, expected);
   }
   check(
@@ -527,8 +527,11 @@ async function main() {
     (await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: admin.profile.id, templateId: taskTplId }) }, smm.token)).status,
     400,
   );
-  const ladder = await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: mm.id, templateId: taskTplId }) }, smm.token);
+  const ladder = await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: admin.profile.id, templateId: taskTplId }) }, smm.token);
   check("... the refusal is STAFF_TASK_ASSIGNEE_NOT_ALLOWED", ladder.body?.code, "STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
+  const sideways = await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "rbac sideways", assigneeId: mm.id, templateId: taskTplId }) }, smm.token);
+  check("POST /staff-tasks (SMM -> MM, sideways, 2026-11-20) -> 201", sideways.status, 201);
+  if (sideways.body?.task?.id) await req(`/staff-tasks/${sideways.body.task.id}`, { method: "DELETE" }, smm.token);
   check("POST /staff-tasks (no templateId) as admin -> 400", (await req("/staff-tasks", { method: "POST", body: JSON.stringify({ title: "x", assigneeId: target.id }) }, admin.token)).status, 400);
   check("POST /staff-tasks (an event template) as admin -> 400", (await req("/staff-tasks", { method: "POST", body: taskBody({ templateId: tplId }) }, admin.token)).status, 400);
   check("POST /staff-tasks (a template for editors, to the developer) as admin -> 400", (await req("/staff-tasks", { method: "POST", body: taskBody({ templateId: editorTpl.body?.template?.id, assigneeId: staff.developer.id }) }, admin.token)).status, 400);
@@ -606,7 +609,7 @@ async function main() {
   check("PATCH /staff-tasks/:id (SMM-created) as MM -> 404", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ title: "x", version: 1 }) }, mm.token)).status, 404);
   check("PATCH /staff-tasks/:id (SMM-created) as editor (the assignee) -> 403", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ title: "x", version: 1 }) }, target.token)).status, 403);
   check("PATCH /staff-tasks/:id (SMM-created) as SMM (creator) -> 200", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ title: `RBAC smm-made ${stamp} b`, version: 1 }) }, smm.token)).status, 200);
-  check("PATCH /staff-tasks/:id reassigning sideways (to the MM) as SMM -> 400", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ assigneeId: mm.id, version: 2 }) }, smm.token)).status, 400);
+  check("PATCH /staff-tasks/:id reassigning up (to the admin) as SMM -> 400", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ assigneeId: admin.profile.id, version: 2 }) }, smm.token)).status, 400);
   check("PATCH /staff-tasks/:id (SMM-created) as admin -> 200", (await req(`/staff-tasks/${mid}`, { method: "PATCH", body: JSON.stringify({ title: `RBAC smm-made ${stamp} c`, version: 2 }) }, admin.token)).status, 200);
   check("POST /staff-tasks/:id/comments (SMM-created) as SMM (creator) -> 201", (await req(`/staff-tasks/${mid}/comments`, { method: "POST", body: JSON.stringify({ body: "Please hurry" }) }, smm.token)).status, 201);
   const mStages = smmMade.body?.task?.stages ?? [];
@@ -948,7 +951,7 @@ async function main() {
       // Task-only roles hold no staff_tasks:assign, so the route refuses them before any visibility check.
       check(`POST /staff-tasks (a part of a task you can't see) as ${role} -> 403`, r.status, 403);
     }
-    check("POST /staff-tasks (a part, the ladder: SMM assigns an MM) -> 400", (await mkTask(smm.token, tParent, { assigneeId: mm.id })).status, 400);
+    check("POST /staff-tasks (a part, the ladder: SMM assigns the admin) -> 400", (await mkTask(smm.token, tParent, { assigneeId: admin.profile.id })).status, 400);
     check("POST /staff-tasks (a part of a missing task) as SMM -> 404", (await mkTask(smm.token, { ...tParent, id: "00000000-0000-4000-8000-000000000000" })).status, 404);
     check("POST /staff-tasks (a part, a stage of another task) as SMM -> 400", (await mkTask(smm.token, { ...tParent, stageId: "00000000-0000-4000-8000-000000000000" })).status, 400);
     check("... the refusal is WORK_PARENT_STAGE_INVALID", (await mkTask(smm.token, { ...tParent, stageId: "00000000-0000-4000-8000-000000000000" })).body?.code, "WORK_PARENT_STAGE_INVALID");

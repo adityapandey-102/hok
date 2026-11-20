@@ -200,7 +200,7 @@ export const GUIDE: GuideArticle[] = [
     pages: ["/app/tasks"],
     keywords: ["task", "assign", "kanban", "board", "status", "editor", "due", "overdue", "blocked", "manager", "ladder", "given", "template", "stage", "brief", "link", "delivered", "complete", "reopen", "share"],
     requires: "staff_tasks:read",
-    summary: "Work given to one person. Every task follows the stages of a task template, like an event. Everyone sees the tasks assigned to them. Assigning goes downwards: the Admin to anyone, a client manager to staff (agents, developers, editors, writers). The Admin sees every task.",
+    summary: "Work given to one person. Every task follows the stages of a task template, like an event. Everyone sees the tasks assigned to them. Who can assign: the Admin to anyone except another Admin; a client manager (Social Media, Marketing or Project Manager) to another client manager, to themselves, or to staff (agents, developers, editors, writers). Staff can't assign tasks. The Admin sees every task.",
     steps: [
       "Admin and managers: press “New task”, pick the person (the list shows only people you may assign to), then the template (the stages the task will go through). Add a brief (a script or instructions), a due date, a priority and, if you like, links to raw files or references.",
       "Open a task to move it along: “Move to …” goes to the next stage, the stage menu jumps to any stage, and on the last stage “Mark complete” finishes it. A comment is optional.",

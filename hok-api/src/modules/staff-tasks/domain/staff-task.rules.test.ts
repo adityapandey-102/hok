@@ -304,13 +304,15 @@ describe("assertCanMoveStage / assertCanBlock / assertCanComment", () => {
 });
 
 describe("assertCanAssign (the ladder, judged against the caller)", () => {
-  it("Admin -> anyone below; manager -> task-only; never sideways or up", () => {
+  it("Admin -> anyone below; manager -> other managers, themselves and task-only; never up to the Admin", () => {
     expect(codeOf(() => assertCanAssign("admin", "social_media_manager"))).toBeNull();
     expect(codeOf(() => assertCanAssign("admin", "editor"))).toBeNull();
     expect(codeOf(() => assertCanAssign("project_manager", "content_writer"))).toBeNull();
+    expect(codeOf(() => assertCanAssign("social_media_manager", "marketing_manager"))).toBeNull();
+    expect(codeOf(() => assertCanAssign("marketing_manager", "project_manager"))).toBeNull();
+    expect(codeOf(() => assertCanAssign("project_manager", "project_manager"))).toBeNull();
     for (const [from, to] of [
       ["admin", "admin"],
-      ["social_media_manager", "marketing_manager"],
       ["project_manager", "admin"],
       ["editor", "developer"],
     ] as const) {

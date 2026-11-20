@@ -521,12 +521,14 @@ describe("create (Admin and client managers)", () => {
     }
   });
 
-  it("the ladder: Admin -> a manager is fine; Admin -> Admin and manager -> manager are 400 STAFF_TASK_ASSIGNEE_NOT_ALLOWED", async () => {
+  it("the ladder: Admin -> a manager; a manager -> another manager or themselves (2026-11-20); Admin -> Admin and manager -> Admin are 400", async () => {
     await service.create(ADMIN, { ...base, assigneeId: "rohan", templateId: "tpl-any" });
     expect(repo.created[0]).toMatchObject({ assigneeId: "rohan" });
+    await service.create(ROHAN, { ...base, assigneeId: "pia", templateId: "tpl-any" }); // SMM -> MM, sideways
+    expect(repo.created[1]).toMatchObject({ assigneeId: "pia", assignedBy: "rohan" });
+    await service.create(ROHAN, { ...base, assigneeId: "rohan", templateId: "tpl-any" }); // to themselves
+    expect(repo.created[2]).toMatchObject({ assigneeId: "rohan", assignedBy: "rohan" });
     expect(await codeOf(service.create(ADMIN, { ...base, assigneeId: "admin", templateId: "tpl-any" }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
-    expect(await codeOf(service.create(ROHAN, { ...base, assigneeId: "pia", templateId: "tpl-any" }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
-    expect(await codeOf(service.create(ROHAN, { ...base, assigneeId: "rohan", templateId: "tpl-any" }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
     expect(await codeOf(service.create(ROHAN, { ...base, assigneeId: "admin", templateId: "tpl-any" }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
   });
 
@@ -566,9 +568,9 @@ describe("update / reassign (Admin or the creator)", () => {
     expect(notifier.calls).toEqual(["assigned:arjun"]);
   });
 
-  it("the ladder judges a reassignment against the caller: an Admin can pick a manager, a manager cannot", async () => {
+  it("the ladder judges a reassignment against the caller: a manager can pick another manager but never the Admin", async () => {
     repo.tasks.set("t3", task({ id: "t3", assignedBy: "rohan", assigneeId: "meera", assigneeRole: "editor" }));
-    expect(await codeOf(service.update(ROHAN, "t3", { assigneeId: "pia", version: 1 }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
+    expect(await codeOf(service.update(ROHAN, "t3", { assigneeId: "admin", version: 1 }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
     await service.update(ROHAN, "t3", { assigneeId: "arjun", version: 1 });
     expect(repo.tasks.get("t3")).toMatchObject({ assigneeId: "arjun" });
     await service.update(ADMIN, "t3", { assigneeId: "pia", version: 2 });
@@ -959,7 +961,7 @@ describe("creating a part of a task or an event (round 4)", () => {
     await service.create(ROHAN, { ...base, parent: underTask });
     await service.create(ADMIN, { ...base, parent: underTask });
     expect(repo.created.map((c) => c.parent)).toEqual([underTask, underTask]);
-    expect(await codeOf(service.create(ROHAN, { ...base, assigneeId: "pia", templateId: "tpl-any", parent: underTask }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
+    expect(await codeOf(service.create(ROHAN, { ...base, assigneeId: "admin", templateId: "tpl-any", parent: underTask }))).toBe("STAFF_TASK_ASSIGNEE_NOT_ALLOWED");
     expect(await codeOf(service.create(ROHAN, { ...base, assigneeId: "arjun", parent: underTask }))).toBe("STAFF_TASK_TEMPLATE_INVALID"); // the editor-only template
   });
 

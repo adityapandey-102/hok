@@ -17,10 +17,10 @@ describe("role ladder", () => {
     for (const role of ROLES) expect(roleLevel(role), role).toBe(LEVEL[role]);
   });
 
-  it("only assigns downwards, across the full 8x8 role table", () => {
+  it("Admin -> managers and staff; managers -> each other and staff; staff -> nobody (8x8 table)", () => {
     for (const assigner of ROLES) {
       for (const assignee of ROLES) {
-        const expected = LEVEL[assigner] <= 2 && LEVEL[assigner] < LEVEL[assignee];
+        const expected = (LEVEL[assigner] === 1 && LEVEL[assignee] > 1) || (LEVEL[assigner] === 2 && LEVEL[assignee] >= 2);
         expect(canAssignTo(assigner, assignee), `${assigner} -> ${assignee}`).toBe(expected);
       }
     }
@@ -30,11 +30,13 @@ describe("role ladder", () => {
     expect(canAssignTo("admin", "admin")).toBe(false);
   });
 
-  it("lets the Admin assign to managers and staff, and a manager to staff only", () => {
+  it("lets the Admin assign to managers and staff, and a manager to other managers, themselves and staff", () => {
     expect(canAssignTo("admin", "project_manager")).toBe(true);
     expect(canAssignTo("admin", "editor")).toBe(true);
     expect(canAssignTo("social_media_manager", "editor")).toBe(true);
-    expect(canAssignTo("social_media_manager", "marketing_manager")).toBe(false);
+    expect(canAssignTo("social_media_manager", "marketing_manager")).toBe(true);
+    expect(canAssignTo("marketing_manager", "project_manager")).toBe(true);
+    expect(canAssignTo("project_manager", "project_manager")).toBe(true);
     expect(canAssignTo("social_media_manager", "admin")).toBe(false);
   });
 

@@ -21,15 +21,18 @@ describe("roleLevel", () => {
 describe("canAssignTo (full 8x8 table)", () => {
   for (const assigner of ROLES) {
     for (const assignee of ROLES) {
-      const expected = LEVELS[assigner] < LEVELS[assignee] && LEVELS[assigner] <= 2;
+      // Admin -> managers + staff; managers -> managers (incl. themselves) + staff; staff -> nobody.
+      const expected = (LEVELS[assigner] === 1 && LEVELS[assignee] > 1) || (LEVELS[assigner] === 2 && LEVELS[assignee] >= 2);
       it(`${assigner} -> ${assignee}: ${expected}`, () => {
         expect(canAssignTo(assigner, assignee)).toBe(expected);
       });
     }
   }
 
-  it("never lets anyone assign to their own level, so an Admin cannot assign to an Admin", () => {
+  it("an Admin can't assign to an Admin; managers can assign sideways and to themselves (2026-11-20)", () => {
     expect(canAssignTo("admin", "admin")).toBe(false);
-    expect(canAssignTo("social_media_manager", "project_manager")).toBe(false);
+    expect(canAssignTo("social_media_manager", "project_manager")).toBe(true);
+    expect(canAssignTo("project_manager", "project_manager")).toBe(true);
+    expect(canAssignTo("marketing_manager", "admin")).toBe(false);
   });
 });

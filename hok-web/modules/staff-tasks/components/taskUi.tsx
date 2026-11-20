@@ -106,7 +106,7 @@ export function describeTaskError(err: unknown, fallback: string): string {
     case "STAFF_TASK_FORBIDDEN":
       return "You can look at this task, but only its assignee, the person who gave it or the Admin can change it.";
     case "STAFF_TASK_ASSIGNEE_NOT_ALLOWED":
-      return "You can only assign tasks to roles below yours.";
+      return "You can't assign a task to someone with this role.";
     case "STAFF_TASK_CLIENT_INVALID":
       return "Choose one of your own clients (or an event of one).";
     default:

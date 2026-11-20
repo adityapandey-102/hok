@@ -470,10 +470,16 @@ describe("round 1: the role ladder, the creator's rights and the team's view", (
     expect(detail(await get("developer", detail(res).id))).toMatchObject({ canManage: false, assignedById: smm.id });
   });
 
-  it("the ladder: nobody assigns sideways or up; the Admin cannot assign to an Admin or to themselves", async () => {
+  it("the ladder: managers assign sideways and to themselves (2026-11-20); nobody assigns to the Admin", async () => {
     for (const [role, assignee] of [
       ["social_media_manager", smm2.id],
       ["social_media_manager", smm.id],
+    ] as const) {
+      const res = await post(role, { assigneeId: assignee });
+      expect(res.status, `${role} -> ${assignee}: ${JSON.stringify(res.body)}`).toBe(201);
+      expect(detail(res)).toMatchObject({ assigneeId: assignee, assignedById: smm.id });
+    }
+    for (const [role, assignee] of [
       ["social_media_manager", admin.id],
       ["admin", admin.id],
     ] as const) {
@@ -493,10 +499,10 @@ describe("round 1: the role ladder, the creator's rights and the team's view", (
     expect((await post("admin", { assigneeId: developer.id, clientId: clientC })).status).toBe(201);
   });
 
-  it("the creator edits, reassigns (downwards only), reopens and deletes their own task", async () => {
+  it("the creator edits, reassigns (never to the Admin), reopens and deletes their own task", async () => {
     const task = detail(await post("social_media_manager", { assigneeId: developer.id }));
-    const sideways = await as("social_media_manager", request(app).patch(`/api/v1/staff-tasks/${task.id}`)).send({ assigneeId: smm2.id, version: 1 });
-    expect([sideways.status, codeOf(sideways)]).toEqual([400, "STAFF_TASK_ASSIGNEE_NOT_ALLOWED"]);
+    const up = await as("social_media_manager", request(app).patch(`/api/v1/staff-tasks/${task.id}`)).send({ assigneeId: admin.id, version: 1 });
+    expect([up.status, codeOf(up)]).toEqual([400, "STAFF_TASK_ASSIGNEE_NOT_ALLOWED"]);
     const moved = await as("social_media_manager", request(app).patch(`/api/v1/staff-tasks/${task.id}`)).send({ assigneeId: editor.id, title: "Renamed", version: 1 });
     expect(moved.status, JSON.stringify(moved.body)).toBe(200);
     expect(detail(moved)).toMatchObject({ assigneeId: editor.id, title: "Renamed" });
@@ -552,7 +558,10 @@ describe("round 1: the role ladder, the creator's rights and the team's view", (
     expect(await ids("social_media_manager", "relation=created")).toContain(mine.id);
     expect(await ids("social_media_manager", "relation=created")).not.toContain(team.id);
     expect(await ids("social_media_manager", "relation=team")).toContain(team.id);
-    expect(await ids("social_media_manager", "relation=assigned")).toEqual([]);
+    // (Other tests in this file give the SMM tasks of their own, e.g. a self-assigned one, so check only these.)
+    const assignedToSmm = await ids("social_media_manager", "relation=assigned");
+    expect(assignedToSmm).not.toContain(mine.id);
+    expect(assignedToSmm).not.toContain(team.id);
     // Task-only staff: their own, and the team filter is refused.
     expect(await ids("developer", "relation=assigned")).toEqual(expect.arrayContaining([mine.id, team.id]));
     expect((await as("developer", request(app).get("/api/v1/staff-tasks?relation=team"))).status).toBe(400);
@@ -579,7 +588,9 @@ describe("round 1: the role ladder, the creator's rights and the team's view", (
       ((await as(role, request(app).get(`/api/v1/team-members?assignable=true&search=IT%20Tasks&limit=100`))).body as { members: { fullName: string; role: string }[] }).members.map((m) => m.role);
     const forSmm = await roles("social_media_manager");
     expect(forSmm.length).toBeGreaterThan(0);
-    expect(forSmm.every((r) => ["editor", "developer", "marketing_agent", "content_writer"].includes(r))).toBe(true);
+    // Managers may assign sideways (2026-11-20): other managers and task-only staff, never the Admin.
+    expect(forSmm).toEqual(expect.arrayContaining(["social_media_manager", "marketing_manager", "editor", "developer"]));
+    expect(forSmm).not.toContain("admin");
     const forAdmin = await roles("admin");
     expect(forAdmin).toEqual(expect.arrayContaining(["social_media_manager", "marketing_manager", "editor", "developer"]));
     expect(forAdmin).not.toContain("admin");

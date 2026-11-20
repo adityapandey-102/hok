@@ -39,7 +39,15 @@ export function roleLevel(role: Role): 1 | 2 | 3 {
   return isClientManager(role) ? 2 : 3;
 }
 
-/** Only downwards: level 1 -> 2 and 3, level 2 -> 3. Level 3 assigns nobody. */
+/**
+ * Who may assign a task to whom. Level 1 (Admin) -> levels 2 and 3. Level 2 (the client managers: SMM, MM, PM)
+ * -> level 2 and 3, i.e. sideways to each other and to themselves too (decision 2026-11-20: the Admin is busy,
+ * so managers create and hand out work among themselves). Level 3 assigns nobody. Nobody assigns to the Admin.
+ */
 export function canAssignTo(assigner: Role, assignee: Role): boolean {
-  return roleLevel(assigner) <= 2 && roleLevel(assigner) < roleLevel(assignee);
+  const from = roleLevel(assigner);
+  const to = roleLevel(assignee);
+  if (from === 1) return to > 1;
+  if (from === 2) return to >= 2;
+  return false;
 }

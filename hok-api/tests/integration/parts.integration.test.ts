@@ -278,7 +278,7 @@ describe("task parents", () => {
   it("the ladder still applies, and a team manager who only sees the parent task gets 403", async () => {
     const t = (await newTask("smm", { clientId: clientA })).body.task;
     const parent = { kind: "task", id: t.id, stageId: t.stages[0].id };
-    expect(out(await newTask("smm", { assigneeId: mm.id, parent }))).toEqual([400, "STAFF_TASK_ASSIGNEE_NOT_ALLOWED"]);
+    expect(out(await newTask("smm", { assigneeId: admin.id, parent }))).toEqual([400, "STAFF_TASK_ASSIGNEE_NOT_ALLOWED"]);
     expect(out(await newTask("mm", { parent }))).toEqual([403, "STAFF_TASK_FORBIDDEN"]);
     expect(out(await newTask("smm2", { parent }))).toEqual([404, "STAFF_TASK_NOT_FOUND"]);
     expect((await newTask("admin", { parent })).status).toBe(201);

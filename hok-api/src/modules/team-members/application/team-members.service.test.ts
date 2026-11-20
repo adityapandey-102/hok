@@ -21,14 +21,14 @@ describe("TeamMembersService", () => {
     expect(result).toEqual({ members: [{ id: "u1", fullName: "Neha Joshi", role: "marketing_agent" }], total: 1, limit: 20, offset: 0 });
   });
 
-  it("assignable=true narrows to the roles below the caller's (an Admin: managers and task-only; a manager: task-only; task-only: nobody)", async () => {
+  it("assignable=true narrows to the roles the caller may assign (an Admin: managers and task-only; a manager: managers and task-only; task-only: nobody)", async () => {
     const repo = new FakeRepo();
     const service = new TeamMembersService(repo);
     const q = teamMemberQueryDtoSchema.parse({ assignable: "true" });
     await service.list(q, "admin");
     expect(repo.last?.f.roles).toEqual(["social_media_manager", "marketing_manager", "project_manager", "marketing_agent", "developer", "editor", "content_writer"]);
     await service.list(q, "project_manager");
-    expect(repo.last?.f.roles).toEqual(["marketing_agent", "developer", "editor", "content_writer"]);
+    expect(repo.last?.f.roles).toEqual(["social_media_manager", "marketing_manager", "project_manager", "marketing_agent", "developer", "editor", "content_writer"]);
     repo.last = null;
     expect(await service.list(q, "editor")).toEqual({ members: [], total: 0, limit: 20, offset: 0 });
     expect(repo.last).toBeNull();

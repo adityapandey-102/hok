@@ -125,13 +125,13 @@ export function assertCanComment(caller: TaskCaller, task: { assigneeId: string;
 }
 
 /**
- * The assignment ladder (decision 2026-11-02), checked against the **caller's**
- * role: strictly downwards, so an Admin can't assign to an Admin or to
- * themselves, and a manager only to task-only roles.
+ * The assignment ladder (decisions 2026-11-02 and 2026-11-20), checked against the **caller's** role:
+ * the Admin assigns to managers and task-only staff (never to an Admin or themselves); a manager (SMM, MM,
+ * PM) to other managers, to themselves and to task-only staff; task-only staff assign nobody.
  */
 export function assertCanAssign(callerRole: Role, assigneeRole: Role): void {
   if (!canAssignTo(callerRole, assigneeRole)) {
-    throw new BadRequestError("You can only assign tasks to roles below yours", ERROR_CODES.STAFF_TASK_ASSIGNEE_NOT_ALLOWED);
+    throw new BadRequestError("You can't assign a task to someone with this role", ERROR_CODES.STAFF_TASK_ASSIGNEE_NOT_ALLOWED);
   }
 }
 

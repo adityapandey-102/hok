@@ -29,7 +29,7 @@ Core capabilities of the agency-management side:
 - **My to-dos** (2026-11-03): private per person (Admin can't see them), urgency-based reminders.
 - **Client portal**: shareable generated link (link only, revocable). The client sees their dashboard, current event stage and upcoming events, and can post comments. Plain design.
 - **Client comments**: push notification to the client's team; status Received → In Progress → Solved.
-- **Staff tasks**: assigned **only downwards** (Admin → managers + task-only staff; managers → task-only staff, 2026-11-03), one assignee, who can mark Done. The creator or Admin edits/reassigns/reopens/deletes. Since 2026-11-04 every task comes from an Admin-made **task template** and moves through stages (status derived; blocked flag), and has a Brief plus Links (brief / delivered); a delivered link can be shared with the client as a "Show to client" asset.
+- **Staff tasks**: Admin → managers + task-only staff; managers (SMM, MM, PM) → each other, themselves and task-only staff (sideways since 2026-11-20); task-only staff assign nobody; nobody assigns to the Admin. One assignee, who can mark Done. The creator or Admin edits/reassigns/reopens/deletes. Since 2026-11-04 every task comes from an Admin-made **task template** and moves through stages (status derived; blocked flag), and has a Brief plus Links (brief / delivered); a delivered link can be shared with the client as a "Show to client" asset.
 - **Stage approvals** (2026-11-04): any stage of an event or task template can need approval from Admin, specific roles, the client's team managers, or (events only) the client in the portal; one approval from any approver unlocks it; an item can't pass or skip an unapproved stage.
 - **Parts** (2026-11-05): from any stage, add child events/tasks (max 3 levels); the stage is locked until its parts finish.
 - **Role dashboards**, **web push (PWA)** and **in-app notifications**.
@@ -52,7 +52,7 @@ Docs:
 | Role | Access |
 |---|---|
 | Admin | Everything, all data. Manages users, stage templates and client teams. Assigns tasks to managers and task-only staff. Only role that archives clients and sets teams. Can be on a client team like an SMM |
-| Social Media Manager | Clients whose team they're on: events, assets, calendars, portal, comments, to-dos. Receives staff tasks; assigns tasks to task-only staff (2026-11-03) |
+| Social Media Manager | Clients whose team they're on: events, assets, calendars, portal, comments, to-dos. Receives staff tasks; assigns tasks to other managers, themselves and task-only staff (2026-11-20) |
 | Marketing Manager | Same as SMM |
 | Project Manager | Same as SMM (added 2026-10-23) |
 | Marketing Agent | **Staff tasks only** |
